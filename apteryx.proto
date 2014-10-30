@@ -1,0 +1,69 @@
+package apteryx;
+
+message OKResult
+{
+};
+
+message Set
+{
+    required string path = 1;
+    required bytes value = 2;
+};
+
+message Get
+{
+    required string path = 1;
+};
+
+message GetResult
+{
+    required bytes value = 1;
+};
+
+message Search
+{
+    required string path = 1;
+};
+
+message SearchResult
+{
+  repeated string paths = 1;
+};
+
+message Watch
+{
+    required string path = 1;
+    required bytes value = 2;
+    required uint64 id = 3;
+    required uint64 cb = 4;
+    required uint64 priv = 5;
+};
+
+message Provide
+{
+    required string path = 1;
+    required uint64 id = 2;
+    required uint64 cb = 3;
+    required uint64 priv = 4;
+};
+
+message Prune
+{
+    required string path = 1;
+};
+
+service server
+{
+    rpc set (Set) returns (OKResult);
+    rpc get (Get) returns (GetResult);
+    rpc search (Search) returns (SearchResult);
+    rpc watch (Watch) returns (OKResult);
+    rpc provide (Provide) returns (OKResult);
+    rpc prune (Prune) returns (OKResult);
+}
+
+service client
+{
+    rpc watch (Watch) returns (OKResult);
+    rpc provide (Provide) returns (GetResult);
+}

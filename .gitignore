@@ -1,0 +1,7 @@
+*.o
+*.so
+*.pb-c.c
+*.pb-c.h
+apteryx
+apteryxd
+test_apteryx
