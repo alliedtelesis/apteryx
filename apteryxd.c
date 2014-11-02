@@ -579,8 +579,8 @@ _prune (const char *path)
         _prune ((const char *) iter->data);
     }
     g_list_free_full (children, free);
-    notify_watchers (path);
     db_delete (path);
+    notify_watchers (path);
 }
 
 static void
