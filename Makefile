@@ -16,7 +16,7 @@ PROTOC_C ?= protoc-c
 
 CFLAGS := $(CFLAGS) -g -O2 -fPIC
 EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fstack-protector-all -Wstack-protector -fno-omit-frame-pointer
-EXTRA_CFLAGS += -I. `$(PKG_CONFIG) --cflags glib-2.0`
+EXTRA_CFLAGS += -I. -I/usr/include/google `$(PKG_CONFIG) --cflags glib-2.0`
 EXTRA_LDFLAGS := `$(PKG_CONFIG) --libs glib-2.0` -lpthread
 EXTRA_LDFLAGS += -lprotobuf-c
 

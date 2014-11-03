@@ -30,7 +30,7 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <glib.h>
-#include <google/protobuf-c/protobuf-c.h>
+#include <protobuf-c/protobuf-c.h>
 
 /* UNIX socket paths */
 #define APTERYX_SERVER  "/tmp/apteryx"
@@ -139,61 +139,5 @@ GList *db_search (const char *path);
 /* RPC API */
 bool rpc_provide_service (const char *name, ProtobufCService *service, int num_threads, int stopfd);
 ProtobufCService *rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descriptor);
-
-#ifdef NEW_PROTOBUF_C_RPC
-#define protobuf_c_return int32_t
-#define protobuf_c_return_good 0
-#define protobuf_c_return_bad -1
-#define APTERYX__SERVER__INIT APTERYX_SERVER_INIT
-#define apteryx__Server_Service apteryx_server_Service
-#define apteryx__server__descriptor apteryx_server_descriptor
-
-#define APTERYX__CLIENT__INIT APTERYX_CLIENT_INIT
-#define apteryx__Client_Service apteryx_client_Service
-#define apteryx__client__descriptor apteryx_client_descriptor
-
-#define apteryx__OKResult apteryx_OKResult
-#define apteryx__OKResult_Closure apteryx_OKResult_Closure
-#define APTERYX__OKRESULT__INIT APTERYX_OKRESULT_INIT
-
-#define apteryx__Set apteryx_Set
-#define APTERYX__SET__INIT APTERYX_SET_INIT
-#define apteryx__server__set apteryx_server_set
-
-#define apteryx__Get apteryx_Get
-#define APTERYX__GET__INIT APTERYX_GET_INIT
-#define apteryx__server__get apteryx_server_get
-
-#define apteryx__GetResult apteryx_GetResult
-#define apteryx__GetResult_Closure apteryx_GetResult_Closure
-#define APTERYX__GET_RESULT__INIT APTERYX_GET_RESULT_INIT
-
-#define apteryx__Search apteryx_Search
-#define APTERYX__SEARCH__INIT APTERYX_SEARCH_INIT
-#define apteryx__server__search apteryx_server_search
-
-#define apteryx__SearchResult apteryx_SearchResult
-#define apteryx__SearchResult_Closure apteryx_SearchResult_Closure
-#define APTERYX__SEARCH_RESULT__INIT APTERYX_SEARCH_RESULT_INIT
-
-#define apteryx__Watch apteryx_Watch
-#define APTERYX__WATCH__INIT APTERYX_WATCH_INIT
-#define apteryx__client__watch apteryx_client_watch
-#define apteryx__server__watch apteryx_server_watch
-
-#define apteryx__Provide apteryx_Provide
-#define APTERYX__PROVIDE__INIT APTERYX_PROVIDE_INIT
-#define apteryx__client__provide apteryx_client_provide
-#define apteryx__server__provide apteryx_server_provide
-
-#define apteryx__Prune apteryx_Prune
-#define APTERYX__PRUNE__INIT APTERYX_PRUNE_INIT
-#define apteryx__server__prune apteryx_server_prune
-
-#else
-#define protobuf_c_return void
-#define protobuf_c_return_good
-#define protobuf_c_return_bad
-#endif
 
 #endif /* _INTERNAL_H_ */
