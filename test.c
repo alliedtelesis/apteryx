@@ -757,6 +757,31 @@ test_watch_wildcard_miss ()
 }
 
 static bool
+test_watch_set_callback_get_cb (const char *path, void *priv, const unsigned char *value,
+                          size_t len)
+{
+    char *value2 = NULL;
+    size_t len2;
+    CU_ASSERT (apteryx_get (path, (unsigned char **) &value2, &len2) && value != NULL);
+    CU_ASSERT (len == len2);
+    CU_ASSERT (value && value2 && memcmp (value, value2, len) == 0);
+    free ((void *) value2);
+    return true;
+}
+
+void
+test_watch_set_callback_get ()
+{
+    const char *path = "/entity/zones/private/state";
+    CU_ASSERT (apteryx_watch (path, test_watch_set_callback_get_cb, (void *) 0x12345678));
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_watch (path, NULL, NULL));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_set_string (path, NULL, NULL));
+}
+
+static bool
 test_watch_set_callback_set_cb (const char *path, void *priv, const unsigned char *value,
                           size_t len)
 {
@@ -774,6 +799,7 @@ test_watch_set_callback_set ()
     CU_ASSERT (apteryx_watch (path, NULL, NULL));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
+    usleep (2*RPC_TIMEOUT_US); /* At least */
 }
 
 static bool
@@ -1254,8 +1280,9 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch wildcard", test_watch_wildcard },
     { "watch wildcard not last", test_watch_wildcard_not_last },
     { "watch wildcard miss", test_watch_wildcard_miss },
-    { "watch set callback set", test_watch_set_callback_set },
+    { "watch set callback get", test_watch_set_callback_get },
     { "watch set callback unwatch", test_watch_set_callback_unwatch },
+    { "watch set callback set recursive", test_watch_set_callback_set },
     { "watch and set from another thread", test_watch_set_thread },
     { "watch adds / removes watches", test_watch_adds_watch },
     { "watch removes multiple watches", test_watch_removes_all_watches },

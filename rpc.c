@@ -575,7 +575,7 @@ invoke_client_service (ProtobufCService *service,
             DEBUG ("RPC[%d]: connection closed\n", client->fd);
             goto error;
         }
-        else if ((get_time_us () - start) > 2000000)
+        else if ((get_time_us () - start) > RPC_TIMEOUT_US)
         {
             DEBUG ("RPC[%d]: read() timeout\n", client->fd);
             goto error;
