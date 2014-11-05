@@ -336,7 +336,7 @@ provide_get (const char *path, unsigned char **value, size_t *vsize)
     return true;
 }
 
-static protobuf_c_return
+static void
 apteryx__set (Apteryx__Server_Service *service,
               const Apteryx__Set *set,
               Apteryx__OKResult_Closure closure, void *closure_data)
@@ -349,7 +349,7 @@ apteryx__set (Apteryx__Server_Service *service,
         ERROR ("SET: Invalid parameters.\n");
         closure (NULL, closure_data);
         counters.set_invalid++;
-        return protobuf_c_return_bad;
+        return;
     }
     counters.set++;
 
@@ -366,10 +366,10 @@ apteryx__set (Apteryx__Server_Service *service,
 
     /* Return result */
     closure (&result, closure_data);
-    return protobuf_c_return_good;
+    return;
 }
 
-static protobuf_c_return
+static void
 apteryx__get (Apteryx__Server_Service *service,
               const Apteryx__Get *get,
               Apteryx__GetResult_Closure closure, void *closure_data)
@@ -384,7 +384,7 @@ apteryx__get (Apteryx__Server_Service *service,
         ERROR ("GET: Invalid parameters.\n");
         closure (NULL, closure_data);
         counters.get_invalid++;
-        return protobuf_c_return_bad;
+        return;
     }
     counters.get++;
 
@@ -408,10 +408,10 @@ apteryx__get (Apteryx__Server_Service *service,
     closure (&result, closure_data);
     if (value)
         free (value);
-    return protobuf_c_return_good;
+    return;
 }
 
-static protobuf_c_return
+static void
 apteryx__search (Apteryx__Server_Service *service,
                  const Apteryx__Search *search,
                  Apteryx__SearchResult_Closure closure, void *closure_data)
@@ -428,7 +428,7 @@ apteryx__search (Apteryx__Server_Service *service,
         ERROR ("SEARCH: Invalid parameters.\n");
         closure (NULL, closure_data);
         counters.search_invalid++;
-        return protobuf_c_return_bad;
+        return;
     }
     counters.search++;
 
@@ -452,10 +452,10 @@ apteryx__search (Apteryx__Server_Service *service,
     g_list_free_full (results, free);
     if (result.paths)
         free (result.paths);
-    return protobuf_c_return_good;
+    return;
 }
 
-static protobuf_c_return
+static void
 apteryx__watch (Apteryx__Server_Service *service,
                 const Apteryx__Watch *watch,
                 Apteryx__OKResult_Closure closure, void *closure_data)
@@ -469,7 +469,7 @@ apteryx__watch (Apteryx__Server_Service *service,
         ERROR ("WATCH: Invalid parameters.\n");
         closure (NULL, closure_data);
         counters.watch_invalid++;
-        return protobuf_c_return_bad;
+        return;
     }
     counters.watch++;
 
@@ -509,10 +509,10 @@ apteryx__watch (Apteryx__Server_Service *service,
 
     /* Return result */
     closure (&result, closure_data);
-    return protobuf_c_return_good;
+    return;
 }
 
-static protobuf_c_return
+static void
 apteryx__provide (Apteryx__Server_Service *service,
                   const Apteryx__Provide *provide,
                   Apteryx__OKResult_Closure closure, void *closure_data)
@@ -526,7 +526,7 @@ apteryx__provide (Apteryx__Server_Service *service,
         ERROR ("PROVIDE: Invalid parameters.\n");
         closure (NULL, closure_data);
         counters.provide_invalid++;
-        return protobuf_c_return_bad;
+        return;
     }
     counters.provide++;
 
@@ -566,7 +566,7 @@ apteryx__provide (Apteryx__Server_Service *service,
 
     /* Return result */
     closure (&result, closure_data);
-    return protobuf_c_return_good;
+    return;
 }
 
 static void
@@ -579,11 +579,11 @@ _prune (const char *path)
         _prune ((const char *) iter->data);
     }
     g_list_free_full (children, free);
-    notify_watchers (path);
     db_delete (path);
+    notify_watchers (path);
 }
 
-static protobuf_c_return
+static void
 apteryx__prune (Apteryx__Server_Service *service,
                 const Apteryx__Prune *prune,
                 Apteryx__OKResult_Closure closure, void *closure_data)
@@ -597,7 +597,7 @@ apteryx__prune (Apteryx__Server_Service *service,
         ERROR ("PRUNE: Invalid parameters.\n");
         closure (NULL, closure_data);
         counters.prune_invalid++;
-        return protobuf_c_return_bad;
+        return;
     }
     counters.prune++;
 
@@ -608,7 +608,7 @@ apteryx__prune (Apteryx__Server_Service *service,
 
     /* Return result */
     closure (&result, closure_data);
-    return protobuf_c_return_good;
+    return;
 }
 
 static Apteryx__Server_Service apteryx_service = APTERYX__SERVER__INIT (apteryx__);

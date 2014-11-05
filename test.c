@@ -352,6 +352,14 @@ test_search_paths ()
     CU_ASSERT (apteryx_set_string ("/entity/zones/public", NULL, "-"));
     CU_ASSERT (apteryx_set_string ("/entity/zones/public/description", NULL, "wan"));
 
+    CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT ((paths = apteryx_search ("/entity")) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT ((paths = apteryx_search ("/entity/")) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_search ("/nothere/") == NULL);
+
     CU_ASSERT ((paths = apteryx_search ("/entity/zones/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
     CU_ASSERT (g_list_find_custom (paths, "/entity/zones/private", (GCompareFunc) strcmp) !=

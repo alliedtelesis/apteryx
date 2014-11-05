@@ -42,7 +42,7 @@ static pthread_t client_thread = -1;    /* Thread data */
 static bool thread_running = false;
 
 /* Callback for watched items */
-static protobuf_c_return
+static void
 apteryx__watch (Apteryx__Client_Service *service,
                 const Apteryx__Watch *watch,
                 Apteryx__OKResult_Closure closure, void *closure_data)
@@ -70,11 +70,11 @@ apteryx__watch (Apteryx__Client_Service *service,
 
     /* Return result */
     closure (&result, closure_data);
-    return protobuf_c_return_good;
+    return;
 }
 
 /* Callback for provided items */
-static protobuf_c_return
+static void
 apteryx__provide (Apteryx__Client_Service *service,
                   const Apteryx__Provide *provide,
                   Apteryx__GetResult_Closure closure, void *closure_data)
@@ -98,7 +98,7 @@ apteryx__provide (Apteryx__Client_Service *service,
     closure (&result, closure_data);
     if (value)
         free (value);
-    return protobuf_c_return_good;
+    return;
 }
 
 static int

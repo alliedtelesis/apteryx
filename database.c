@@ -40,6 +40,8 @@ struct database_node
 };
 struct database_node *root = NULL;  /* The database root */
 
+static pthread_rwlock_t db_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 static char *
 db_node_to_path (struct database_node *node, char **buf)
 {
@@ -161,6 +163,7 @@ db_node_add (struct database_node *parent, const char *key)
     struct database_node *new_node = calloc (1, sizeof (struct database_node));
     new_node->key = strdup (key);
     new_node->parent = parent;
+    pthread_rwlock_wrlock (&db_lock);
     if (parent)
     {
         if (!parent->children)
@@ -169,6 +172,7 @@ db_node_add (struct database_node *parent, const char *key)
         }
         g_hash_table_insert (parent->children, new_node->key, new_node);
     }
+    pthread_rwlock_unlock (&db_lock);
     return new_node;
 }
 
@@ -232,41 +236,52 @@ db_add (const char *path, const unsigned char *value, size_t length)
             key = path;
         new_value = db_node_add (parent, key);
     }
+    pthread_rwlock_wrlock (&db_lock);
     free (new_value->value);
     new_value->value = malloc (length);
     memcpy (new_value->value, value, length);
     new_value->length = length;
+    pthread_rwlock_unlock (&db_lock);
     return true;
 }
 
 bool
 db_delete (const char *path)
 {
+    pthread_rwlock_wrlock (&db_lock);
     struct database_node *node = db_path_to_node (path);
     if (node)
         db_node_delete (node);
+    pthread_rwlock_unlock (&db_lock);
     return true;
 }
 
 bool
 db_get (const char *path, unsigned char **value, size_t *length)
 {
+    pthread_rwlock_rdlock (&db_lock);
     struct database_node *node = db_path_to_node (path);
     if (!node || !node->value)
+    {
+        pthread_rwlock_unlock (&db_lock);
         return false;
+    }
     *value = malloc (node->length);
     memcpy (*value, node->value, node->length);
     *length = node->length;
+    pthread_rwlock_unlock (&db_lock);
     return true;
 }
 
 GList *
 db_search (const char *path)
 {
+    pthread_rwlock_rdlock (&db_lock);
     GList *children, *iter, *values = NULL;
     struct database_node *node = db_path_to_node (path);
     if (node == NULL || node->children == NULL)
     {
+        pthread_rwlock_unlock (&db_lock);
         return NULL;
     }
     children = g_hash_table_get_values (node->children);
@@ -278,6 +293,7 @@ db_search (const char *path)
         values = g_list_append (values, value);
     }
     g_list_free (children);
+    pthread_rwlock_unlock (&db_lock);
     return values;
 }
 
