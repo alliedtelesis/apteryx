@@ -2,7 +2,7 @@
 #
 # Unit Tests (make test):
 # Requires GLib and CUnit for Unit Testing.
-# sudo apt-get install libglib2.0-dev libcunit1-dev libprotobuf-c0-dev protobuf-c-compiler
+# sudo apt-get install libglib2.0-dev libcunit1-dev libprotobuf-c0-dev protobuf-c-compiler liblua5.2-dev
 #
 # TEST_WRAPPER="G_SLICE=always-malloc valgrind --leak-check=full" make test
 # TEST_WRAPPER="gdb" make test
@@ -19,10 +19,14 @@ EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fstack-protector-all 
 EXTRA_CFLAGS += -I. -I/usr/include/google `$(PKG_CONFIG) --cflags glib-2.0`
 EXTRA_LDFLAGS := `$(PKG_CONFIG) --libs glib-2.0` -lpthread
 EXTRA_LDFLAGS += -lprotobuf-c
+ifneq ($(HAVE_LUA),no)
+EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --cflags lua5.2`
+EXTRA_LDFLAGS += `$(PKG_CONFIG) --libs lua5.2`
+endif
 
 all: libapteryx.so apteryx apteryxd
 
-libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o
+libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o lua.o
 	@echo "Creating library "$@""
 	@$(LD) $(LDFLAGS) -G -o $@ $^ $(EXTRA_LDFLAGS)
 
