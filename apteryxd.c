@@ -361,11 +361,11 @@ apteryx__set (Apteryx__Server_Service *service,
     else
         db_delete (set->path);
 
-    /* Notify watchers */
-    notify_watchers (set->path);
-
     /* Return result */
     closure (&result, closure_data);
+
+    /* Notify watchers */
+    notify_watchers (set->path);
     return;
 }
 
