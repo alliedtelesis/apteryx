@@ -92,9 +92,7 @@ cb_info_find (GList *list, const char *path, uint64_t id)
 static void
 handle_set_response (const Apteryx__OKResult *result, void *closure_data)
 {
-    if (result == NULL)
-        ERROR ("SET: Error processing request.\n");
-    *(protobuf_c_boolean *) closure_data = 1;
+    *(protobuf_c_boolean *) closure_data = (result != NULL);
 }
 
 static void
@@ -220,7 +218,7 @@ notify_watchers (const char *path)
         apteryx__client__watch (rpc_client, &watch, handle_set_response, &is_done);
         if (!is_done)
         {
-            ERROR ("Failed to notify watcher\n");
+            ERROR ("Failed to notify watcher for path \"%s\"\n", (char *)path);
         }
 
         /* Destroy the service */
@@ -570,17 +568,15 @@ apteryx__provide (Apteryx__Server_Service *service,
 }
 
 static void
-_prune (const char *path)
+_search_paths (GList **paths, const char *path)
 {
     GList *children, *iter;
     children = db_search (path);
     for (iter = children; iter; iter = g_list_next (iter))
     {
-        _prune ((const char *) iter->data);
+        _search_paths (paths, (const char *) iter->data);
     }
-    g_list_free_full (children, free);
-    db_delete (path);
-    notify_watchers (path);
+    *paths = g_list_concat (*paths, children);
 }
 
 static void
@@ -589,6 +585,7 @@ apteryx__prune (Apteryx__Server_Service *service,
                 Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    GList *paths = NULL, *iter;
     (void) service;
 
     /* Check parameters */
@@ -603,11 +600,21 @@ apteryx__prune (Apteryx__Server_Service *service,
 
     DEBUG ("PRUNE: %s\n", prune->path);
 
+    /* Collect the list of deleted paths for notification */
+    _search_paths (&paths, prune->path);
+
     /* Prune from database */
-    _prune (prune->path);
+    db_delete (prune->path);
 
     /* Return result */
     closure (&result, closure_data);
+
+    /* Call watchers for each pruned path */
+    for (iter = paths; iter; iter = g_list_next (iter))
+    {
+        notify_watchers ((const char *) iter->data);
+    }
+    g_list_free_full (paths, free);
     return;
 }
 

@@ -64,12 +64,13 @@ apteryx__watch (Apteryx__Client_Service *service,
         vsize = watch->value.len;
     }
 
+    /* Return result */
+    closure (&result, closure_data);
+
     /* Call the callback */
     if (cb)
         cb (watch->path, (void *) (long) watch->priv, value, vsize);
 
-    /* Return result */
-    closure (&result, closure_data);
     return;
 }
 
