@@ -354,8 +354,6 @@ test_search_paths ()
 
     CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
     g_list_free_full (paths, free);
-    CU_ASSERT ((paths = apteryx_search ("/entity")) != NULL);
-    g_list_free_full (paths, free);
     CU_ASSERT ((paths = apteryx_search ("/entity/")) != NULL);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_search ("/nothere/") == NULL);
