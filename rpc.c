@@ -28,6 +28,9 @@
 #include <poll.h>
 #include "internal.h"
 
+#undef DEBUG
+#define DEBUG(fmt, args...)
+
 typedef struct rpc_server_t
 {
     int fd;
@@ -125,6 +128,8 @@ server_connection_response_closure (const ProtobufCMessage *message,
     rpc_connection_t *conn = msg->connection;
     ProtobufCBufferSimple *buffer = &conn->outgoing;
     uint8_t buf[sizeof(uint32_t)+RPC_HEADER_LENGTH] = {0}; //TEMP - stupid status
+
+    DEBUG ("RPC[%d]: Closure\n", conn->fd);
 
     msg->message_length = protobuf_c_message_get_packed_size (message);
     pack_header (msg, &buf[4]);
@@ -577,7 +582,7 @@ invoke_client_service (ProtobufCService *service,
         }
         else if ((get_time_us () - start) > RPC_TIMEOUT_US)
         {
-            DEBUG ("RPC[%d]: read() timeout\n", client->fd);
+            ERROR ("RPC[%d]: read() timeout\n", client->fd);
             goto error;
         }
         else if (rv < 0)
@@ -645,7 +650,7 @@ rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descrip
     struct sockaddr_un addr_un;
     int fd = -1;
 
-    DEBUG ("RPC: New Client (connecting to %s)\n", name);
+    DEBUG ("RPC: New Client (connecting to server %s)\n", name);
     memset (&addr_un, 0, sizeof (addr_un));
     addr_un.sun_family = AF_UNIX;
     strncpy (addr_un.sun_path, name, sizeof (addr_un.sun_path));
@@ -664,6 +669,7 @@ rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descrip
         close (fd);
         return NULL;
     }
+    DEBUG ("RPC[%d]: Connected to Server (%s)\n", fd, name);
 
     client = calloc (1, sizeof (rpc_client_t));
     if (!client)
