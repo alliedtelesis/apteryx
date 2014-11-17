@@ -166,7 +166,7 @@ main (int argc, char **argv)
             return 0;
         }
         apteryx_init (debug);
-        length = param ? strlen (param) : 0;
+        length = param ? strlen (param) + 1 : 0;
         if (!apteryx_set (path, (unsigned char *) param, length))
             printf ("Failed\n");
         apteryx_shutdown ();
