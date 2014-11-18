@@ -601,6 +601,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     DEBUG ("PRUNE: %s\n", prune->path);
 
     /* Collect the list of deleted paths for notification */
+    paths = g_list_append(paths, strdup(prune->path));
     _search_paths (&paths, prune->path);
 
     /* Prune from database */
