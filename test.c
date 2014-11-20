@@ -949,6 +949,47 @@ test_watch_removes_all_watches ()
     _watch_cleanup ();
 }
 
+static bool
+test_watch_count_callback (const char *path, void *priv, const unsigned char *value, size_t len)
+{
+    char *v;
+    CU_ASSERT ((asprintf ((char **) &v, "%d", _cb_count)+1) == len);
+    CU_ASSERT (strcmp ((char*)value, v) == 0);
+    free (v);
+    _cb_count++;
+    return true;
+}
+
+static bool
+test_watch_busy_callback (const char *path, void *priv, const unsigned char *value, size_t len)
+{
+    int i;
+    for (i=0;i<100;i++)
+    {
+        CU_ASSERT (apteryx_set_int ("/interfaces/eth0/packets", NULL, i));
+    }
+    usleep (RPC_TIMEOUT_US);
+    return true;
+}
+
+void
+test_watch_when_busy ()
+{
+    _cb_count = 0;
+    CU_ASSERT (apteryx_set_int ("/interfaces/eth0/packets", NULL, 0));
+    CU_ASSERT (apteryx_watch ("/interfaces/eth0/packets", test_watch_count_callback, (void *) 0x12345678));
+    CU_ASSERT (apteryx_watch ("/busy/watch", test_watch_busy_callback, (void *) 0x12345678));
+    CU_ASSERT (apteryx_set_string ("/busy/watch", NULL, "go"));
+    usleep (2*RPC_TIMEOUT_US);
+    CU_ASSERT (_cb_count == 100);
+    CU_ASSERT (apteryx_get_int ("/interfaces/eth0/packets", NULL) == 99);
+    CU_ASSERT (apteryx_watch ("/interfaces/eth0/packets", NULL, NULL));
+    CU_ASSERT (apteryx_watch ("/busy/watch", NULL, NULL));
+    apteryx_set_string ("/interfaces/eth0/packets", NULL, NULL);
+    apteryx_set_string ("/busy/watch", NULL, NULL);
+    _watch_cleanup ();
+}
+
 static pthread_mutex_t watch_lock;
 static bool
 test_perf_watch_callback (const char *path, void *priv, const unsigned char *value,
@@ -1305,6 +1346,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch and set from another thread", test_watch_set_thread },
     { "watch adds / removes watches", test_watch_adds_watch },
     { "watch removes multiple watches", test_watch_removes_all_watches },
+    { "watch when busy", test_watch_when_busy },
     CU_TEST_INFO_NULL,
 };
 
