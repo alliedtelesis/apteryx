@@ -108,6 +108,8 @@ static inline uint32_t htol32 (uint32_t v)
         running = false; \
     }
 
+/* Internal */
+#define APTERYX_SETTINGS "/apteryx/"
 /* Counters */
 typedef struct _counters_t
 {
@@ -122,6 +124,7 @@ typedef struct _counters_t
     uint64_t watched;
     uint64_t watched_no_match;
     uint64_t watched_no_handler;
+    uint64_t watched_timeout;
     uint64_t provide;
     uint64_t provide_invalid;
     uint64_t provided;
@@ -129,6 +132,7 @@ typedef struct _counters_t
     uint64_t prune;
     uint64_t prune_invalid;
 } counters_t;
+#define INC_COUNTER(c) (void)__sync_fetch_and_add(&c, 1);
 
 /* Database API */
 void db_init (void);
