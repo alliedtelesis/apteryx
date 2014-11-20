@@ -13,6 +13,7 @@ CC:=$(CROSS_COMPILE)gcc
 LD:=$(CROSS_COMPILE)ld
 PKG_CONFIG ?= pkg-config
 PROTOC_C ?= protoc-c
+LUA_PC=$(if $(shell $(PKG_CONFIG) --exists lua5.2), lua5.2, lua)
 
 CFLAGS := $(CFLAGS) -g -O2 -fPIC
 EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fstack-protector-all -Wstack-protector -fno-omit-frame-pointer
@@ -20,8 +21,8 @@ EXTRA_CFLAGS += -I. -I/usr/include/google `$(PKG_CONFIG) --cflags glib-2.0`
 EXTRA_LDFLAGS := `$(PKG_CONFIG) --libs glib-2.0` -lpthread
 EXTRA_LDFLAGS += -lprotobuf-c
 ifneq ($(HAVE_LUA),no)
-EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --cflags lua5.2`
-EXTRA_LDFLAGS += `$(PKG_CONFIG) --libs lua5.2`
+EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --cflags $(LUA_PC)`
+EXTRA_LDFLAGS += `$(PKG_CONFIG) --libs $(LUA_PC)`
 endif
 
 all: libapteryx.so apteryx apteryxd
