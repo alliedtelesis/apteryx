@@ -53,6 +53,13 @@ usage ()
             "  -t   traverse database from <path>\n"
             "  -w   watch changes to the path <path>\n"
             "  -p   provide <value> for <path>\n");
+    printf ("\n");
+    printf ("  Internal settings\n");
+    printf ("    %sdebug\n", APTERYX_SETTINGS);
+    printf ("    %scounters\n", APTERYX_SETTINGS);
+    printf ("    %swatchers\n", APTERYX_SETTINGS);
+    printf ("    %sproviders\n", APTERYX_SETTINGS);
+    printf ("\n");
 }
 
 static bool
@@ -152,7 +159,7 @@ main (int argc, char **argv)
         apteryx_init (debug);
         if (apteryx_get (path, (unsigned char **) &param, &length) && param)
         {
-            printf ("%s = %.*s\n", path, (int) length, param);
+            printf ("%.*s\n", (int) length, param);
             free (param);
         }
         else
