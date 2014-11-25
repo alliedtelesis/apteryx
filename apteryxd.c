@@ -89,6 +89,166 @@ cb_info_find (GList *list, const char *path, uint64_t id)
     return info;
 }
 
+static bool
+handle_debug_get (const char *path, void *priv,
+                    unsigned char **value, size_t *size)
+{
+    if (debug)
+        *value = (unsigned char *) strdup ("1");
+    else
+        *value = (unsigned char *) strdup ("0");
+    *size = strlen ((char *) *value) + 1;
+    return true;
+}
+
+static bool
+handle_debug_set (const char *path, void *priv,
+        const unsigned char *value, size_t len)
+{
+    if (value)
+        debug = atoi ((const char *)value);
+    else
+        debug = false;
+    DEBUG ("DEBUG %s\n", debug ? "enabled" : "disabled");
+    return true;
+}
+
+static bool
+handle_counters_get (const char *path, void *priv,
+                        unsigned char **value, size_t *size)
+{
+    char *buffer = NULL;
+
+    buffer = malloc (4096); /* Currently around 500 bytes */
+    *value = (unsigned char*)buffer;
+
+    buffer += sprintf (buffer, "\n");
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "set", counters.set);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "set_invalid", counters.set_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "get", counters.get);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "get_invalid", counters.get_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "search", counters.search);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "search_invalid", counters.search_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watch", counters.watch);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watch_invalid", counters.watch_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched", counters.watched);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched_no_match", counters.watched_no_match);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched_no_handler", counters.watched_no_handler);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched_timeout", counters.watched_timeout);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provide", counters.provide);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provide_invalid", counters.provide_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provided", counters.provided);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provided_no_handler", counters.provided_no_handler);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "prune", counters.prune);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "prune_invalid", counters.prune_invalid);
+
+    *size = strlen ((char*)(*value)) + 1;
+    return true;
+}
+
+char*
+get_process_name_by_pid (int pid)
+{
+    char* name = (char*)calloc (1024, sizeof (char));
+    if (name)
+    {
+        sprintf (name, "/proc/%d/cmdline",pid);
+        FILE* f = fopen(name,"r");
+        if (f)
+        {
+            size_t size;
+            size = fread (name, sizeof (char), 1024, f);
+            if (size>0)
+            {
+                char *app;
+                if ('\n' == name[size-1])
+                    name[size-1]='\0';
+                app = strrchr (name, '/');
+                if (app)
+                    strncpy (name, app+1, strlen (app+1) + 1);
+            }
+            fclose (f);
+        }
+    }
+    return name;
+}
+
+static bool
+handle_callbacks_get (const char *path, void *priv,
+                        unsigned char **value, size_t *size)
+{
+    GList *list;
+    GList *iter = NULL;
+    char *res = NULL;
+    int len;
+
+    list = priv ? provide_list : watch_list;
+    len = asprintf (&res, "%d\n", g_list_length (list)) + 1;
+    for (iter = list; iter; iter = iter->next)
+    {
+        cb_info_t *info = (cb_info_t *) iter->data;
+        char *new = NULL;
+        char *process = get_process_name_by_pid (info->id);
+        len = asprintf (&new, "%s %-16s 0x%16.16"PRIx64" 0x%16.16"PRIx64" %-48s %"PRIu64"\n",
+                res, process, info->cb, info->priv, info->path, info->count);
+        free (process);
+        free (res);
+        res = new;
+    }
+
+    *value = (unsigned char*)res;
+    *size = len + 1;
+
+    return true;
+}
+
+static void
+setup_internal_settings (void)
+{
+    cb_info_t *info;
+
+    /* Debug Get */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SETTINGS"debug");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_debug_get;
+    info->priv = 0;
+    provide_list = g_list_prepend (provide_list, info);
+    /* Debug set */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SETTINGS"debug");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_debug_set;
+    info->priv = 0;
+    watch_list = g_list_prepend (watch_list, info);
+
+    /* Counters */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SETTINGS"counters");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_counters_get;
+    info->priv = 0;
+    provide_list = g_list_prepend (provide_list, info);
+
+    /* Watchers */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SETTINGS"watchers");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_callbacks_get;
+    info->priv = 0;
+    provide_list = g_list_prepend (provide_list, info);
+
+    /* Providers */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SETTINGS"providers");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_callbacks_get;
+    info->priv = 1;
+    provide_list = g_list_prepend (provide_list, info);
+
+    return;
+}
+
 static void
 handle_set_response (const Apteryx__OKResult *result, void *closure_data)
 {
@@ -158,7 +318,7 @@ notify_watchers (const char *path)
     /* Make sure we have at least one matched watcher */
     if (g_list_length (watchers) == 0)
     {
-        counters.watched_no_match++;
+        INC_COUNTER (counters.watched_no_match);
         return;
     }
 
@@ -204,7 +364,7 @@ notify_watchers (const char *path)
                 cb_info_destroy ((gpointer) watcher);
             }
             pthread_mutex_unlock (&list_lock);
-            counters.watched_no_handler++;
+            INC_COUNTER (counters.watched_no_handler);
             continue;
         }
 
@@ -218,12 +378,13 @@ notify_watchers (const char *path)
         apteryx__client__watch (rpc_client, &watch, handle_set_response, &is_done);
         if (!is_done)
         {
+            INC_COUNTER (counters.watched_timeout);
             ERROR ("Failed to notify watcher for path \"%s\"\n", (char *)path);
         }
 
         /* Destroy the service */
         protobuf_c_service_destroy (rpc_client);
-        counters.watched++;
+        INC_COUNTER (counters.watched);
     }
     g_list_free_full (watchers, cb_info_destroy);
 
@@ -272,8 +433,8 @@ provide_get (const char *path, unsigned char **value, size_t *vsize)
             char service_name[64];
 
             /* Counters */
-            counters.provided++;
-            provider->count++;
+            INC_COUNTER (counters.provided);
+            INC_COUNTER (provider->count);
 
             /* Start clear */
             if (_get_value)
@@ -302,7 +463,7 @@ provide_get (const char *path, unsigned char **value, size_t *vsize)
                        provider->path, provider->id, provider->cb, provider->priv);
                 provide_list = g_list_remove (provide_list, provider);
                 cb_info_destroy ((gpointer) provider);
-                counters.provided_no_handler++;
+                INC_COUNTER (counters.provided_no_handler);
                 continue;
             }
 
@@ -346,10 +507,10 @@ apteryx__set (Apteryx__Server_Service *service,
     {
         ERROR ("SET: Invalid parameters.\n");
         closure (NULL, closure_data);
-        counters.set_invalid++;
+        INC_COUNTER (counters.set_invalid);
         return;
     }
-    counters.set++;
+    INC_COUNTER (counters.set);
 
     DEBUG ("SET: %s = %s\n", set->path, bytes_to_string (set->value.data, set->value.len));
 
@@ -381,10 +542,10 @@ apteryx__get (Apteryx__Server_Service *service,
     {
         ERROR ("GET: Invalid parameters.\n");
         closure (NULL, closure_data);
-        counters.get_invalid++;
+        INC_COUNTER (counters.get_invalid);
         return;
     }
-    counters.get++;
+    INC_COUNTER (counters.get);
 
     DEBUG ("GET: %s\n", get->path);
 
@@ -425,10 +586,10 @@ apteryx__search (Apteryx__Server_Service *service,
     {
         ERROR ("SEARCH: Invalid parameters.\n");
         closure (NULL, closure_data);
-        counters.search_invalid++;
+        INC_COUNTER (counters.search_invalid);
         return;
     }
-    counters.search++;
+    INC_COUNTER (counters.search);
 
     DEBUG ("SEARCH: %s\n", search->path);
 
@@ -466,10 +627,10 @@ apteryx__watch (Apteryx__Server_Service *service,
     {
         ERROR ("WATCH: Invalid parameters.\n");
         closure (NULL, closure_data);
-        counters.watch_invalid++;
+        INC_COUNTER (counters.watch_invalid);
         return;
     }
-    counters.watch++;
+    INC_COUNTER (counters.watch);
 
     DEBUG ("WATCH %s (0x%"PRIx64",0x%"PRIx64")\n", watch->path, watch->id, watch->cb);
 
@@ -523,10 +684,10 @@ apteryx__provide (Apteryx__Server_Service *service,
     {
         ERROR ("PROVIDE: Invalid parameters.\n");
         closure (NULL, closure_data);
-        counters.provide_invalid++;
+        INC_COUNTER (counters.provide_invalid);
         return;
     }
-    counters.provide++;
+    INC_COUNTER (counters.provide);
 
     DEBUG ("PROVIDE %s (0x%"PRIx64",0x%"PRIx64")\n", provide->path, provide->id, provide->cb);
 
@@ -593,10 +754,10 @@ apteryx__prune (Apteryx__Server_Service *service,
     {
         ERROR ("PRUNE: Invalid parameters.\n");
         closure (NULL, closure_data);
-        counters.prune_invalid++;
+        INC_COUNTER (counters.prune_invalid);
         return;
     }
-    counters.prune++;
+    INC_COUNTER (counters.prune);
 
     DEBUG ("PRUNE: %s\n", prune->path);
 
@@ -694,6 +855,8 @@ main (int argc, char **argv)
 
     /* Initialise the database */
     db_init ();
+    /* Internal paths/values */
+    setup_internal_settings ();
 
     /* Create a lock for the shared lists */
     pthread_mutex_init (&list_lock, NULL);
