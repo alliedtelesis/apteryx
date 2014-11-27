@@ -95,10 +95,15 @@ bool apteryx_prune (const char *path);
  * Print a path and all reachable children
  * @param path path to print
  * @param fd open file descriptor to print to
- * @return true on successful removal
- * @return false if the removal fails
  */
 bool apteryx_dump (const char *path, FILE *fp);
+
+/**
+ * Print a path and all reachable children in JSON format
+ * @param path path to print
+ * @param fd open file descriptor to print to
+ */
+bool apteryx_json (const char *path, FILE *fp);
 
 /**
  * Set a path/value in Apteryx

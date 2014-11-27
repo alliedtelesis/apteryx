@@ -51,6 +51,7 @@ usage ()
             "  -g   get <path>\n"
             "  -f   find <path>\n"
             "  -t   traverse database from <path>\n"
+            "  -j   traverse database from <path>, display in JSON format\n"
             "  -w   watch changes to the path <path>\n"
             "  -p   provide <value> for <path>\n");
     printf ("\n");
@@ -102,7 +103,7 @@ main (int argc, char **argv)
     signal (SIGINT, (__sighandler_t) termination_handler);
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftwp")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftwpj")) != -1)
     {
         switch (c)
         {
@@ -126,6 +127,9 @@ main (int argc, char **argv)
             break;
         case 'p':
             mode = MODE_PROVIDE;
+            break;
+        case 'j':
+            mode = MODE_JSON;
             break;
         case '?':
         case 'h':
@@ -205,6 +209,21 @@ main (int argc, char **argv)
         apteryx_dump (path, stdout);
         apteryx_shutdown ();
         break;
+    case MODE_JSON:
+        if (param)
+        {
+            usage ();
+            return 0;
+        }
+        if (!path)
+        {
+            path = "/";
+        }
+        apteryx_init (debug);
+        apteryx_json (path, stdout);
+        apteryx_shutdown ();
+        break;
+
     case MODE_WATCH:
         if (param)
         {

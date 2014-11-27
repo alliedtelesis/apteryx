@@ -303,6 +303,66 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
+apteryx_json (const char *path, FILE *fp)
+{
+    GList *children, *iter;
+    unsigned char *value = NULL;
+    size_t size;
+    char *key = NULL;
+
+    DEBUG ("JSON: %s\n", path);
+
+    /* Check initialised */
+    if (ref_count <= 0)
+    {
+        ERROR ("JSON: not initialised!\n");
+        assert(ref_count > 0);
+        return false;
+    }
+
+    key = strdup(path);
+//    fprintf(fp,"key duped: %s\n", key);
+    if (key[strlen(key)-1] == '/')
+        key[strlen(key)-1] = '\0';
+    if (strrchr(key, '/'))
+        key = strrchr(key, '/') + 1;
+
+  //  fprintf(fp,"new key: %s\n", key);
+    if (strcmp(key, "") == 0)
+        fprintf(fp, "{\n");
+    else
+        fprintf(fp, "\"%s\": {\n", key);
+//    free(key);
+    if (apteryx_get (path, &value, &size) && value)
+    {
+        fprintf (fp, "\"value\": \"%.*s\"\n", (int) size, value);
+        free (value);
+    }
+
+    children = apteryx_search (path);
+    if (children)
+    fprintf(fp, "%s\"children\": {\n", size?",":"");
+    for (iter = children; iter; iter = g_list_next (iter))
+    {
+        char *_path = NULL;
+        int len = asprintf (&_path, "%s/", (const char *) iter->data);
+        if (len)
+        {
+            apteryx_json ((const char *) _path, fp);
+            free (_path);
+        }
+        if (g_list_next (iter))
+           fprintf(fp, ",\n");
+    }
+    if (children)
+       fprintf(fp, "}\n");
+    g_list_free_full (children, free);
+    fprintf(fp, "}\n");
+    return true;
+
+}
+
+bool
 apteryx_set (const char *path, unsigned char *value, size_t size)
 {
     ProtobufCService *rpc_client;

@@ -42,6 +42,7 @@ typedef enum
     MODE_GET,
     MODE_FIND,
     MODE_TRAVERSE,
+    MODE_JSON,
     MODE_WATCH,
     MODE_PROVIDE,
     MODE_PRUNE,
