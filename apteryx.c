@@ -39,7 +39,7 @@ static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect ref_count */
 static int stopfd = -1;                 /* Used to stop the RPC server service */
 static pthread_t client_thread = -1;    /* Thread data */
-static bool thread_running = false;
+static volatile bool thread_running = false;
 
 /* Callback for watched items */
 static void
@@ -137,18 +137,29 @@ listen_thread_handler (void *data)
     return 0;
 }
 
-static void
+static bool
 start_client_thread (void)
 {
+    int count = 5 * 1000;
+
     pthread_mutex_lock (&lock);
     if (!thread_running)
     {
         /* Start the thread */
         pthread_create (&client_thread, NULL, (void *) &listen_thread_handler,
                         (void *) NULL);
-        usleep (1000);
+
+        /* Wait for the thread to start */
+        while (count-- && !thread_running)
+            usleep (1000);
+        if (client_thread == -1)
+        {
+            ERROR ("Failed to create Apteryx client listen thread\n");
+            return false;
+        }
     }
     pthread_mutex_unlock (&lock);
+    return true;
 }
 
 static void
@@ -631,7 +642,7 @@ apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
 
     /* Start the listen thread if required */
     if (cb)
-        start_client_thread ();
+        return start_client_thread ();
 
     /* Success */
     return true;
@@ -675,7 +686,7 @@ apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv)
 
     /* Start the listen thread if required */
     if (cb)
-        start_client_thread ();
+        return start_client_thread ();
 
     /* Success */
     return true;
