@@ -520,6 +520,13 @@ apteryx__set (Apteryx__Server_Service *service,
     else
         db_delete (set->path);
 
+#ifdef USE_SHM_CACHE
+    if (set->value.len)
+        cache_set (set->path, set->value.data, set->value.len);
+    else
+        cache_set (set->path, NULL, 0);
+#endif
+
     /* Return result */
     closure (&result, closure_data);
 
@@ -774,6 +781,9 @@ apteryx__prune (Apteryx__Server_Service *service,
     /* Call watchers for each pruned path */
     for (iter = paths; iter; iter = g_list_next (iter))
     {
+#ifdef USE_SHM_CACHE
+        cache_set ((const char *) iter->data, NULL, 0);
+#endif
         notify_watchers ((const char *) iter->data);
     }
     g_list_free_full (paths, free);
@@ -858,6 +868,11 @@ main (int argc, char **argv)
     /* Internal paths/values */
     setup_internal_settings ();
 
+#ifdef USE_SHM_CACHE
+    /* Init cache */
+    cache_init ();
+#endif
+
     /* Create a lock for the shared lists */
     pthread_mutex_init (&list_lock, NULL);
 
@@ -885,6 +900,11 @@ exit:
     /* Cleanup watchers and providers */
     g_list_free_full (watch_list, cb_info_destroy);
     g_list_free_full (provide_list, cb_info_destroy);
+
+#ifdef USE_SHM_CACHE
+    /* Shut cache */
+    cache_shutdown (true);
+#endif
 
     /* Clean up the database */
     db_shutdown ();

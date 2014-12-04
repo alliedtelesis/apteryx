@@ -202,6 +202,12 @@ apteryx_init (bool debug_enabled)
     debug |= debug_enabled;
     pthread_mutex_unlock (&lock);
 
+#ifdef USE_SHM_CACHE
+    /* Init cache */
+    if (ref_count == 1)
+        cache_init ();
+#endif
+
     /* Ready to go */
     if (ref_count > 1)
         DEBUG ("Init: Initialised\n");
@@ -229,6 +235,11 @@ apteryx_shutdown (void)
         DEBUG ("Shutdown: More users (refcount=%d)\n", ref_count);
         return true;
     }
+
+#ifdef USE_SHM_CACHE
+    /* Shut cache */
+    cache_shutdown (false);
+#endif
 
     /* Shutdown */
     DEBUG ("Shutdown: Shutting down\n");
@@ -441,6 +452,14 @@ apteryx_get (const char *path, unsigned char **value, size_t *size)
     /* Start blank */
     *value = NULL;
     *size = 0;
+
+#ifdef USE_SHM_CACHE
+    if (cache_get (path, value, size))
+    {
+        DEBUG ("    = (c)%s\n", bytes_to_string (*value, *size));
+        return (*value != NULL);
+    }
+#endif
 
     /* IPC */
     rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);

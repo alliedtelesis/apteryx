@@ -147,4 +147,11 @@ GList *db_search (const char *path);
 bool rpc_provide_service (const char *name, ProtobufCService *service, int num_threads, int stopfd);
 ProtobufCService *rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descriptor);
 
+/* SHM cache */
+#define APTERYX_SHM_KEY    0xda7aba5e
+void cache_init (void);
+void cache_shutdown (bool force);
+bool cache_set (const char *path, unsigned char *value, size_t size);
+bool cache_get (const char *path, unsigned char **value, size_t *size);
+
 #endif /* _INTERNAL_H_ */
