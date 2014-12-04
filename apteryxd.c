@@ -556,11 +556,11 @@ apteryx__set (Apteryx__Server_Service *service,
         cache_set (set->path, NULL, 0);
 #endif
 
-    /* Return result */
-    closure (&result, closure_data);
-
     /* Notify watchers */
     notify_watchers (set->path);
+
+    /* Return result */
+    closure (&result, closure_data);
     return;
 }
 
