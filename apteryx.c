@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <poll.h>
+#include <semaphore.h>
 #include <errno.h>
 #include "internal.h"
 #include "apteryx.pb-c.h"
@@ -36,10 +37,49 @@
 /* Configuration */
 bool debug = false;                      /* Debug enabled */
 static int ref_count = 0;               /* Library reference count */
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect ref_count */
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
 static int stopfd = -1;                 /* Used to stop the RPC server service */
-static pthread_t client_thread = -1;    /* Thread data */
-static volatile bool thread_running = false;
+static pthread_t client_id = -1;        /* Thread to process Apteryx events */
+static pthread_t worker_id = -1;        /* Worker to handle watch callbacks */
+static GList *pending_watches = NULL;   /* List of watches to process */
+static sem_t wake_worker;               /* How we wake up the watch callback handler */
+static volatile bool client_running = false;
+static volatile bool worker_running = false;
+
+/* Callback */
+typedef struct _cb_info_t
+{
+    apteryx_watch_callback cb;
+    const char *path;
+    void *priv;
+    unsigned char *value;
+    size_t size;
+} cb_info_t;
+
+static void
+cb_info_destroy (gpointer data)
+{
+    cb_info_t *info = (cb_info_t*)data;
+    free ((void *) info->path);
+    free ((void *) info->value);
+    free (info);
+}
+
+static gpointer
+cb_info_create (const Apteryx__Watch *watch)
+{
+    cb_info_t *info = calloc (1, sizeof (cb_info_t));
+    info->cb = (apteryx_watch_callback) (long) watch->cb;
+    info->path = strdup (watch->path);
+    info->priv = (void *) (long) watch->priv;
+    if (watch->value.len)
+    {
+        info->size = watch->value.len;
+        info->value = malloc (info->size);
+        memcpy (info->value, watch->value.data, info->size);
+    }
+    return (gpointer)info;
+}
 
 /* Callback for watched items */
 static void
@@ -48,29 +88,20 @@ apteryx__watch (Apteryx__Client_Service *service,
                 Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
-    apteryx_watch_callback cb = (apteryx_watch_callback) (long) watch->cb;
-    unsigned char *value = NULL;
-    size_t vsize = 0;
     (void) service;
 
     DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
            watch->path, bytes_to_string (watch->value.data, watch->value.len),
            watch->id, watch->cb, watch->priv);
 
-    /* Check for empty value string */
-    if (watch->value.len)
-    {
-        value = watch->value.data;
-        vsize = watch->value.len;
-    }
+    /* Queue the callback for processing */
+    pthread_mutex_lock (&lock);
+    pending_watches = g_list_append (pending_watches, cb_info_create (watch));
+    sem_post (&wake_worker);
+    pthread_mutex_unlock (&lock);
 
     /* Return result */
     closure (&result, closure_data);
-
-    /* Call the callback */
-    if (cb)
-        cb (watch->path, (void *) (long) watch->priv, value, vsize);
-
     return;
 }
 
@@ -103,7 +134,44 @@ apteryx__provide (Apteryx__Client_Service *service,
 }
 
 static int
-listen_thread_handler (void *data)
+worker_thread (void *data)
+{
+    GList *pending, *iter;
+
+    /* Process callbacks while the client thread is running */
+    DEBUG ("Worker Thread: started...\n");
+    worker_running = true;
+    while (worker_running)
+    {
+        /* Wait for some work */
+        sem_wait (&wake_worker);
+        if (!worker_running)
+            break;
+
+        /* Dequeue the work */
+        pthread_mutex_lock (&lock);
+        pending = pending_watches;
+        pending_watches = NULL;
+        pthread_mutex_unlock (&lock);
+
+        /* Process each callback */
+        for (iter = pending; iter; iter = g_list_next (iter))
+        {
+            cb_info_t *info = (cb_info_t *) iter->data;
+            if (info->cb)
+                info->cb (info->path, info->priv, info->value, info->size);
+        }
+        g_list_free_full (pending, cb_info_destroy);
+    }
+    DEBUG ("Worker Thread: Exiting\n");
+    sem_destroy(&wake_worker);
+    worker_id = -1;
+    worker_running = false;
+    return 0;
+}
+
+static int
+client_thread (void *data)
 {
     Apteryx__Client_Service service = APTERYX__CLIENT__INIT (apteryx__);
     char service_name[64];
@@ -117,10 +185,9 @@ listen_thread_handler (void *data)
     }
     stopfd = pipefd[1];
 
+    /* Create service and process requests */
     DEBUG ("Watch/Provide Thread: started...\n");
-    thread_running = true;
-
-    /* Create server and process requests - 4 threads */
+    client_running = true;
     sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", (uint64_t)getpid ());
     if (!rpc_provide_service (service_name, (ProtobufCService *)&service, 0, pipefd[0]))
     {
@@ -132,57 +199,101 @@ listen_thread_handler (void *data)
     close (pipefd[0]);
     close (pipefd[1]);
     stopfd = -1;
-    thread_running = false;
-    client_thread = -1;
+    client_id = -1;
+    client_running = false;
     return 0;
 }
 
-static bool
-start_client_thread (void)
+static void
+stop_client_threads (void)
 {
-    int count = 5 * 1000;
+    uint8_t dummy = 1;
+    int i;
 
+    /* Not from a callback please */
+    if (pthread_self () == worker_id)
+        return;
+
+    /* Stop the client thread */
     pthread_mutex_lock (&lock);
-    if (!thread_running)
+    if (client_running && client_id != -1)
     {
-        /* Start the thread */
-        pthread_create (&client_thread, NULL, (void *) &listen_thread_handler,
-                        (void *) NULL);
-
-        /* Wait for the thread to start */
-        while (count-- && !thread_running)
+        /* Signal stop and wait */
+        client_running = false;
+        if (write (stopfd, &dummy, 1) != 1)
+            ERROR ("Failed to stop server\n");
+        for (i=0; i < 5000 && client_id != -1; i++)
             usleep (1000);
-        if (client_thread == -1)
+        if (client_id != -1)
         {
-            ERROR ("Failed to create Apteryx client listen thread\n");
+            DEBUG ("Shutdown: Killing Client thread\n");
+            pthread_cancel (client_id);
+            pthread_join (client_id, NULL);
+        }
+    }
+
+    /* Stop the worker thread */
+    if (worker_running && worker_id != -1)
+    {
+        /* Wait for the worker to exit */
+        worker_running = false;
+        sem_post (&wake_worker);
+        for (i=0; i < 5000 && worker_id != -1; i++)
+            usleep (1000);
+        if (worker_id != -1)
+        {
+            DEBUG ("Shutdown: Killing worker thread\n");
+            pthread_cancel (worker_id);
+            pthread_join (worker_id, NULL);
+        }
+        g_list_free_full (pending_watches, cb_info_destroy);
+        pending_watches = NULL;
+    }
+
+    /* Done */
+    worker_running = false;
+    client_running = false;
+    pthread_mutex_unlock (&lock);
+    return;
+}
+
+static bool
+start_client_threads (void)
+{
+    int i;
+
+    /* Create threads if not already running */
+    pthread_mutex_lock (&lock);
+    if (!client_running)
+    {
+        /* Create the worker to process the watch callbacks */
+        sem_init (&wake_worker, 1, 0);
+        pthread_create (&worker_id, NULL,
+                (void *) &worker_thread, (void *) NULL);
+        for (i=0; i < 5000 && !worker_running; i++)
+            usleep (1000);
+        if (!worker_running || worker_id == -1)
+        {
+            ERROR ("Failed to create Apteryx worker thread\n");
+            pthread_mutex_unlock (&lock);
+            return false;
+        }
+
+        /* Create a thread to process Apteryx events */
+        pthread_create (&client_id, NULL,
+                (void *) &client_thread, (void *) NULL);
+        for (i=0; i < 5000 && !client_running; i++)
+            usleep (1000);
+        if (!client_running || client_id == -1)
+        {
+            pthread_mutex_unlock (&lock);
+            stop_client_threads ();
+            ERROR ("Failed to create Apteryx client thread\n");
             return false;
         }
     }
     pthread_mutex_unlock (&lock);
     return true;
-}
-
-static void
-stop_client_thread (void)
-{
-    /* Stop the thread */
-    if (thread_running && client_thread != -1 && client_thread != pthread_self ())
-    {
-        int count = 5 * 1000;
-        uint8_t dummy = 1;
-        /* Signal stop and wait */
-        thread_running = false;
-        if (write (stopfd, &dummy, 1) != 1)
-            ERROR ("Failed to stop server\n");
-        while (count-- && client_thread != -1)
-            usleep (1000);
-        if (client_thread != -1)
-        {
-            DEBUG ("Shutdown: Killing Listen thread\n");
-            pthread_cancel (client_thread);
-            pthread_join (client_thread, NULL);
-        }
-    }
 }
 
 static void
@@ -232,8 +343,7 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("Shutdown: Shutting down\n");
-    stop_client_thread ();
-    thread_running = false;
+    stop_client_threads ();
     DEBUG ("Shutdown: Shutdown\n");
     return true;
 }
@@ -642,7 +752,7 @@ apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
 
     /* Start the listen thread if required */
     if (cb)
-        return start_client_thread ();
+        return start_client_threads ();
 
     /* Success */
     return true;
@@ -686,7 +796,7 @@ apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv)
 
     /* Start the listen thread if required */
     if (cb)
-        return start_client_thread ();
+        return start_client_threads ();
 
     /* Success */
     return true;
