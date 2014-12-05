@@ -39,8 +39,8 @@ bool debug = false;                      /* Debug enabled */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
 static int stopfd = -1;                 /* Used to stop the RPC server service */
-static pthread_t client_id = -1;        /* Thread to process Apteryx events */
-static pthread_t worker_id = -1;        /* Worker to handle watch callbacks */
+static pthread_t client_id = 0;        /* Thread to process Apteryx events */
+static pthread_t worker_id = 0;        /* Worker to handle watch callbacks */
 static GList *pending_watches = NULL;   /* List of watches to process */
 static sem_t wake_worker;               /* How we wake up the watch callback handler */
 static volatile bool client_running = false;
@@ -133,7 +133,7 @@ apteryx__provide (Apteryx__Client_Service *service,
     return;
 }
 
-static int
+static void*
 worker_thread (void *data)
 {
     GList *pending, *iter;
@@ -165,12 +165,12 @@ worker_thread (void *data)
     }
     DEBUG ("Worker Thread: Exiting\n");
     sem_destroy(&wake_worker);
-    worker_id = -1;
+    worker_id = 0;
     worker_running = false;
     return 0;
 }
 
-static int
+static void*
 client_thread (void *data)
 {
     Apteryx__Client_Service service = APTERYX__CLIENT__INIT (apteryx__);
@@ -181,7 +181,7 @@ client_thread (void *data)
     if (pipe (pipefd) != 0)
     {
         ERROR ("Failed to create pipe\n");
-        return -1;
+        return NULL;
     }
     stopfd = pipefd[1];
 
@@ -199,9 +199,9 @@ client_thread (void *data)
     close (pipefd[0]);
     close (pipefd[1]);
     stopfd = -1;
-    client_id = -1;
+    client_id = 0;
     client_running = false;
-    return 0;
+    return NULL;
 }
 
 static void
@@ -216,15 +216,15 @@ stop_client_threads (void)
 
     /* Stop the client thread */
     pthread_mutex_lock (&lock);
-    if (client_running && client_id != -1)
+    if (client_running && client_id != 0)
     {
         /* Signal stop and wait */
         client_running = false;
         if (write (stopfd, &dummy, 1) != 1)
             ERROR ("Failed to stop server\n");
-        for (i=0; i < 5000 && client_id != -1; i++)
+        for (i=0; i < 5000 && client_id != 0; i++)
             usleep (1000);
-        if (client_id != -1)
+        if (client_id != 0)
         {
             DEBUG ("Shutdown: Killing Client thread\n");
             pthread_cancel (client_id);
@@ -233,14 +233,14 @@ stop_client_threads (void)
     }
 
     /* Stop the worker thread */
-    if (worker_running && worker_id != -1)
+    if (worker_running && worker_id != 0)
     {
         /* Wait for the worker to exit */
         worker_running = false;
         sem_post (&wake_worker);
-        for (i=0; i < 5000 && worker_id != -1; i++)
+        for (i=0; i < 5000 && worker_id != 0; i++)
             usleep (1000);
-        if (worker_id != -1)
+        if (worker_id != 0)
         {
             DEBUG ("Shutdown: Killing worker thread\n");
             pthread_cancel (worker_id);
@@ -268,11 +268,10 @@ start_client_threads (void)
     {
         /* Create the worker to process the watch callbacks */
         sem_init (&wake_worker, 1, 0);
-        pthread_create (&worker_id, NULL,
-                (void *) &worker_thread, (void *) NULL);
+        pthread_create (&worker_id, NULL, worker_thread, NULL);
         for (i=0; i < 5000 && !worker_running; i++)
             usleep (1000);
-        if (!worker_running || worker_id == -1)
+        if (!worker_running || worker_id == 0)
         {
             ERROR ("Failed to create Apteryx worker thread\n");
             pthread_mutex_unlock (&lock);
@@ -280,11 +279,10 @@ start_client_threads (void)
         }
 
         /* Create a thread to process Apteryx events */
-        pthread_create (&client_id, NULL,
-                (void *) &client_thread, (void *) NULL);
+        pthread_create (&client_id, NULL, client_thread, NULL);
         for (i=0; i < 5000 && !client_running; i++)
             usleep (1000);
-        if (!client_running || client_id == -1)
+        if (!client_running || client_id == 0)
         {
             pthread_mutex_unlock (&lock);
             stop_client_threads ();
