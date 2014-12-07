@@ -167,7 +167,7 @@ worker_thread (void *data)
     sem_destroy(&wake_worker);
     worker_id = 0;
     worker_running = false;
-    return 0;
+    return NULL;
 }
 
 static void*
