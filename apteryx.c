@@ -96,8 +96,9 @@ apteryx__watch (Apteryx__Client_Service *service,
 
     /* Queue the callback for processing */
     pthread_mutex_lock (&lock);
+    if (pending_watches == NULL)
+        sem_post (&wake_worker);
     pending_watches = g_list_append (pending_watches, cb_info_create (watch));
-    sem_post (&wake_worker);
     pthread_mutex_unlock (&lock);
 
     /* Return result */
