@@ -27,13 +27,15 @@
 #define MAX_VALUE               128
 #define NUM_BUCKETS             1024
 
-typedef struct hash_entry_t {
+typedef struct hash_entry_t
+{
     uint8_t path[MAX_PATH];
     uint8_t value[MAX_VALUE];
     uint32_t length;
 } hash_entry_t;
 
-typedef struct cache_t {
+typedef struct cache_t
+{
     pthread_rwlock_t rwlock;
     sem_t ref;
     int shmid;
@@ -143,11 +145,11 @@ cache_set (const char *path, unsigned char *value, size_t size)
     entry = &cache->table[g_str_hash (path) % NUM_BUCKETS];
     if (value)
     {
-        strcpy ((char*)entry->path, path);
+        strcpy ((char *) entry->path, path);
         entry->length = size;
         memcpy (entry->value, value, size);
     }
-    else if (strcmp (path, (char*)entry->path) == 0)
+    else if (strcmp (path, (char *) entry->path) == 0)
     {
         entry->path[0] = 0;
     }
@@ -167,7 +169,7 @@ cache_get (const char *path, unsigned char **value, size_t *size)
 
     pthread_rwlock_rdlock (&cache->rwlock);
     entry = &cache->table[g_str_hash (path) % NUM_BUCKETS];
-    if (strcmp (path, (char*)entry->path) == 0)
+    if (strcmp (path, (char *) entry->path) == 0)
     {
         *size = entry->length;
         *value = malloc (entry->length);
@@ -186,25 +188,25 @@ cache_get (const char *path, unsigned char **value, size_t *size)
 char *
 cache_dump_table (void)
 {
-    int  length = (NUM_BUCKETS * (2*MAX_PATH + 2*MAX_VALUE + 12)) + 64;
+    int length = (NUM_BUCKETS * (2 * MAX_PATH + 2 * MAX_VALUE + 12)) + 64;
     char *buffer = malloc (length);
     char *pt = buffer;
     int count = 0;
     int i;
 
     pthread_rwlock_rdlock (&cache->rwlock);
-    for (i=0; i<NUM_BUCKETS; i++)
+    for (i = 0; i < NUM_BUCKETS; i++)
     {
         if (cache->table[i].path[0] != 0)
         {
             count++;
             pt += sprintf (pt, "[%04d] %s = %s\n",
-               i, cache->table[i].path,
-               bytes_to_string (cache->table[i].value, cache->table[i].length));
+                           i, cache->table[i].path,
+                           bytes_to_string (cache->table[i].value, cache->table[i].length));
         }
     }
-    sprintf (pt, "%d/%d buckets, %"PRIu64" hits, %"PRIu64" misses\n",
-            count, NUM_BUCKETS, cache->hit, cache->miss);
+    sprintf (pt, "%d/%d buckets, %" PRIu64 " hits, %" PRIu64 " misses\n",
+             count, NUM_BUCKETS, cache->hit, cache->miss);
     pthread_rwlock_unlock (&cache->rwlock);
     return buffer;
 }
