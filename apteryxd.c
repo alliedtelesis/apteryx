@@ -595,6 +595,12 @@ apteryx__get (Apteryx__Server_Service *service,
             DEBUG ("GET: not in database or provided\n");
         }
     }
+#ifdef USE_SHM_CACHE
+    else
+    {
+        cache_set (get->path, value, vsize);
+    }
+#endif
 
     /* Send result */
     DEBUG ("     = %s\n", bytes_to_string (value, vsize));

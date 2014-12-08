@@ -25,7 +25,7 @@
 #include <sys/shm.h>
 #define MAX_PATH                256
 #define MAX_VALUE               128
-#define NUM_BUCKETS             512
+#define NUM_BUCKETS             1024
 
 typedef struct hash_entry_t {
     uint8_t path[MAX_PATH];
@@ -38,6 +38,8 @@ typedef struct cache_t {
     sem_t ref;
     int shmid;
     int length;
+    uint64_t hit;
+    uint64_t miss;
     hash_entry_t table[0];
 } cache_t;
 static cache_t *cache = NULL;
@@ -171,6 +173,11 @@ cache_get (const char *path, unsigned char **value, size_t *size)
         *value = malloc (entry->length);
         memcpy (*value, entry->value, entry->length);
         result = true;
+        INC_COUNTER (cache->hit);
+    }
+    else
+    {
+        INC_COUNTER (cache->miss);
     }
     pthread_rwlock_unlock (&cache->rwlock);
     return result;
@@ -179,7 +186,7 @@ cache_get (const char *path, unsigned char **value, size_t *size)
 char *
 cache_dump_table (void)
 {
-    int  length = (NUM_BUCKETS * (2*MAX_PATH + 2*MAX_VALUE + 12)) + 20;
+    int  length = (NUM_BUCKETS * (2*MAX_PATH + 2*MAX_VALUE + 12)) + 64;
     char *buffer = malloc (length);
     char *pt = buffer;
     int count = 0;
@@ -196,8 +203,9 @@ cache_dump_table (void)
                bytes_to_string (cache->table[i].value, cache->table[i].length));
         }
     }
+    sprintf (pt, "%d/%d buckets, %"PRIu64" hits, %"PRIu64" misses\n",
+            count, NUM_BUCKETS, cache->hit, cache->miss);
     pthread_rwlock_unlock (&cache->rwlock);
-    sprintf (pt, "%d/%d buckets\n", count, NUM_BUCKETS);
     return buffer;
 }
 #endif /* USE_SHM_CACHE */
