@@ -58,19 +58,26 @@ get_time_us (void)
     return (tv.tv_sec * (uint64_t) 1000000 + tv.tv_usec);
 }
 
-char _bytes_to_string[1024];
+#define MAX_BYTES_TO_STRING_LENGTH 1024
+char _bytes_to_string[MAX_BYTES_TO_STRING_LENGTH];
 static inline char *
 bytes_to_string (unsigned char *buffer, size_t length)
 {
     char *pt = _bytes_to_string;
     int i;
+    int max = MAX_BYTES_TO_STRING_LENGTH;
+
     _bytes_to_string[0] = '\0';
-    for (i = 0; i < length; i++, buffer++)
+    max--;
+    for (i = 0; i < length && max > 0; i++, buffer++)
     {
+        int len;
         if (isprint (*buffer))
-            pt += sprintf (pt, "%c", *((char *) buffer));
+            len = snprintf (pt, max, "%c", *((char *) buffer));
         else
-            pt += sprintf (pt, "\\%02x", *buffer);
+            len = snprintf (pt, max, "\\%02x", *buffer);
+        max -= len;
+        pt += len;
     }
     return _bytes_to_string;
 }
@@ -153,5 +160,6 @@ void cache_init (void);
 void cache_shutdown (bool force);
 bool cache_set (const char *path, unsigned char *value, size_t size);
 bool cache_get (const char *path, unsigned char **value, size_t *size);
+char* cache_dump_table (void);
 
 #endif /* _INTERNAL_H_ */

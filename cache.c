@@ -23,9 +23,9 @@
 #include <string.h>
 #include <semaphore.h>
 #include <sys/shm.h>
-#define MAX_PATH                128
+#define MAX_PATH                256
 #define MAX_VALUE               128
-#define NUM_BUCKETS             256
+#define NUM_BUCKETS             512
 
 typedef struct hash_entry_t {
     uint8_t path[MAX_PATH];
@@ -174,5 +174,30 @@ cache_get (const char *path, unsigned char **value, size_t *size)
     }
     pthread_rwlock_unlock (&cache->rwlock);
     return result;
+}
+
+char *
+cache_dump_table (void)
+{
+    int  length = (NUM_BUCKETS * (2*MAX_PATH + 2*MAX_VALUE + 12)) + 20;
+    char *buffer = malloc (length);
+    char *pt = buffer;
+    int count = 0;
+    int i;
+
+    pthread_rwlock_rdlock (&cache->rwlock);
+    for (i=0; i<NUM_BUCKETS; i++)
+    {
+        if (cache->table[i].path[0] != 0)
+        {
+            count++;
+            pt += sprintf (pt, "[%04d] %s = %s\n",
+               i, cache->table[i].path,
+               bytes_to_string (cache->table[i].value, cache->table[i].length));
+        }
+    }
+    pthread_rwlock_unlock (&cache->rwlock);
+    sprintf (pt, "%d/%d buckets\n", count, NUM_BUCKETS);
+    return buffer;
 }
 #endif /* USE_SHM_CACHE */

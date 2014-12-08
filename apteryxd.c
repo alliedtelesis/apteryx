@@ -202,6 +202,25 @@ handle_callbacks_get (const char *path, void *priv,
     return true;
 }
 
+#ifdef USE_SHM_CACHE
+static bool
+handle_cache_get (const char *path, void *priv,
+                        unsigned char **value, size_t *size)
+{
+    char *buffer = NULL;
+    int len = 0;
+
+    buffer = cache_dump_table ();
+    if (buffer)
+    {
+        len = strlen (buffer) + 1;
+    }
+    *value = (unsigned char*)buffer;
+    *size = len;
+    return (buffer != NULL);
+}
+#endif
+
 static void
 setup_internal_settings (void)
 {
@@ -245,6 +264,16 @@ setup_internal_settings (void)
     info->cb = (uint64_t) (size_t) handle_callbacks_get;
     info->priv = 1;
     provide_list = g_list_prepend (provide_list, info);
+
+#ifdef USE_SHM_CACHE
+    /* Cache */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SETTINGS"cache");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_cache_get;
+    info->priv = 0;
+    provide_list = g_list_prepend (provide_list, info);
+#endif
 
     return;
 }
