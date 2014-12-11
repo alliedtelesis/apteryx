@@ -50,6 +50,7 @@ void
 cache_init (void)
 {
     int already_init = 0;
+    pthread_rwlockattr_t attr;
     int length;
     int shmid;
 
@@ -92,8 +93,11 @@ cache_init (void)
     /* Initialise the cache */
     cache->shmid = 0;
     cache->length = length;
-    pthread_rwlock_init (&cache->rwlock, NULL);
+    pthread_rwlockattr_init (&attr);
+    pthread_rwlockattr_setpshared (&attr, PTHREAD_PROCESS_SHARED);
+    pthread_rwlock_init (&cache->rwlock, &attr);
     pthread_rwlock_wrlock (&cache->rwlock);
+    pthread_rwlockattr_destroy (&attr);
     sem_init (&cache->ref, 1, 1);
     memset (cache->table, 0, NUM_BUCKETS * sizeof (hash_entry_t));
     cache->shmid = shmid;
