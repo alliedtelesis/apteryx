@@ -814,13 +814,17 @@ apteryx__prune (Apteryx__Server_Service *service,
     closure (&result, closure_data);
 
     /* Call watchers for each pruned path */
+#ifdef USE_SHM_CACHE
     for (iter = paths; iter; iter = g_list_next (iter))
     {
-#ifdef USE_SHM_CACHE
         cache_set ((const char *) iter->data, NULL, 0);
+    }
 #endif
+    for (iter = paths; iter; iter = g_list_next (iter))
+    {
         notify_watchers ((const char *) iter->data);
     }
+
     g_list_free_full (paths, free);
     return;
 }
