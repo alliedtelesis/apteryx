@@ -1156,7 +1156,9 @@ test_provide_different_process ()
     {
         apteryx_init (debug);
         CU_ASSERT (apteryx_provide (path, test_provide_callback_up, (void *) 0x12345678));
-        while (1);
+        usleep (100000);
+        apteryx_provide (path, NULL, NULL);
+        exit (0);
     }
     else if (pid > 0)
     {
@@ -1166,7 +1168,6 @@ test_provide_different_process ()
         CU_ASSERT (value && strcmp (value, "up") == 0);
         if (value)
             free ((void *) value);
-        kill (pid, 15);
         waitpid (pid, &status, 0);
         CU_ASSERT (WEXITSTATUS (status) == 0);
     }
