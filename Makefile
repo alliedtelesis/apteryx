@@ -26,6 +26,9 @@ endif
 ifneq ($(USE_SHM_CACHE),no)
 EXTRA_CFLAGS += -DUSE_SHM_CACHE
 endif
+ifneq ($(HAVE_JSON),no)
+EXTRA_CFLAGS += -DHAVE_JSON
+endif
 
 all: libapteryx.so apteryx apteryxd
 
@@ -40,7 +43,7 @@ libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o lua.o
 %.pb-c.c : %.proto
 	@$(PROTOC_C) --c_out=. $<
 
-apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o
+apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o json.o
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 

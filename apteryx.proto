@@ -27,7 +27,7 @@ message Search
 
 message SearchResult
 {
-  repeated string paths = 1;
+    repeated string paths = 1;
 };
 
 message Watch
@@ -52,6 +52,17 @@ message Prune
     required string path = 1;
 };
 
+message Json
+{
+    required string path = 1;
+    optional string json = 2;
+};
+
+message JsonResult
+{
+    optional string json = 1;
+};
+
 service server
 {
     rpc set (Set) returns (OKResult);
@@ -60,6 +71,7 @@ service server
     rpc watch (Watch) returns (OKResult);
     rpc provide (Provide) returns (OKResult);
     rpc prune (Prune) returns (OKResult);
+    rpc json (Json) returns (JsonResult);
 }
 
 service client
