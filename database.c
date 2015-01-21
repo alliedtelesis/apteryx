@@ -238,8 +238,15 @@ db_add (const char *path, const unsigned char *value, size_t length)
     }
     pthread_rwlock_wrlock (&db_lock);
     free (new_value->value);
-    new_value->value = malloc (length);
-    memcpy (new_value->value, value, length);
+    if (length == 0)
+    {
+        new_value->value = NULL;
+    }
+    else
+    {
+        new_value->value = malloc (length);
+        memcpy (new_value->value, value, length);
+    }
     new_value->length = length;
     pthread_rwlock_unlock (&db_lock);
     return true;
