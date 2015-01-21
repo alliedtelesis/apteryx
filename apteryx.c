@@ -398,7 +398,6 @@ apteryx_prune (const char *path)
 bool
 apteryx_dump (const char *path, FILE *fp)
 {
-    GList *children, *iter;
     unsigned char *value = NULL;
     size_t size;
 
@@ -412,24 +411,25 @@ apteryx_dump (const char *path, FILE *fp)
         return false;
     }
 
-    if (apteryx_get (path, &value, &size) && value)
+    if (strlen (path) > 0 && apteryx_get (path, &value, &size) && value)
     {
         fprintf (fp, "%-64s%.*s\n", path, (int) size, value);
         free (value);
     }
 
-    children = apteryx_search (path);
-    for (iter = children; iter; iter = g_list_next (iter))
+    char *_path = NULL;
+    int len = asprintf (&_path, "%s/", path);
+    if (len >= 0)
     {
-        char *_path = NULL;
-        int len = asprintf (&_path, "%s/", (const char *) iter->data);
-        if (len)
+        GList *children, *iter;
+        children = apteryx_search (_path);
+        for (iter = children; iter; iter = g_list_next (iter))
         {
-            apteryx_dump ((const char *) _path, fp);
-            free (_path);
+            apteryx_dump ((const char *) iter->data, fp);
         }
+        g_list_free_full (children, free);
+        free (_path);
     }
-    g_list_free_full (children, free);
     return true;
 }
 
@@ -443,7 +443,7 @@ apteryx_set (const char *path, unsigned char *value, size_t size)
     DEBUG ("SET: %s = %s\n", path, bytes_to_string (value, size));
 
     /* Check path */
-    if (path[0] != '/')
+    if (path[0] != '/' || path[strlen(path) - 1] == '/')
     {
         ERROR ("SET: invalid path (%s)!\n", path);
         assert(!debug || path[0] == '/');
@@ -551,7 +551,7 @@ apteryx_get (const char *path, unsigned char **value, size_t *size)
     DEBUG ("GET: %s\n", path);
 
     /* Check path */
-    if (path[0] != '/')
+    if (path[0] != '/' || path[strlen(path)-1] == '/')
     {
         ERROR ("GET: invalid path (%s)!\n", path);
         assert(!debug || path[0] == '/');

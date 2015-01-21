@@ -199,7 +199,7 @@ main (int argc, char **argv)
         }
         if (!path)
         {
-            path = "/";
+            path = "";
         }
         apteryx_init (debug);
         apteryx_dump (path, stdout);
