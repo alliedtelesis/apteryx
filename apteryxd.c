@@ -635,8 +635,27 @@ apteryx__search (Apteryx__Server_Service *service,
 
     DEBUG ("SEARCH: %s\n", search->path);
 
-    /* Lookup search */
+    /* Search database */
     results = db_search (search->path);
+    /* Search providers */
+    for (iter = provide_list; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *provider = iter->data;
+        int len = strlen (search->path);
+        if (strncmp (provider->path, search->path, len) == 0 &&
+            provider->path[len] != '*' &&
+            strncmp (provider->path, APTERYX_SETTINGS, strlen (APTERYX_SETTINGS)) != 0)
+        {
+            char *ptr, *path = strdup (provider->path);
+            if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
+                *ptr = '\0';
+            if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
+                results = g_list_append (results, path);
+            else
+                free (path);
+        }
+    }
+    /* Prepare the results */
     result.n_paths = g_list_length (results);
     if (result.n_paths > 0)
     {
