@@ -120,24 +120,24 @@ static inline uint32_t htol32 (uint32_t v)
 /* Counters */
 typedef struct _counters_t
 {
-    uint64_t set;
-    uint64_t set_invalid;
-    uint64_t get;
-    uint64_t get_invalid;
-    uint64_t search;
-    uint64_t search_invalid;
-    uint64_t watch;
-    uint64_t watch_invalid;
-    uint64_t watched;
-    uint64_t watched_no_match;
-    uint64_t watched_no_handler;
-    uint64_t watched_timeout;
-    uint64_t provide;
-    uint64_t provide_invalid;
-    uint64_t provided;
-    uint64_t provided_no_handler;
-    uint64_t prune;
-    uint64_t prune_invalid;
+    uint32_t set;
+    uint32_t set_invalid;
+    uint32_t get;
+    uint32_t get_invalid;
+    uint32_t search;
+    uint32_t search_invalid;
+    uint32_t watch;
+    uint32_t watch_invalid;
+    uint32_t watched;
+    uint32_t watched_no_match;
+    uint32_t watched_no_handler;
+    uint32_t watched_timeout;
+    uint32_t provide;
+    uint32_t provide_invalid;
+    uint32_t provided;
+    uint32_t provided_no_handler;
+    uint32_t prune;
+    uint32_t prune_invalid;
 } counters_t;
 #define INC_COUNTER(c) (void)__sync_fetch_and_add(&c, 1);
 

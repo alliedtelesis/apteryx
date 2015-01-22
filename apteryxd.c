@@ -51,7 +51,7 @@ typedef struct _cb_info_t
     uint64_t id;
     uint64_t cb;
     uint64_t priv;
-    uint64_t count;
+    uint32_t count;
 } cb_info_t;
 
 /* Free cb info */
@@ -123,24 +123,24 @@ handle_counters_get (const char *path, void *priv,
     *value = (unsigned char*)buffer;
 
     buffer += sprintf (buffer, "\n");
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "set", counters.set);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "set_invalid", counters.set_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "get", counters.get);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "get_invalid", counters.get_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "search", counters.search);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "search_invalid", counters.search_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watch", counters.watch);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watch_invalid", counters.watch_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched", counters.watched);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched_no_match", counters.watched_no_match);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched_no_handler", counters.watched_no_handler);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "watched_timeout", counters.watched_timeout);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provide", counters.provide);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provide_invalid", counters.provide_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provided", counters.provided);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provided_no_handler", counters.provided_no_handler);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "prune", counters.prune);
-    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "prune_invalid", counters.prune_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "set", counters.set);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "set_invalid", counters.set_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get", counters.get);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_invalid", counters.get_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search", counters.search);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search_invalid", counters.search_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watch", counters.watch);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watch_invalid", counters.watch_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched", counters.watched);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_no_match", counters.watched_no_match);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_no_handler", counters.watched_no_handler);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_timeout", counters.watched_timeout);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provide", counters.provide);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provide_invalid", counters.provide_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided", counters.provided);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_no_handler", counters.provided_no_handler);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune", counters.prune);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune_invalid", counters.prune_invalid);
 
     *size = strlen ((char*)(*value)) + 1;
     return true;
@@ -189,7 +189,7 @@ handle_callbacks_get (const char *path, void *priv,
         cb_info_t *info = (cb_info_t *) iter->data;
         char *new = NULL;
         char *process = get_process_name_by_pid (info->id);
-        len = asprintf (&new, "%s %-16s 0x%16.16"PRIx64" 0x%16.16"PRIx64" %-48s %"PRIu64"\n",
+        len = asprintf (&new, "%s %-16s 0x%16.16"PRIx64" 0x%16.16"PRIx64" %-48s %"PRIu32"\n",
                 res, process, info->cb, info->priv, info->path, info->count);
         free (process);
         free (res);
