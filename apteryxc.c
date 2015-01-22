@@ -214,7 +214,7 @@ main (int argc, char **argv)
             printf ("Failed\n");
         else
         {
-            printf ("%s\n", param);
+            printf ("%s", param);
             free (param);
         }
         apteryx_shutdown ();
