@@ -40,8 +40,8 @@ typedef struct cache_t
     sem_t ref;
     int shmid;
     int length;
-    uint64_t hit;
-    uint64_t miss;
+    uint32_t hit;
+    uint32_t miss;
     hash_entry_t table[0];
 } cache_t;
 static cache_t *cache = NULL;
@@ -209,7 +209,7 @@ cache_dump_table (void)
                            bytes_to_string (cache->table[i].value, cache->table[i].length));
         }
     }
-    sprintf (pt, "%d/%d buckets, %" PRIu64 " hits, %" PRIu64 " misses\n",
+    sprintf (pt, "%d/%d buckets, %" PRIu32 " hits, %" PRIu32" misses\n",
              count, NUM_BUCKETS, cache->hit, cache->miss);
     pthread_rwlock_unlock (&cache->rwlock);
     return buffer;
