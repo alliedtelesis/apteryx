@@ -395,42 +395,120 @@ apteryx_prune (const char *path)
     return true;
 }
 
-bool
-apteryx_dump (const char *path, FILE *fp)
+static inline char *
+format_to_string (APTERYX_FORMAT format)
 {
-    unsigned char *value = NULL;
-    size_t size;
-
-    DEBUG ("DUMP: %s\n", path);
-
-    /* Check initialised */
-    if (ref_count <= 0)
+    switch (format)
     {
-        ERROR ("DUMP: not initialised!\n");
-        assert(ref_count > 0);
+    case FORMAT_RAW:
+        return "raw";
+    case FORMAT_JSON:
+        return "json";
+    case FORMAT_XML:
+        return "xml";
+    default:
+        return "unknown";
+    }
+}
+
+bool
+apteryx_import (const char *path, APTERYX_FORMAT format, const char *data)
+{
+    ProtobufCService *rpc_client;
+    Apteryx__Import import = APTERYX__IMPORT__INIT;
+    protobuf_c_boolean is_done = 0;
+
+    DEBUG ("IMPORT(%s): %s = %s\n", format_to_string (format), path, data);
+
+    /* Check path */
+    if (path[0] != '/')
+    {
+        ERROR ("IMPORT: invalid path (%s)!\n", path);
+        assert(!debug || path[0] == '/');
         return false;
     }
 
-    if (strlen (path) > 0 && apteryx_get (path, &value, &size) && value)
+    /* IPC */
+    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    if (!rpc_client)
     {
-        fprintf (fp, "%-64s%.*s\n", path, (int) size, value);
-        free (value);
+        ERROR ("IMPORT: Falied to connect to server: %s\n", strerror (errno));
+        return false;
+    }
+    import.format = format;
+    import.path = (char *) path;
+    import.data = (char *) data;
+    apteryx__server__import (rpc_client, &import, handle_ok_response, &is_done);
+    protobuf_c_service_destroy (rpc_client);
+    if (!is_done)
+    {
+        ERROR ("IMPORT: No response\n");
+        return false;
     }
 
-    char *_path = NULL;
-    int len = asprintf (&_path, "%s/", path);
-    if (len >= 0)
-    {
-        GList *children, *iter;
-        children = apteryx_search (_path);
-        for (iter = children; iter; iter = g_list_next (iter))
-        {
-            apteryx_dump ((const char *) iter->data, fp);
-        }
-        g_list_free_full (children, free);
-        free (_path);
-    }
+    /* Success */
     return true;
+}
+typedef struct _export_data_t
+{
+    char *data;
+    bool done;
+} export_data_t;
+
+static void
+handle_export_response (const Apteryx__ExportResult *result, void *closure_data)
+{
+    export_data_t *data = (export_data_t *)closure_data;
+    if (result == NULL)
+    {
+        ERROR ("EXPORT: Error processing request.\n");
+    }
+    else if (result->data != 0)
+    {
+        data->data = strdup (result->data);
+    }
+    data->done = true;
+}
+
+bool
+apteryx_export (const char *path, APTERYX_FORMAT format, char **data)
+{
+    ProtobufCService *rpc_client;
+    Apteryx__Export export = APTERYX__EXPORT__INIT;
+    export_data_t result = {0};
+
+    DEBUG ("EXPORT(%s): %s\n", format_to_string (format), path);
+
+    /* Check path */
+    if (path[0] != '/')
+    {
+        ERROR ("EXPORT: invalid path (%s)!\n", path);
+        assert(!debug || path[0] == '/');
+        return false;
+    }
+
+    /* IPC */
+    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    if (!rpc_client)
+    {
+        ERROR ("EXPORT: Falied to connect to server: %s\n", strerror (errno));
+        return false;
+    }
+    export.format = format;
+    export.path = (char *) path;
+    apteryx__server__export (rpc_client, &export, handle_export_response, &result);
+    protobuf_c_service_destroy (rpc_client);
+    if (!result.done)
+    {
+        ERROR ("EXPORT: No response\n");
+        return false;
+    }
+
+    /* Result */
+    *data = result.data;
+
+    DEBUG ("    = %s\n", *data);
+    return (*data != NULL);
 }
 
 bool

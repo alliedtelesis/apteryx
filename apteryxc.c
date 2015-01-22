@@ -44,7 +44,7 @@ termination_handler (void)
 void
 usage ()
 {
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-j] [<path>] [<value>]\n"
             "  -h   show this help\n"
             "  -d   debug\n"
             "  -s   set <path>=<value>\n"
@@ -52,7 +52,9 @@ usage ()
             "  -f   find <path>\n"
             "  -t   traverse database from <path>\n"
             "  -w   watch changes to the path <path>\n"
-            "  -p   provide <value> for <path>\n");
+            "  -p   provide <value> for <path>\n"
+            "  -i   import <value> for <path>\n"
+            "  -e   export for <path>\n");
     printf ("\n");
     printf ("  Internal settings\n");
     printf ("    %sdebug\n", APTERYX_SETTINGS);
@@ -102,7 +104,7 @@ main (int argc, char **argv)
     signal (SIGINT, (__sighandler_t) termination_handler);
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftwp")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftwpie")) != -1)
     {
         switch (c)
         {
@@ -126,6 +128,12 @@ main (int argc, char **argv)
             break;
         case 'p':
             mode = MODE_PROVIDE;
+            break;
+        case 'i':
+            mode = MODE_IMPORT;
+            break;
+        case 'e':
+            mode = MODE_EXPORT;
             break;
         case '?':
         case 'h':
@@ -202,7 +210,13 @@ main (int argc, char **argv)
             path = "";
         }
         apteryx_init (debug);
-        apteryx_dump (path, stdout);
+        if (!apteryx_export (path, FORMAT_RAW, (char **)&param) || !param)
+            printf ("Failed\n");
+        else
+        {
+            printf ("%s\n", param);
+            free (param);
+        }
         apteryx_shutdown ();
         break;
     case MODE_WATCH:
@@ -233,6 +247,33 @@ main (int argc, char **argv)
         while (running)
             pause ();
         apteryx_provide (path, NULL, NULL);
+        apteryx_shutdown ();
+        break;
+    case MODE_IMPORT:
+        if (!path)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (debug);
+        if (!apteryx_import (path, FORMAT_JSON, param))
+            printf ("Failed\n");
+        apteryx_shutdown ();
+        break;
+    case MODE_EXPORT:
+        if (!path)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (debug);
+        if (!apteryx_export (path, FORMAT_JSON, &param))
+            printf ("Not found\n");
+        else
+        {
+            printf ("%s\n", param);
+            free (param);
+        }
         apteryx_shutdown ();
         break;
     default:

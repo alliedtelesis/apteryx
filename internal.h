@@ -45,6 +45,8 @@ typedef enum
     MODE_WATCH,
     MODE_PROVIDE,
     MODE_PRUNE,
+    MODE_IMPORT,
+    MODE_EXPORT,
 } APTERYX_MODE;
 
 /* Debug */
@@ -138,6 +140,10 @@ typedef struct _counters_t
     uint64_t provided_no_handler;
     uint64_t prune;
     uint64_t prune_invalid;
+    uint64_t import;
+    uint64_t import_invalid;
+    uint64_t export;
+    uint64_t export_invalid;
 } counters_t;
 #define INC_COUNTER(c) (void)__sync_fetch_and_add(&c, 1);
 
@@ -161,5 +167,8 @@ void cache_shutdown (bool force);
 bool cache_set (const char *path, unsigned char *value, size_t size);
 bool cache_get (const char *path, unsigned char **value, size_t *size);
 char* cache_dump_table (void);
+
+/* Export/Import */
+bool export_raw (const char *path, char **data);
 
 #endif /* _INTERNAL_H_ */

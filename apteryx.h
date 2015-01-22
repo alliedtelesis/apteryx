@@ -91,14 +91,33 @@ bool apteryx_shutdown (void);
  */
 bool apteryx_prune (const char *path);
 
+/* Export/Import Format */
+typedef enum
+{
+    FORMAT_RAW = 0,
+    FORMAT_JSON = 1,
+    FORMAT_XML = 2,
+} APTERYX_FORMAT;
+
 /**
- * Print a path and all reachable children
- * @param path path to print
- * @param fd open file descriptor to print to
- * @return true on successful removal
- * @return false if the removal fails
+ * Import to Apteryx
+ * @param path path to the value to import
+ * @param format format of data to import
+ * @param data pointer to data to import
+ * @return true on success
+ * @return false if the path is invalid
  */
-bool apteryx_dump (const char *path, FILE *fp);
+bool apteryx_import (const char *path, APTERYX_FORMAT format, const char *data);
+
+/**
+ * Export from Apteryx
+ * @param path path to the value to export
+ * @param format format of data to export
+ * @param data pointer to returned data
+ * @return true on success
+ * @return false if the path is invalid
+ */
+bool apteryx_export (const char *path, APTERYX_FORMAT format, char **data);
 
 /**
  * Set a path/value in Apteryx

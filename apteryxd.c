@@ -141,6 +141,10 @@ handle_counters_get (const char *path, void *priv,
     buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "provided_no_handler", counters.provided_no_handler);
     buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "prune", counters.prune);
     buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "prune_invalid", counters.prune_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "import", counters.import);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "import_invalid", counters.import_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "export", counters.export);
+    buffer += sprintf (buffer, "%-24s%"PRIu64"\n", "export_invalid", counters.export_invalid);
 
     *size = strlen ((char*)(*value)) + 1;
     return true;
@@ -826,6 +830,96 @@ apteryx__prune (Apteryx__Server_Service *service,
     }
 
     g_list_free_full (paths, free);
+    return;
+}
+
+static inline char *
+format_to_string (APTERYX_FORMAT format)
+{
+    switch (format)
+    {
+    case FORMAT_RAW:
+        return "raw";
+    case FORMAT_JSON:
+        return "json";
+    case FORMAT_XML:
+        return "xml";
+    default:
+        return "unknown";
+    }
+}
+
+static void
+apteryx__import (Apteryx__Server_Service *service,
+                const Apteryx__Import *import,
+                Apteryx__OKResult_Closure closure, void *closure_data)
+{
+    Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    (void) service;
+
+    /* Check parameters */
+    if (import == NULL || import->path == NULL)
+    {
+        ERROR ("IMPORT: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.import_invalid);
+        return;
+    }
+    INC_COUNTER (counters.import);
+
+    DEBUG ("IMPORT(%s): %s = %s\n",
+            format_to_string (import->format),
+            import->path, import->data);
+
+    /* Return result */
+    closure (&result, closure_data);
+
+    return;
+}
+
+static void
+apteryx__export (Apteryx__Server_Service *service,
+                const Apteryx__Export *export,
+                Apteryx__ExportResult_Closure closure, void *closure_data)
+{
+    Apteryx__ExportResult result = APTERYX__EXPORT_RESULT__INIT;
+    (void) service;
+
+    /* Check parameters */
+    if (export == NULL || export->path == NULL)
+    {
+        ERROR ("EXPORT: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.export_invalid);
+        return;
+    }
+    INC_COUNTER (counters.export);
+
+    DEBUG ("EXPORT(%s): %s\n",
+            format_to_string (export->format), export->path);
+
+    /* Export in requested format */
+    result.data = NULL;
+    switch (export->format)
+    {
+    case FORMAT_RAW:
+        export_raw (export->path, &result.data);
+        break;
+//    case FORMAT_JSON:
+//        export_json (export->path, &result->data);
+//        break;
+//    case FORMAT_XML:
+//        export_xml (export->path, &result->data);
+//        break;
+    default:
+        break;
+    }
+
+    DEBUG ("     =\n%s", result.data);
+
+    /* Return result */
+    closure (&result, closure_data);
+
     return;
 }
 

@@ -52,15 +52,22 @@ message Prune
     required string path = 1;
 };
 
-message Json
+message Import
 {
-    required string path = 1;
-    optional string json = 2;
+    required uint32 format = 1;
+    required string path = 2;
+    required string data = 3;
 };
 
-message JsonResult
+message Export
 {
-    optional string json = 1;
+    required uint32 format = 1;
+    required string path = 2;
+};
+
+message ExportResult
+{
+    required string data = 1;
 };
 
 service server
@@ -71,7 +78,8 @@ service server
     rpc watch (Watch) returns (OKResult);
     rpc provide (Provide) returns (OKResult);
     rpc prune (Prune) returns (OKResult);
-    rpc json (Json) returns (JsonResult);
+    rpc import (Import) returns (OKResult);
+    rpc export (Export) returns (ExportResult);
 }
 
 service client
