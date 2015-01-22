@@ -104,6 +104,24 @@ lua_apteryx_get (lua_State *L)
 }
 
 static int
+lua_apteryx_get_int (lua_State *L)
+{
+    int res;
+    if (lua_gettop (L) != 1 || !lua_isstring (L, 1))
+    {
+        ERROR ("invalid arguments\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+    res = apteryx_get_int (lua_tostring (L, 1), NULL);
+    if (res != -1)
+        lua_pushnumber (L, res);
+    else
+        lua_pushboolean (L, false);
+    return 1;
+}
+
+static int
 lua_apteryx_search (lua_State *L)
 {
     GList *paths;
@@ -133,6 +151,7 @@ luaopen_libapteryx(lua_State *L)
     lua_register (L, "apteryx_prune", lua_apteryx_prune);
     lua_register (L, "apteryx_set", lua_apteryx_set);
     lua_register (L, "apteryx_get", lua_apteryx_get);
+    lua_register (L, "apteryx_get_int", lua_apteryx_get_int);
     lua_register (L, "apteryx_search", lua_apteryx_search);
     return 0;
 }
