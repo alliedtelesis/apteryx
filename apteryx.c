@@ -479,13 +479,13 @@ apteryx_export (const char *path, APTERYX_FORMAT format, char **data)
 
     DEBUG ("EXPORT(%s): %s\n", format_to_string (format), path);
 
-    /* Check path */
-    if (path[0] != '/')
-    {
-        ERROR ("EXPORT: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        return false;
-    }
+//    /* Check path */
+//    if (path[0] != '/')
+//    {
+//        ERROR ("EXPORT: invalid path (%s)!\n", path);
+//        assert(!debug || path[0] == '/');
+//        return false;
+//    }
 
     /* IPC */
     rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);

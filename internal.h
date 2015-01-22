@@ -73,10 +73,10 @@ bytes_to_string (unsigned char *buffer, size_t length)
     max--;
     for (i = 0; i < length && max > 0; i++, buffer++)
     {
-        int len;
+        int len = 0;
         if (isprint (*buffer))
             len = snprintf (pt, max, "%c", *((char *) buffer));
-        else
+        else if (i < (length-1) || *buffer != 0)
             len = snprintf (pt, max, "\\%02x", *buffer);
         max -= len;
         pt += len;
@@ -170,5 +170,6 @@ char* cache_dump_table (void);
 
 /* Export/Import */
 bool export_raw (const char *path, char **data);
+bool export_json (const char *path, char **data);
 
 #endif /* _INTERNAL_H_ */

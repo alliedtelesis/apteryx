@@ -905,11 +905,11 @@ apteryx__export (Apteryx__Server_Service *service,
     case FORMAT_RAW:
         export_raw (export->path, &result.data);
         break;
-//    case FORMAT_JSON:
-//        export_json (export->path, &result->data);
-//        break;
+    case FORMAT_JSON:
+        export_json (export->path, &result.data);
+        break;
 //    case FORMAT_XML:
-//        export_xml (export->path, &result->data);
+//        export_xml (export->path, &result.data);
 //        break;
     default:
         break;

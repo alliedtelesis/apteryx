@@ -271,7 +271,7 @@ main (int argc, char **argv)
             printf ("Not found\n");
         else
         {
-            printf ("%s\n", param);
+            printf ("%s", param);
             free (param);
         }
         apteryx_shutdown ();
