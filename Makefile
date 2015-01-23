@@ -43,7 +43,7 @@ libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o lua.o
 %.pb-c.c : %.proto
 	@$(PROTOC_C) --c_out=. $<
 
-apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o imexport.o
+apteryxd: apteryxd.o apteryx.pb-c.o database.o rpc.o cache.o json.o
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
@@ -60,9 +60,9 @@ apteryxd = \
 	LD_LIBRARY_PATH=./ $(TEST_WRAPPER) ./$(1); \
 	kill -TERM `cat /tmp/apteryxd.pid`;
 
-test_apteryx: all test.c database.c
+test_apteryx: all test.c database.c json.c
 	@echo "Building Unit tests"
-	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ test.c database.c -lcunit -L. -lapteryx $(EXTRA_LDFLAGS)
+	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ test.c database.c json.c -lcunit -L. -lapteryx $(EXTRA_LDFLAGS)
 
 test: test_apteryx
 	@echo "Running unit test: $<"

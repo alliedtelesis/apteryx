@@ -169,7 +169,6 @@ bool cache_get (const char *path, unsigned char **value, size_t *size);
 char* cache_dump_table (void);
 
 /* Export/Import */
-bool export_raw (const char *path, char **data);
 bool export_json (const char *path, char **data);
 
 #endif /* _INTERNAL_H_ */

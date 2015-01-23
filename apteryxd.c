@@ -877,6 +877,44 @@ apteryx__import (Apteryx__Server_Service *service,
     return;
 }
 
+static bool
+export_raw (const char *path, char **data)
+{
+    char *_path = NULL;
+    unsigned char *value = NULL;
+    size_t size;
+    int len;
+
+    if (strlen (path) > 0 && db_get (path, &value, &size) && value)
+    {
+        char *d = *data;
+        if (d == NULL)
+            d = calloc (1, 64 + 2*size + 1);
+        else
+            d = realloc (d, strlen (d) + 64 + 2*size + 1);
+        sprintf (d+strlen(d), "%-64s%.*s\n", path, (int) size, value);
+        free (value);
+        *data = d;
+    }
+    else if (path[strlen (path)-1] != '/')
+        return true;
+
+    len = asprintf (&_path, "%s/", path);
+    if (len >= 0)
+    {
+        GList *children, *iter;
+        children = db_search (_path);
+        for (iter = children; iter; iter = g_list_next (iter))
+        {
+            export_raw ((const char *) iter->data, data);
+        }
+        g_list_free_full (children, free);
+        free (_path);
+    }
+
+    return true;
+}
+
 static void
 apteryx__export (Apteryx__Server_Service *service,
                 const Apteryx__Export *export,
