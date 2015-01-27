@@ -2,6 +2,9 @@
  * @file json.c
  * Used for import/export in JSON format.
  *
+ * Based on code by:
+ * Copyright (C) 2011 Joseph A. Adams (joeyadams3.14159@gmail.com)
+ *
  * Copyright 2014, Allied Telesis Labs New Zealand, Ltd
  *
  * This library is free software; you can redistribute it and/or
@@ -20,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include "internal.h"
 #ifdef TEST
 #include <CUnit/CUnit.h>
@@ -71,7 +75,7 @@ struct json
     char *key;
     union {
         bool b;
-        int i;
+        long i;
         char *s;
         struct {
             json *head, *tail;
@@ -171,7 +175,7 @@ json_format (string *out, const json *node)
             sb_puts(out, "\"");
             break;
         case JSON_INTEGER:
-            sprintf(buf, "%.i", node->i);
+            sprintf(buf, "%li", node->i);
             sb_puts(out, buf);
             break;
         case JSON_ARRAY:
@@ -201,12 +205,153 @@ json_format (string *out, const json *node)
     }
 }
 
+static inline void
+skip_space(const char **sp)
+{
+    const char *s = *sp;
+    while (*s == '\t' || *s == '\n' || *s == '\r' || *s == ' ')
+        s++;
+    *sp = s;
+}
+
+static bool
+json_parse(const char **sp, json **out)
+{
+    const char *s = *sp;
+
+    switch (*s) {
+        case 'n':
+            if (strcmp (s, "null") == 0) {
+                *out = json_new (JSON_NULL);
+                *sp = s + 4;
+                return true;
+            }
+            return false;
+
+        case 'f':
+            if (strcmp (s, "false") == 0) {
+                *out = json_new (JSON_BOOL);
+                (*out)->b = false;
+                *sp = s + 5;
+                return true;
+            }
+            return false;
+
+        case 't':
+            if (strcmp (s, "true") == 0) {
+                *out = json_new (JSON_BOOL);
+                (*out)->b = true;
+                *sp = s + 4;
+                return true;
+            }
+            return false;
+
+        case '"': {
+            char *str = strchr (s+1, '\"');
+            if (str) {
+                size_t len = (size_t)str - (size_t)s - 1;
+                *out = json_new (JSON_STRING);
+                (*out)->s = strndup (s+1, len);
+                *sp = s + len + 2;
+                return true;
+            }
+            return false;
+        }
+
+        case '{':{
+            *out = json_new (JSON_OBJECT);
+            s++;
+            skip_space (&s);
+            while (*s != '}') {
+                char *str;
+                size_t len;
+                char *key;
+                json *element;
+
+                if (*s != '\"' || (str = strchr (s+1, '\"')) == NULL) {
+                    json_delete (*out);
+                    return false;
+                }
+                len = (size_t)str - (size_t)s - 1;
+                key = strndup (s+1, len);
+                s = s + len + 2;
+                skip_space (&s);
+
+                if (*s++ != ':') {
+                   json_delete (*out);
+                   free (key);
+                   return false;
+                }
+                skip_space (&s);
+
+                if (!json_parse (&s, &element)) {
+                    json_delete (*out);
+                    return false;
+                }
+                json_append (*out, key, element);
+                skip_space (&s);
+            }
+            s++;
+            *sp = s;
+            return true;
+        }
+
+        case '[': {
+            *out = json_new (JSON_ARRAY);
+            s++;
+            skip_space (&s);
+            while (*s != ']') {
+                json *element;
+                if (!json_parse (&s, &element)){
+                    json_delete (*out);
+                    return false;
+                }
+                json_append (*out, NULL, element);
+                skip_space (&s);
+                if (*s != ']' && *s++ != ',') {
+                    json_delete (*out);
+                    return false;
+                }
+                skip_space (&s);
+            }
+            s++;
+            *sp = s;
+            return true;
+        }
+
+        default: {
+            long num = strtol(s, (char **)sp, 10);
+            if (errno != EINVAL) {
+                *out = json_new (JSON_INTEGER);
+                (*out)->i = num;
+                return true;
+            }
+            return false;
+        }
+    }
+}
+
 static char *
 json_encode(const json *node)
 {
     string s = {};
     json_format (&s, node);
     return s.start;
+}
+
+static json *
+json_decode(const char *data)
+{
+    const char *s = data;
+    json *ret;
+
+    if (!json_parse(&s, &ret))
+        return NULL;
+    if (*s != 0) {
+        json_delete(ret);
+        return NULL;
+    }
+    return ret;
 }
 
 static json *
@@ -297,31 +442,68 @@ export_json (const char *path, char **data)
 void
 test_json_null ()
 {
+    const char *test = "null";
     json *j;
     char *s;
 
     CU_ASSERT ((j = json_new (JSON_NULL)) != NULL);
     CU_ASSERT ((s = json_encode(j)) != NULL);
-    CU_ASSERT (strcmp (s, "null") == 0);
+    CU_ASSERT (strcmp (s, test) == 0);
+    json_delete (j);
     free (s);
+    CU_ASSERT (json_decode (" null") == NULL);
+    CU_ASSERT (json_decode ("null ") == NULL);
+    CU_ASSERT (json_decode ("Null") == NULL);
+    CU_ASSERT (json_decode ("nu11") == NULL);
+    CU_ASSERT (json_decode ("n ull") == NULL);
+    CU_ASSERT ((j = json_decode (test)) != NULL);
+    CU_ASSERT (j->type == JSON_NULL);
+    CU_ASSERT (j->s == NULL);
+    CU_ASSERT (j->children.head == NULL);
+    CU_ASSERT (j->children.tail == NULL);
     json_delete (j);
 }
 
 void
 test_json_bool ()
 {
+    const char *test_false = "false";
+    const char *test_true = "true";
     json *j;
     char *s;
 
+    /* false */
     CU_ASSERT ((j = json_new (JSON_BOOL)) != NULL);
     j->b = false;
     CU_ASSERT ((s = json_encode(j)) != NULL);
-    CU_ASSERT (strcmp (s, "false") == 0);
+    CU_ASSERT (strcmp (s, test_false) == 0);
+    json_delete (j);
     free (s);
+    CU_ASSERT (json_decode (" false") == NULL);
+    CU_ASSERT (json_decode ("false ") == NULL);
+    CU_ASSERT (json_decode ("False") == NULL);
+    CU_ASSERT (json_decode ("fal5e") == NULL);
+    CU_ASSERT (json_decode ("f alse") == NULL);
+    CU_ASSERT ((j = json_decode (test_false)) != NULL);
+    CU_ASSERT (j->type == JSON_BOOL);
+    CU_ASSERT (j->b == false);
+    json_delete (j);
+
+    /* true */
+    CU_ASSERT ((j = json_new (JSON_BOOL)) != NULL);
     j->b = true;
     CU_ASSERT ((s = json_encode(j)) != NULL);
-    CU_ASSERT (strcmp (s, "true") == 0);
+    CU_ASSERT (strcmp (s, test_true) == 0);
+    json_delete (j);
     free (s);
+    CU_ASSERT (json_decode (" true") == NULL);
+    CU_ASSERT (json_decode ("true ") == NULL);
+    CU_ASSERT (json_decode ("True") == NULL);
+    CU_ASSERT (json_decode ("tru8") == NULL);
+    CU_ASSERT (json_decode ("t rue") == NULL);
+    CU_ASSERT ((j = json_decode (test_true)) != NULL);
+    CU_ASSERT (j->type == JSON_BOOL);
+    CU_ASSERT (j->b == true);
     json_delete (j);
 }
 
@@ -335,11 +517,33 @@ test_json_int ()
     j->i = 99999;
     CU_ASSERT ((s = json_encode(j)) != NULL);
     CU_ASSERT (strcmp (s, "99999") == 0);
+    json_delete (j);
     free (s);
+    CU_ASSERT ((j = json_decode ("99999")) != NULL);
+    CU_ASSERT (j->type == JSON_INTEGER);
+    CU_ASSERT (j->i == 99999);
+    json_delete (j);
+
+    CU_ASSERT ((j = json_new (JSON_INTEGER)) != NULL);
     j->i = -999;
     CU_ASSERT ((s = json_encode(j)) != NULL);
     CU_ASSERT (strcmp (s, "-999") == 0);
+    json_delete (j);
     free (s);
+    CU_ASSERT ((j = json_decode ("-999")) != NULL);
+    CU_ASSERT (j->type == JSON_INTEGER);
+    CU_ASSERT (j->i == -999);
+    json_delete (j);
+
+    CU_ASSERT ((j = json_new (JSON_INTEGER)) != NULL);
+    j->i = 0;
+    CU_ASSERT ((s = json_encode(j)) != NULL);
+    CU_ASSERT (strcmp (s, "0") == 0);
+    json_delete (j);
+    free (s);
+    CU_ASSERT ((j = json_decode ("0")) != NULL);
+    CU_ASSERT (j->type == JSON_INTEGER);
+    CU_ASSERT (j->i == 0);
     json_delete (j);
 }
 
@@ -355,6 +559,10 @@ test_json_string ()
     CU_ASSERT (strcmp (s, "\"testing12345\"") == 0);
     json_delete (j);
     free (s);
+    CU_ASSERT ((j = json_decode ("\"testing12345\"")) != NULL);
+    CU_ASSERT (j->type == JSON_STRING);
+    CU_ASSERT (strcmp (j->s, "testing12345") == 0);
+    json_delete (j);
 }
 
 void
@@ -371,6 +579,13 @@ test_json_object ()
     CU_ASSERT (strcmp (s, "{\"key\":\"testing12345\"}") == 0);
     json_delete (parent);
     free (s);
+    CU_ASSERT ((parent = json_decode ("{\"key\":\"testing12345\"}")) != NULL);
+    CU_ASSERT (parent->type == JSON_OBJECT);
+    CU_ASSERT ((child = parent->children.head) != NULL);
+    CU_ASSERT (child->type == JSON_STRING);
+    CU_ASSERT (child->key && strcmp (child->key, "key") == 0);
+    CU_ASSERT (strcmp (child->s, "testing12345") == 0);
+    json_delete (parent);
 }
 
 void
@@ -390,6 +605,15 @@ test_json_array ()
     CU_ASSERT (strcmp (s, "[\"testing12345\",\"testing67890\"]") == 0);
     json_delete (parent);
     free (s);
+    CU_ASSERT ((parent = json_decode ("[\"testing12345\",\"testing67890\"]")) != NULL);
+    CU_ASSERT (parent->type == JSON_ARRAY);
+    CU_ASSERT ((child1 = parent->children.head) != NULL);
+    CU_ASSERT (child1->type == JSON_STRING);
+    CU_ASSERT (strcmp (child1->s, "testing12345") == 0);
+    CU_ASSERT ((child2 = parent->children.tail) != NULL);
+    CU_ASSERT (child2->type == JSON_STRING);
+    CU_ASSERT (strcmp (child2->s, "testing67890") == 0);
+    json_delete (parent);
 }
 
 void
@@ -408,6 +632,16 @@ test_json_complex_object ()
     CU_ASSERT (strcmp (s, "{\"parent2\":{\"parent1\":\"testing12345\"}}") == 0);
     json_delete (parent2);
     free (s);
+    CU_ASSERT ((parent2 = json_decode ("{\"parent2\":{\"parent1\":\"testing12345\"}}")) != NULL);
+    CU_ASSERT (parent2->type == JSON_OBJECT);
+    CU_ASSERT ((parent1 = parent2->children.head) != NULL);
+    CU_ASSERT (parent1->type == JSON_OBJECT);
+    CU_ASSERT (strcmp (parent1->key, "parent2") == 0);
+    CU_ASSERT ((child = parent1->children.head) != NULL);
+    CU_ASSERT (child->type == JSON_STRING);
+    CU_ASSERT (strcmp (child->key, "parent1") == 0);
+    CU_ASSERT (strcmp (child->s, "testing12345") == 0);
+    json_delete (parent2);
 }
 
 void
