@@ -290,6 +290,11 @@ json_parse(const char **sp, json **out)
                 }
                 json_append (*out, key, element);
                 skip_space (&s);
+                if (*s != '}' && *s++ != ',') {
+                    json_delete (*out);
+                    return false;
+                }
+                skip_space (&s);
             }
             s++;
             *sp = s;
@@ -436,6 +441,74 @@ export_json (const char *path, char **data)
     return true;
 }
 
+bool
+traverse_object (const char *path, json *object)
+{
+    char *_path = NULL;
+    while (object)
+    {
+        if (object->type == JSON_OBJECT)
+        {
+            if (!asprintf (&_path, "%s%s/", path, object->key))
+                goto error;
+            if (!traverse_object (_path, object->children.head))
+                goto error;
+            free (_path);
+            _path = NULL;
+        }
+        else if (object->type == JSON_STRING)
+        {
+            if (!asprintf (&_path, "%s%s", path, object->key))
+                goto error;
+            if (strlen (object->s) == 0)
+            {
+                if (!db_delete (_path))
+                    goto error;
+            }
+            else if (!db_add (_path, (unsigned char*)object->s, strlen (object->s)))
+                goto error;
+            free (_path);
+            _path = NULL;
+        }
+        else
+        {
+            goto error;
+        }
+        object = object->next;
+    }
+    return true;
+error:
+    if (_path)
+        free (_path);
+    return false;
+}
+
+bool
+import_json (const char *path, char *data)
+{
+    int len = path ? strlen (path) : 0;
+    json *tree;
+
+    if (!path || len == 0 || path[0] != '/' ||
+        path[len-1] != '/' || !data)
+        return false;
+
+    tree = json_decode (data);
+    if (!tree || tree->type != JSON_OBJECT)
+    {
+        json_delete (tree);
+        return false;
+    }
+
+    if (!traverse_object (path, tree->children.head))
+    {
+        json_delete (tree);
+        return false;
+    }
+
+    json_delete (tree);
+    return true;
+}
 
 #ifdef TEST
 
@@ -645,6 +718,36 @@ test_json_complex_object ()
 }
 
 void
+test_json_2_children ()
+{
+    json *parent, *child1, *child2;
+    char *s;
+
+    CU_ASSERT ((child1 = json_new (JSON_STRING)) != NULL);
+    child1->s = strdup ("testing12345");
+    CU_ASSERT ((child2 = json_new (JSON_STRING)) != NULL);
+    child2->s = strdup ("testing67890");
+    CU_ASSERT ((parent = json_new (JSON_OBJECT)) != NULL);
+    json_append (parent, strdup ("child1"), child1);
+    json_append (parent, strdup ("child2"), child2);
+    CU_ASSERT ((s = json_encode(parent)) != NULL);
+    CU_ASSERT (strcmp (s, "{\"child1\":\"testing12345\",\"child2\":\"testing67890\"}") == 0);
+    json_delete (parent);
+    free (s);
+    CU_ASSERT ((parent = json_decode ("{\"child1\":\"testing12345\",\"child2\":\"testing67890\"}")) != NULL);
+//    CU_ASSERT (parent->type == JSON_OBJECT);
+//    CU_ASSERT ((child1 = parent->children.head) != NULL);
+//    CU_ASSERT (child1->type == JSON_STRING);
+//    CU_ASSERT (strcmp (child1->key, "child1") == 0);
+//    CU_ASSERT (strcmp (child1->s, "testing12345") == 0);
+//    CU_ASSERT ((child2 = child1->next) != NULL);
+//    CU_ASSERT (child2->type == JSON_STRING);
+//    CU_ASSERT (strcmp (child2->key, "parent1") == 0);
+//    CU_ASSERT (strcmp (child2->s, "testing67890") == 0);
+    json_delete (parent);
+}
+
+void
 test_json_export_empty_node ()
 {
     const char *path = "/test/json";
@@ -799,6 +902,114 @@ test_json_export_parent_value ()
     db_shutdown ();
 }
 
+void
+test_json_import_single_node ()
+{
+    char *path = "/test/json";
+    unsigned char *value = NULL;
+    size_t size;
+
+    db_init ();
+    CU_ASSERT (import_json ("/test/", "{\"json\": \"test\"}"));
+    CU_ASSERT (db_get (path, &value, &size));
+    CU_ASSERT (value && strcmp ((char*)value, "test") == 0);
+    free (value);
+    db_delete (path);
+    db_shutdown ();
+}
+
+void
+test_json_import_delete_single_node ()
+{
+    char *path = "/test/json";
+    unsigned char *value = NULL;
+    size_t size;
+
+    db_init ();
+    db_add (path, (const unsigned char *) "test", strlen ("test") + 1);
+    CU_ASSERT (import_json ("/test/", "{\"json\": \"\"}"));
+    CU_ASSERT (db_get (path, &value, &size) == false);
+    db_shutdown ();
+}
+
+void
+test_json_import_complex_node ()
+{
+    char *path = "/test/json";
+    unsigned char *value = NULL;
+    size_t size;
+
+    db_init ();
+    CU_ASSERT (import_json ("/", "{\"test\":{\"json\":\"test\"}}"));
+    CU_ASSERT (db_get (path, &value, &size));
+    CU_ASSERT (value && strcmp ((char*)value, "test") == 0);
+    free (value);
+    db_delete (path);
+    db_shutdown ();
+}
+
+void
+test_json_import_delete_complex_node ()
+{
+    char *path = "/test/json";
+    unsigned char *value = NULL;
+    size_t size;
+
+    db_init ();
+    db_add (path, (const unsigned char *) "test", strlen ("test") + 1);
+    CU_ASSERT (import_json ("/", "{\"test\":{\"json\":\"\"}}"));
+    CU_ASSERT (db_get (path, &value, &size) == false);
+    db_shutdown ();
+}
+
+void
+test_json_import_invalid_path ()
+{
+    db_init ();
+    CU_ASSERT (import_json ("", "{\"json\": \"test\"}") == false);
+    CU_ASSERT (import_json (" ", "{\"json\": \"test\"}") == false);
+    CU_ASSERT (import_json ("/test", "{\"json\": \"test\"}") == false);
+    db_shutdown ();
+}
+
+void
+test_json_import_2_nodes ()
+{
+    const char *path1 = "/test/path1";
+    const char *path2 = "/test/path2";
+    unsigned char *value = NULL;
+    size_t size;
+
+    db_init ();
+    CU_ASSERT (import_json ("/test/", "{\"path1\":\"value1\",\"path2\":\"value2\"}"));
+    CU_ASSERT (db_get (path1, &value, &size));
+    CU_ASSERT (value && strcmp ((char*)value, "value1") == 0);
+    free (value);
+    db_delete (path1);
+    CU_ASSERT (db_get (path2, &value, &size));
+    CU_ASSERT (value && strcmp ((char*)value, "value2") == 0);
+    free (value);
+    db_delete (path2);
+    db_shutdown ();
+}
+
+void
+test_json_import_delete_2_nodes ()
+{
+    const char *path1 = "/test/path1";
+    const char *path2 = "/test/path2";
+    unsigned char *value = NULL;
+    size_t size;
+
+    db_init ();
+    db_add (path1, (const unsigned char *) "value1", strlen ("value1") + 1);
+    db_add (path2, (const unsigned char *) "value2", strlen ("value2") + 1);
+    CU_ASSERT (import_json ("/test/", "{\"path1\":\"\",\"path2\":\"\"}"));
+    CU_ASSERT (db_get (path1, &value, &size) == false);
+    CU_ASSERT (db_get (path2, &value, &size) == false);
+    db_shutdown ();
+}
+
 CU_TestInfo tests_json[] = {
     { "null", test_json_null },
     { "bool", test_json_bool },
@@ -807,15 +1018,23 @@ CU_TestInfo tests_json[] = {
     { "object", test_json_object },
     { "array", test_json_array },
     { "complex object", test_json_complex_object },
-    { "empty node", test_json_export_empty_node },
-    { "empty with children", test_json_export_empty_with_children },
-    { "single node", test_json_export_single_node },
-    { "long value", test_json_export_long_value },
-    { "long path", test_json_export_long_path },
-    { "complex node", test_json_export_complex_node },
-    { "2 nodes", test_json_export_2_nodes },
-    { "2 deep", test_json_export_2_deep },
-    { "parent has value", test_json_export_parent_value },
+    { "2 children", test_json_2_children },
+    { "export empty node", test_json_export_empty_node },
+    { "export empty with children", test_json_export_empty_with_children },
+    { "export single node", test_json_export_single_node },
+    { "export long value", test_json_export_long_value },
+    { "export long path", test_json_export_long_path },
+    { "export complex node", test_json_export_complex_node },
+    { "export 2 nodes", test_json_export_2_nodes },
+    { "export 2 deep", test_json_export_2_deep },
+    { "export parent has value", test_json_export_parent_value },
+    { "import single node", test_json_import_single_node },
+    { "import delete single node", test_json_import_delete_single_node },
+    { "import complex node", test_json_import_complex_node },
+    { "import delete complex node", test_json_import_delete_complex_node },
+    { "import invalid path", test_json_import_invalid_path },
+    { "import 2 nodes", test_json_import_2_nodes },
+    { "import delete 2 nodes", test_json_import_delete_2_nodes },
     CU_TEST_INFO_NULL,
 };
 #endif
