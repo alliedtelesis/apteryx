@@ -725,6 +725,106 @@ apteryx_search (const char *path)
     return data.paths;
 }
 
+typedef struct _traverse_data_t
+{
+    GList *pv;
+    bool done;
+} traverse_data_t;
+
+static void
+handle_traverse_response (const Apteryx__Traverse *result, void *closure_data)
+{
+    traverse_data_t *data = (traverse_data_t *)closure_data;
+    int i;
+    data->pv = NULL;
+    if (result == NULL)
+    {
+        ERROR ("TRAVERSE: Error processing request.\n");
+    }
+    else if (result->pv == NULL)
+    {
+        DEBUG ("    = (null)\n");
+    }
+    else if (result->n_pv != 0)
+    {
+        for (i = 0; i < result->n_pv; i++)
+        {
+            unsigned char *pv = malloc (result->pv[i].len);
+            memcpy (pv, result->pv[i].data, result->pv[i].len);
+            DEBUG ("    = %s\n", bytes_to_string (pv, result->pv[i].len));
+            data->pv = g_list_append (data->pv, (gpointer) pv);
+        }
+    }
+    data->done = true;
+}
+
+bool
+apteryx_traverse (const char *path, GList **pv)
+{
+    ProtobufCService *rpc_client;
+    Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
+    traverse_data_t data = {0};
+    GList *iter;
+    int i;
+
+    DEBUG ("TRAVERSE: %s\n", path);
+
+    /* Validate path */
+    if (!path ||
+        strcmp (path, "/") == 0 ||
+        strcmp (path, "/*") == 0 ||
+        strcmp (path, "*") == 0 ||
+        strlen (path) == 0)
+    {
+        path = "";
+    }
+    else if (path[0] != '/' ||
+             path[strlen (path) - 1] != '/' ||
+             strstr (path, "//") != NULL)
+    {
+        ERROR ("TRAVERSE: invalid root (%s)!\n", path);
+        assert(!debug || path[0] == '/');
+        assert(!debug || path[strlen (path) - 1] == '/');
+        assert(!debug || strstr (path, "//") == NULL);
+        return false;
+    }
+
+    /* IPC */
+    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    if (!rpc_client)
+    {
+        ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
+        return false;
+    }
+    traverse.path = (char *) path;
+    if (*pv)
+    {
+        traverse.n_pv = g_list_length (*pv);
+        traverse.pv = (ProtobufCBinaryData*) malloc (traverse.n_pv * sizeof (ProtobufCBinaryData));
+        for (i = 0, iter = *pv; iter; iter = g_list_next (iter), i++)
+        {
+            unsigned char *pv = (unsigned char *) iter->data;
+            int len = strlen ((char*)pv) + 1;
+            len += ntohl (*(uint32_t*)(pv+len)) + 4;
+            traverse.pv[i].data = (unsigned char *) iter->data;
+            traverse.pv[i].len = len;
+            DEBUG ("    = %s\n", bytes_to_string (traverse.pv[i].data, traverse.pv[i].len));
+        }
+    }
+    apteryx__server__traverse (rpc_client, &traverse, handle_traverse_response, &data);
+    protobuf_c_service_destroy (rpc_client);
+    if (!data.done)
+    {
+        ERROR ("TRAVERSE: No response\n");
+        return false;
+    }
+
+    /* Result */
+    if (*pv == NULL)
+        *pv = data.pv;
+    return true;
+}
+
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
 {

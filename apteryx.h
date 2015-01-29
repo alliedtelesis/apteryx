@@ -115,7 +115,7 @@ bool apteryx_set_int (const char *path, const char *key, int32_t value);
 bool apteryx_set_string (const char *path, const char *key, const char *value);
 
 /**
- * Set a path/value from Apteryx
+ * Get a path/value from Apteryx
  * @param path path to the value to get
  * @param value returned value
  * @param size length of returned value
@@ -132,17 +132,34 @@ char *apteryx_get_string (const char *path, const char *key);
  * Search for all children that start with the root path.
  * Does not go further than one level down.
  * example:
-    "/entity/zones" = "-"
-    "/entity/zones/private" = "-"
     "/entity/zones/private/description" = "lan"
     "/entity/zones/private/networks/description" = "engineers"
-    "/entity/zones/public" = "-"
     "/entity/zones/public/description" = "wan"
  *  apteryx_search ("/entity/zones") = {"/entity/zones/private", "/entity/zones/public"}
- * @param root root path to search on
+ * @param path path to search on
  * @return GList of full paths
  */
-GList *apteryx_search (const char *root);
+GList *apteryx_search (const char *path);
+
+/**
+ * Traverse the tree either getting all nodes
+ * or setting specified nodes. Data passed in a
+ * GList of path|length(32bits NB order)|value byte arrays.
+ * example:
+ *   GList *data = {eth0/state\000000003up\0, eth1/state\000000005down\0}
+ *   apteryx_traverse ("/interfaces", &data)
+ *   "/interfaces/eth0/state" = "up"
+ *   "/interfaces/eth1/state" = "down"
+ *   GList *data = NULL
+ *   apteryx_traverse ("/interfaces", &data)
+ *   data = {eth0/state\000000003up\0, eth1/state\000000005down\0}
+ * @param root path specifying the base node to start traversal
+ * @param pv SET: pointer to a pointer to a GList of path/value byte arrays to set
+ * @param pv GET: pointer to a NULL pointer to a Glist for the returned result
+ * @return true on success
+ * @return false if the path is invalid
+ */
+bool apteryx_traverse (const char *path, GList **pv);
 
 /**
  * Callback function to be called when a

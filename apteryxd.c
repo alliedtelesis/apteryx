@@ -129,6 +129,8 @@ handle_counters_get (const char *path, void *priv,
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_invalid", counters.get_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search", counters.search);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search_invalid", counters.search_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "traverse", counters.traverse);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "traverse_invalid", counters.traverse_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watch", counters.watch);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watch_invalid", counters.watch_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched", counters.watched);
@@ -672,6 +674,70 @@ apteryx__search (Apteryx__Server_Service *service,
     g_list_free_full (results, free);
     if (result.paths)
         free (result.paths);
+    return;
+}
+
+static void
+apteryx__traverse (Apteryx__Server_Service *service,
+                 const Apteryx__Traverse *traverse,
+                 Apteryx__Traverse_Closure closure, void *closure_data)
+{
+    Apteryx__Traverse result = APTERYX__TRAVERSE__INIT;
+    GList *results = NULL;
+    GList *iter = NULL;
+    int i;
+    (void) service;
+
+    /* Check parameters */
+    if (traverse == NULL || traverse->path == NULL)
+    {
+        ERROR ("TRAVERSE: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.traverse_invalid);
+        return;
+    }
+    INC_COUNTER (counters.traverse);
+
+    DEBUG ("TRAVERSE: %s\n", traverse->path);
+
+    /* Search database */
+    results = db_search (traverse->path);
+    /* Search providers */
+    for (iter = provide_list; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *provider = iter->data;
+        int len = strlen (traverse->path);
+        if (strncmp (provider->path, traverse->path, len) == 0 &&
+            provider->path[len] != '*' &&
+            strncmp (provider->path, APTERYX_SETTINGS, strlen (APTERYX_SETTINGS)) != 0)
+        {
+            char *ptr, *path = strdup (provider->path);
+            if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
+                *ptr = '\0';
+            if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
+                results = g_list_append (results, path);
+            else
+                free (path);
+        }
+    }
+    /* Prepare the results */
+    result.n_pv = g_list_length (results);
+    if (result.n_pv > 0)
+    {
+        result.pv = (ProtobufCBinaryData*) malloc (result.n_pv * sizeof (ProtobufCBinaryData));
+        for (i = 0, iter = results; iter; iter = g_list_next (iter), i++)
+        {
+            result.pv[i].data = (unsigned char *) iter->data;
+            result.pv[i].len = strlen (iter->data);
+            DEBUG ("         = %s\n", bytes_to_string (result.pv[i].data, result.pv[i].len));
+        }
+    }
+
+    /* Send result */
+    closure (&result, closure_data);
+    g_list_free_full (results, free);
+    if (result.pv)
+        free (result.pv);
     return;
 }
 

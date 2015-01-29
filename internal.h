@@ -126,6 +126,8 @@ typedef struct _counters_t
     uint32_t get_invalid;
     uint32_t search;
     uint32_t search_invalid;
+    uint32_t traverse;
+    uint32_t traverse_invalid;
     uint32_t watch;
     uint32_t watch_invalid;
     uint32_t watched;

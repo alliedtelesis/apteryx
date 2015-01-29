@@ -27,7 +27,13 @@ message Search
 
 message SearchResult
 {
-  repeated string paths = 1;
+    repeated string paths = 1;
+};
+
+message Traverse
+{
+    required string path = 1;
+    repeated bytes pv = 2;
 };
 
 message Watch
@@ -57,6 +63,7 @@ service server
     rpc set (Set) returns (OKResult);
     rpc get (Get) returns (GetResult);
     rpc search (Search) returns (SearchResult);
+    rpc traverse (Traverse) returns (Traverse);
     rpc watch (Watch) returns (OKResult);
     rpc provide (Provide) returns (OKResult);
     rpc prune (Prune) returns (OKResult);
