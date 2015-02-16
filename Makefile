@@ -76,6 +76,8 @@ install: all
 	@install -d $(DESTDIR)/$(PREFIX)/bin
 	@install -D apteryxd $(DESTDIR)/$(PREFIX)/bin/
 	@install -D apteryx $(DESTDIR)/$(PREFIX)/bin/
+	@install -d $(DESTDIR)/etc/apteryx/schema
+	@install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
 
 clean:
 	@echo "Cleaning..."
