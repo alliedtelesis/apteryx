@@ -1,0 +1,24 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	targetNamespace="https://github.com/ATL-NZ/apteryx"
+	xmlns="https://github.com/ATL-NZ/apteryx"
+	elementFormDefault="qualified">
+	<xs:element name="NODE">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element ref="NODE" minOccurs="0" maxOccurs="unbounded" />
+			</xs:sequence>
+			<xs:attribute name="name" type="xs:string" use="required" />
+			<xs:attribute name="default" type="xs:string" use="optional" />
+			<xs:attribute name="value" type="xs:string" use="optional" />
+			<xs:attribute name="help" type="xs:string" use="optional" />
+			<xs:attribute name="hidden" type="xs:boolean" use="optional" />
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="MODULE">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element ref="NODE" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>
