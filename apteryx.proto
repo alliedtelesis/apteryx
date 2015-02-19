@@ -7,7 +7,7 @@ message OKResult
 message Set
 {
     required string path = 1;
-    required bytes value = 2;
+    required string value = 2;
 };
 
 message Get
@@ -17,7 +17,7 @@ message Get
 
 message GetResult
 {
-    required bytes value = 1;
+    required string value = 1;
 };
 
 message Search
@@ -33,7 +33,7 @@ message SearchResult
 message Watch
 {
     required string path = 1;
-    required bytes value = 2;
+    required string value = 2;
     required uint64 id = 3;
     required uint64 cb = 4;
     required uint64 priv = 5;

@@ -7,11 +7,11 @@
  * Example:
  * > require "libapteryx"
  * > apteryx_init(false)
- * > apteryx_set("/interfaces/eth0/state", "up", 3)
- * > apteryx_set("/interfaces/eth1/state", "down", 5)
+ * > apteryx_set("/interfaces/eth0/state", "up")
+ * > apteryx_set("/interfaces/eth1/state", "down")
  * > print(apteryx_get("/interfaces/eth0/state"))
  * up
- * > paths = {apteryx_search("/interfaces/")}
+ * > paths = {apteryx_search("/interfaces")}
  * > print(unpack(paths))
  * /interfaces/eth0        /interfaces/eth1
  *
@@ -80,27 +80,24 @@ static int
 lua_apteryx_set (lua_State *L)
 {
     const char *path = lua_tostring (L, 1);
-    unsigned char *value = (unsigned char *)lua_tostring (L,2);
-    size_t size = lua_tonumber (L, 3);
-    lua_pushboolean (L, apteryx_set (path, value, size));
+    const char *value = lua_tostring (L,2);
+    lua_pushboolean (L, apteryx_set (path, value));
     return 1;
 }
 
 static int
 lua_apteryx_get (lua_State *L)
 {
-    unsigned char *value = NULL;
-    size_t size;
-    bool res;
+    char *value = NULL;
     if (lua_gettop (L) != 1 || !lua_isstring (L, 1))
     {
         ERROR ("invalid arguments\n");
         lua_pushboolean (L, false);
         return 1;
     }
-    res = apteryx_get (lua_tostring (L, 1), &value, &size);
-    if (res)
-        lua_pushlstring (L, (char*)value, size);
+    value = apteryx_get (lua_tostring (L, 1));
+    if (value)
+        lua_pushstring (L, value);
     else
         lua_pushboolean (L, false);
     return 1;

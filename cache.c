@@ -31,7 +31,6 @@ typedef struct hash_entry_t
 {
     uint8_t path[MAX_PATH];
     uint8_t value[MAX_VALUE];
-    uint32_t length;
 } hash_entry_t;
 
 typedef struct cache_t
@@ -138,11 +137,12 @@ cache_shutdown (bool force)
 }
 
 bool
-cache_set (const char *path, unsigned char *value, size_t size)
+cache_set (const char *path, const char *value)
 {
     hash_entry_t *entry;
 
-    if (!cache || strlen (path) > MAX_PATH || size > MAX_VALUE)
+    if (!cache || strlen (path) + 1 > MAX_PATH ||
+        (value && strlen (value) + 1 > MAX_VALUE))
         return false;
 
     pthread_rwlock_wrlock (&cache->rwlock);
@@ -150,8 +150,7 @@ cache_set (const char *path, unsigned char *value, size_t size)
     if (value)
     {
         strcpy ((char *) entry->path, path);
-        entry->length = size;
-        memcpy (entry->value, value, size);
+        strcpy ((char *) entry->value, value);
     }
     else if (strcmp (path, (char *) entry->path) == 0)
     {
@@ -162,23 +161,20 @@ cache_set (const char *path, unsigned char *value, size_t size)
     return false;
 }
 
-bool
-cache_get (const char *path, unsigned char **value, size_t *size)
+char *
+cache_get (const char *path)
 {
+    char *value = NULL;
     hash_entry_t *entry;
-    bool result = false;
 
     if (!cache)
-        return false;
+        return NULL;
 
     pthread_rwlock_rdlock (&cache->rwlock);
     entry = &cache->table[g_str_hash (path) % NUM_BUCKETS];
     if (strcmp (path, (char *) entry->path) == 0)
     {
-        *size = entry->length;
-        *value = malloc (entry->length);
-        memcpy (*value, entry->value, entry->length);
-        result = true;
+        value = strdup ((char *) entry->value);
         INC_COUNTER (cache->hit);
     }
     else
@@ -186,7 +182,7 @@ cache_get (const char *path, unsigned char **value, size_t *size)
         INC_COUNTER (cache->miss);
     }
     pthread_rwlock_unlock (&cache->rwlock);
-    return result;
+    return value;
 }
 
 char *
@@ -206,7 +202,7 @@ cache_dump_table (void)
             count++;
             pt += sprintf (pt, "[%04d] %s = %s\n",
                            i, cache->table[i].path,
-                           bytes_to_string (cache->table[i].value, cache->table[i].length));
+                           cache->table[i].value);
         }
     }
     sprintf (pt, "%d/%d buckets, %" PRIu32 " hits, %" PRIu32" misses\n",

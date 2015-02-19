@@ -17,39 +17,36 @@
  *
  * Example Usage:
  *
- *    apteryx_set_string ("/interfaces", NULL, "-");
- *    apteryx_set_string ("/interfaces/eth0", NULL, "-");
- *    apteryx_set_string ("/interfaces/eth0", "description", "our lan");
- *    apteryx_set_string ("/interfaces/eth0", "state", "up");
- *    apteryx_set_string ("/interfaces/eth1", NULL, "-");
- *    apteryx_set_string ("/interfaces/eth1", "description", "our wan");
- *    apteryx_set_string ("/interfaces/eth1", "state", "down");
+ *   apteryx_set ("/interfaces/eth0/description", "our lan");
+ *   apteryx_set ("/interfaces/eth0/state", "up");
+ *   apteryx_set ("/interfaces/eth1/description", "our wan");
+ *   apteryx_set ("/interfaces/eth1/state", "down");
  *
- *    printf ("\nInterfaces:\n");
- *    GList* paths = apteryx_search ("/interfaces");
- *    for (GList* _iter= paths; _iter; _iter = _iter->next)
- *    {
- *        char *path, *value;
- *        path = (char *)_iter->data;
- *        printf ("  %s\n", strrchr (path, '/') + 1);
- *        value = apteryx_get_string (path, "description");
- *        printf ("    description     %s\n", value);
- *        free ((void*)value);
- *        value = apteryx_get_string (path, "state");
- *        printf ("    state           %s\n", value);
- *        free ((void*)value);
- *    }
- *    g_list_free_full (paths, free);
+ *   printf ("\nInterfaces:\n");
+ *   GList* paths = apteryx_search ("/interfaces/");
+ *   for (GList* _iter= paths; _iter; _iter = _iter->next)
+ *   {
+ *       char *path, *value;
+ *       path = (char *)_iter->data;
+ *       printf ("  %s\n", strrchr (path, '/') + 1);
+ *       value = apteryx_get_string (path, "description");
+ *       printf ("    description     %s\n", value);
+ *       free ((void*)value);
+ *       value = apteryx_get_string (path, "state");
+ *       printf ("    state           %s\n", value);
+ *       free ((void*)value);
+ *   }
+ *   g_list_free_full (paths, free);
  *
  * Output:
  *
- *  Interfaces:
- *    eth0
- *      description      our lan
- *      state            up
- *    eth1
- *      description      our wan
- *      state            down
+ * Interfaces:
+ *   eth0
+ *     description      our lan
+ *     state            up
+ *   eth1
+ *     description      our wan
+ *     state            down
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -104,39 +101,33 @@ bool apteryx_dump (const char *path, FILE *fp);
  * Set a path/value in Apteryx
  * @param path path to the value to set
  * @param value value to set at the specified path
- * @param size size length of the value
  * @return true on a successful set
  * @return false if the path is invalid
  */
-bool apteryx_set (const char *path, unsigned char *value, size_t size);
-/** Helper to store a simple int */
-bool apteryx_set_int (const char *path, const char *key, int32_t value);
-/** Helper to store a simple string */
+bool apteryx_set (const char *path, const char *value);
+/** Helper to extend the path with the specified key */
 bool apteryx_set_string (const char *path, const char *key, const char *value);
+/** Helper to store a simple int at an extended path */
+bool apteryx_set_int (const char *path, const char *key, int32_t value);
 
 /**
  * Set a path/value from Apteryx
  * @param path path to the value to get
- * @param value returned value
- * @param size length of returned value
- * @return true on success
- * @return false if the path is invalid
+ * @return value on success
+ * @return NULL if the path is invalid
  */
-bool apteryx_get (const char *path, unsigned char **value, size_t *size);
-/** Helper to retrieve a simple int */
-int32_t apteryx_get_int (const char *path, const char *key);
-/** Helper to retrieve a simple string */
+char *apteryx_get (const char *path);
+/** Helper to retrieve the value using an extended path based on the specified key */
 char *apteryx_get_string (const char *path, const char *key);
+/** Helper to retrieve a simple integer from an extended path */
+int32_t apteryx_get_int (const char *path, const char *key);
 
 /**
  * Search for all children that start with the root path.
  * Does not go further than one level down.
  * example:
-    "/entity/zones" = "-"
-    "/entity/zones/private" = "-"
     "/entity/zones/private/description" = "lan"
     "/entity/zones/private/networks/description" = "engineers"
-    "/entity/zones/public" = "-"
     "/entity/zones/public/description" = "wan"
  *  apteryx_search ("/entity/zones") = {"/entity/zones/private", "/entity/zones/public"}
  * @param root root path to search on
@@ -149,12 +140,10 @@ GList *apteryx_search (const char *root);
  * watched value changes.
  * @param path path to the watched value
  * @param priv something I passed to apteryx_watch to be passed back to me
- * @param value new value of the watched value
- * @param len length of the returned value
+ * @param value new value of the watched path
  * @return true on success
  */
-typedef bool (*apteryx_watch_callback) (const char *path, void *priv,
-                                        const unsigned char *value, size_t len);
+typedef bool (*apteryx_watch_callback) (const char *path, void *priv, const char *value);
 
 /**
  * Watch for changes in the path
@@ -176,12 +165,9 @@ bool apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv);
  * requests a value for a "provided" path.
  * @param path path to the requested value
  * @param priv something I passed to apteryx_provide to be passed back to me
- * @param value returned value
- * @param size length of the returned value
- * @return true to indicate the value is valid
+ * @return the provided value on success, otherwise NULL
  */
-typedef bool (*apteryx_provide_callback) (const char *path, void *priv,
-                                          unsigned char **value, size_t *size);
+typedef char* (*apteryx_provide_callback) (const char *path, void *priv);
 
 /**
  * Provide a value that can be read on demand
