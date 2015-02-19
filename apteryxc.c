@@ -59,31 +59,21 @@ usage ()
     printf ("    %scounters\n", APTERYX_SETTINGS);
     printf ("    %swatchers\n", APTERYX_SETTINGS);
     printf ("    %sproviders\n", APTERYX_SETTINGS);
+    printf ("    %scache\n", APTERYX_SETTINGS);
     printf ("\n");
 }
 
 static bool
-watch_callback (const char *path, void *priv, const unsigned char *value, size_t len)
+watch_callback (const char *path, void *priv, const char *value)
 {
-    int i;
-    printf ("%s = ", path);
-    for (i = 0; i < len; i++)
-    {
-        if (isprint (value[i]))
-            printf ("%c", value[i]);
-        else
-            printf ("\\%02x", value[i]);
-    }
-    printf ("\n");
+    printf ("%s = %s\n", path, value);
     return true;
 }
 
-static bool
-provide_callback (const char *path, void *priv, unsigned char **value, size_t *size)
+static char*
+provide_callback (const char *path, void *priv)
 {
-    *value = (unsigned char *) strdup ((char *) priv);
-    *size = strlen ((char *) *value) + 1;
-    return true;
+    return strdup ((char *) priv);
 }
 
 /* Application entry point */
@@ -93,7 +83,6 @@ main (int argc, char **argv)
     APTERYX_MODE mode = -1;
     char *path = NULL;
     char *param = NULL;
-    size_t length = 0;
     GList * _iter;
     int c;
 
@@ -157,9 +146,9 @@ main (int argc, char **argv)
             return 0;
         }
         apteryx_init (debug);
-        if (apteryx_get (path, (unsigned char **) &param, &length) && param)
+        if ((param = apteryx_get (path)))
         {
-            printf ("%.*s\n", (int) length, param);
+            printf ("%s\n", param);
             free (param);
         }
         else
@@ -173,8 +162,7 @@ main (int argc, char **argv)
             return 0;
         }
         apteryx_init (debug);
-        length = param ? strlen (param) + 1 : 0;
-        if (!apteryx_set (path, (unsigned char *) param, length))
+        if (!apteryx_set (path, param))
             printf ("Failed\n");
         apteryx_shutdown ();
         break;

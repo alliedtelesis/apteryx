@@ -89,38 +89,35 @@ cb_info_find (GList *list, const char *path, uint64_t id)
     return info;
 }
 
-static bool
-handle_debug_get (const char *path, void *priv,
-                    unsigned char **value, size_t *size)
+static char*
+handle_debug_get (const char *path, void *priv)
 {
+    char *value;
     if (debug)
-        *value = (unsigned char *) strdup ("1");
+        value = strdup ("1");
     else
-        *value = (unsigned char *) strdup ("0");
-    *size = strlen ((char *) *value) + 1;
-    return true;
+        value = strdup ("0");
+    return value;
 }
 
 static bool
-handle_debug_set (const char *path, void *priv,
-        const unsigned char *value, size_t len)
+handle_debug_set (const char *path, void *priv, const char *value)
 {
     if (value)
-        debug = atoi ((const char *)value);
+        debug = atoi (value);
     else
         debug = false;
     DEBUG ("DEBUG %s\n", debug ? "enabled" : "disabled");
     return true;
 }
 
-static bool
-handle_counters_get (const char *path, void *priv,
-                        unsigned char **value, size_t *size)
+static char*
+handle_counters_get (const char *path, void *priv)
 {
+    char *value;
     char *buffer = NULL;
 
-    buffer = malloc (4096); /* Currently around 500 bytes */
-    *value = (unsigned char*)buffer;
+    value = buffer = malloc (4096); /* Currently around 500 bytes */
 
     buffer += sprintf (buffer, "\n");
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "set", counters.set);
@@ -142,8 +139,7 @@ handle_counters_get (const char *path, void *priv,
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune", counters.prune);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune_invalid", counters.prune_invalid);
 
-    *size = strlen ((char*)(*value)) + 1;
-    return true;
+    return value;
 }
 
 char*
@@ -173,9 +169,8 @@ get_process_name_by_pid (int pid)
     return name;
 }
 
-static bool
-handle_callbacks_get (const char *path, void *priv,
-                        unsigned char **value, size_t *size)
+static char*
+handle_callbacks_get (const char *path, void *priv)
 {
     GList *list;
     GList *iter = NULL;
@@ -184,7 +179,7 @@ handle_callbacks_get (const char *path, void *priv,
 
     list = priv ? provide_list : watch_list;
     len = asprintf (&res, "%d\n", g_list_length (list)) + 1;
-    for (iter = list; iter; iter = iter->next)
+    for (iter = list; iter && len; iter = iter->next)
     {
         cb_info_t *info = (cb_info_t *) iter->data;
         char *new = NULL;
@@ -192,32 +187,21 @@ handle_callbacks_get (const char *path, void *priv,
         len = asprintf (&new, "%s %-16s 0x%16.16"PRIx64" 0x%16.16"PRIx64" %-48s %"PRIu32"\n",
                 res, process, info->cb, info->priv, info->path, info->count);
         free (process);
-        free (res);
-        res = new;
+        if (len)
+        {
+            free (res);
+            res = new;
+        }
     }
 
-    *value = (unsigned char*)res;
-    *size = len + 1;
-
-    return true;
+    return res;
 }
 
 #ifdef USE_SHM_CACHE
-static bool
-handle_cache_get (const char *path, void *priv,
-                        unsigned char **value, size_t *size)
+static char*
+handle_cache_get (const char *path, void *priv)
 {
-    char *buffer = NULL;
-    int len = 0;
-
-    buffer = cache_dump_table ();
-    if (buffer)
-    {
-        len = strlen (buffer) + 1;
-    }
-    *value = (unsigned char*)buffer;
-    *size = len;
-    return (buffer != NULL);
+    return cache_dump_table ();
 }
 #endif
 
@@ -289,8 +273,8 @@ notify_watchers (const char *path)
 {
     GList *watchers = NULL;
     GList *iter = NULL;
-    unsigned char *value = NULL;
-    size_t vsize = 0;
+    char *value = NULL;
+    size_t vsize;
 
     /* Make sure we have at least one watcher */
     if (g_list_length (watch_list) == 0)
@@ -354,7 +338,7 @@ notify_watchers (const char *path)
     /* Find the new value for this path */
     value = NULL;
     vsize = 0;
-    db_get (path, &value, &vsize);
+    db_get (path, (unsigned char**)&value, &vsize);
 
     /* Call each watcher */
     for (iter = watchers; iter; iter = g_list_next (iter))
@@ -371,12 +355,12 @@ notify_watchers (const char *path)
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
             DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
                     watcher->path, watcher->id, watcher->cb, watcher->priv);
-            cb (path, (void *) (long) watcher->priv, value, vsize);
+            cb (path, (void *) (long) watcher->priv, value);
             continue;
         }
 
-        DEBUG ("WATCH CB %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-               watcher->path, watcher->id, watcher->cb, watcher->priv);
+        DEBUG ("WATCH CB %s = %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
+                value, watcher->path, watcher->id, watcher->cb, watcher->priv);
 
         /* Setup IPC */
         sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", watcher->id);
@@ -399,8 +383,7 @@ notify_watchers (const char *path)
 
         /* Do remote watch */
         watch.path = (char *)path;
-        watch.value.data = value;
-        watch.value.len = vsize;
+        watch.value = value;
         watch.id = watcher->id;
         watch.cb = watcher->cb;
         watch.priv = watcher->priv;
@@ -422,29 +405,31 @@ notify_watchers (const char *path)
         free (value);
 }
 
-static unsigned char *_get_value = NULL;
-static size_t _get_length = 0;
+typedef struct _get_data_t
+{
+    char *value;
+    bool done;
+} get_data_t;
+
 static void
 handle_get_response (const Apteryx__GetResult *result, void *closure_data)
 {
+    get_data_t *data = (get_data_t *)closure_data;
     if (result == NULL)
     {
         ERROR ("GET: Error processing request.\n");
     }
-    else if (result->value.len != 0)
+    else if (result->value && result->value[0] != '\0')
     {
-        if (_get_value)
-            free (_get_value);
-        _get_length = result->value.len;
-        _get_value = malloc (_get_length);
-        memcpy (_get_value, result->value.data, _get_length);
+        data->value = strdup (result->value);
     }
-    *(protobuf_c_boolean *) closure_data = 1;
+    data->done = true;
 }
 
-static bool
-provide_get (const char *path, unsigned char **value, size_t *vsize)
+static char *
+provide_get (const char *path)
 {
+    char *value = NULL;
     GList *iter = NULL;
 
     for (iter = provide_list; iter; iter = g_list_next (iter))
@@ -457,7 +442,7 @@ provide_get (const char *path, unsigned char **value, size_t *vsize)
             (*ptr == '*' && strncmp (path, provider->path, len - 1) == 0))
         {
             ProtobufCService *rpc_client;
-            protobuf_c_boolean is_done = false;
+            get_data_t data = {0};
             Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
             char service_name[64];
 
@@ -465,18 +450,13 @@ provide_get (const char *path, unsigned char **value, size_t *vsize)
             INC_COUNTER (counters.provided);
             INC_COUNTER (provider->count);
 
-            /* Start clear */
-            if (_get_value)
-                free (_get_value);
-            _get_value = NULL;
-
             /* Check for local provider */
             if (provider->id == getpid ())
             {
                 apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->cb;
                 DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
                                            provider->path, provider->id, provider->cb, provider->priv);
-                cb (path, (void *) (long) provider->priv, value, vsize);
+                value = cb (path, (void *) (long) provider->priv);
                 break;
             }
 
@@ -502,8 +482,8 @@ provide_get (const char *path, unsigned char **value, size_t *vsize)
             provide.cb = provider->cb;
             provide.priv = provider->priv;
             apteryx__client__provide (rpc_client, &provide,
-                                      handle_get_response, &is_done);
-            if (!is_done)
+                                      handle_get_response, &data);
+            if (!data.done)
             {
                 ERROR ("No response from provider\n");
             }
@@ -512,16 +492,14 @@ provide_get (const char *path, unsigned char **value, size_t *vsize)
             protobuf_c_service_destroy (rpc_client);
 
             /* Result */
-            if (_get_value)
+            if (data.value)
             {
-                *vsize = _get_length;
-                *value = _get_value;
-                _get_value = NULL;
+                value = data.value;
                 break;
             }
         }
     }
-    return true;
+    return value;
 }
 
 static void
@@ -541,19 +519,19 @@ apteryx__set (Apteryx__Server_Service *service,
     }
     INC_COUNTER (counters.set);
 
-    DEBUG ("SET: %s = %s\n", set->path, bytes_to_string (set->value.data, set->value.len));
+    DEBUG ("SET: %s = %s\n", set->path, set->value);
 
     /* Add/Delete to/from database */
-    if (set->value.len)
-        db_add (set->path, set->value.data, set->value.len);
+    if (set->value && set->value[0] != '\0')
+        db_add (set->path, (unsigned char*)set->value, strlen (set->value) + 1);
     else
         db_delete (set->path);
 
 #ifdef USE_SHM_CACHE
-    if (set->value.len)
-        cache_set (set->path, set->value.data, set->value.len);
+    if (set->value && set->value[0] != '\0')
+        cache_set (set->path, set->value);
     else
-        cache_set (set->path, NULL, 0);
+        cache_set (set->path, NULL);
 #endif
 
     /* Notify watchers */
@@ -570,7 +548,7 @@ apteryx__get (Apteryx__Server_Service *service,
               Apteryx__GetResult_Closure closure, void *closure_data)
 {
     Apteryx__GetResult result = APTERYX__GET_RESULT__INIT;
-    unsigned char *value = NULL;
+    char *value = NULL;
     size_t vsize = 0;
 
     /* Check parameters */
@@ -588,9 +566,9 @@ apteryx__get (Apteryx__Server_Service *service,
     /* Lookup value */
     value = NULL;
     vsize = 0;
-    if (!db_get (get->path, &value, &vsize))
+    if (!db_get (get->path, (unsigned char**)&value, &vsize))
     {
-        if (!provide_get (get->path, &value, &vsize))
+        if ((value = provide_get (get->path)) == NULL)
         {
             DEBUG ("GET: not in database or provided\n");
         }
@@ -598,14 +576,13 @@ apteryx__get (Apteryx__Server_Service *service,
 #ifdef USE_SHM_CACHE
     else
     {
-        cache_set (get->path, value, vsize);
+        cache_set (get->path, value);
     }
 #endif
 
     /* Send result */
-    DEBUG ("     = %s\n", bytes_to_string (value, vsize));
-    result.value.data = value;
-    result.value.len = vsize;
+    DEBUG ("     = %s\n", value);
+    result.value = value;
     closure (&result, closure_data);
     if (value)
         free (value);
@@ -836,7 +813,7 @@ apteryx__prune (Apteryx__Server_Service *service,
 #ifdef USE_SHM_CACHE
     for (iter = paths; iter; iter = g_list_next (iter))
     {
-        cache_set ((const char *) iter->data, NULL, 0);
+        cache_set ((const char *) iter->data, NULL);
     }
 #endif
     for (iter = paths; iter; iter = g_list_next (iter))

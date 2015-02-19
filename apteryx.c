@@ -52,8 +52,7 @@ typedef struct _cb_info_t
     apteryx_watch_callback cb;
     const char *path;
     void *priv;
-    unsigned char *value;
-    size_t size;
+    char *value;
 } cb_info_t;
 
 static void
@@ -72,12 +71,8 @@ cb_info_create (const Apteryx__Watch *watch)
     info->cb = (apteryx_watch_callback) (long) watch->cb;
     info->path = strdup (watch->path);
     info->priv = (void *) (long) watch->priv;
-    if (watch->value.len)
-    {
-        info->size = watch->value.len;
-        info->value = malloc (info->size);
-        memcpy (info->value, watch->value.data, info->size);
-    }
+    if (watch->value && watch->value[0] != '\0')
+        info->value = strdup (watch->value);
     return (gpointer)info;
 }
 
@@ -91,7 +86,7 @@ apteryx__watch (Apteryx__Client_Service *service,
     (void) service;
 
     DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-           watch->path, bytes_to_string (watch->value.data, watch->value.len),
+           watch->path, watch->value,
            watch->id, watch->cb, watch->priv);
 
     /* Queue the callback for processing */
@@ -114,8 +109,7 @@ apteryx__provide (Apteryx__Client_Service *service,
 {
     Apteryx__GetResult result = APTERYX__GET_RESULT__INIT;
     apteryx_provide_callback cb = (apteryx_provide_callback) (long) provide->cb;
-    unsigned char *value = NULL;
-    size_t vsize = 0;
+    char *value = NULL;
     (void) service;
 
     DEBUG ("PROVIDE CB: \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
@@ -123,11 +117,10 @@ apteryx__provide (Apteryx__Client_Service *service,
 
     /* Call the callback */
     if (cb)
-        cb (provide->path, (void *) (long) provide->priv, &value, &vsize);
+        value = cb (provide->path, (void *) (long) provide->priv);
 
     /* Return result */
-    result.value.data = value;
-    result.value.len = vsize;
+    result.value = value;
     closure (&result, closure_data);
     if (value)
         free (value);
@@ -160,7 +153,7 @@ worker_thread (void *data)
         {
             cb_info_t *info = (cb_info_t *) iter->data;
             if (info->cb)
-                info->cb (info->path, info->priv, info->value, info->size);
+                info->cb (info->path, info->priv, info->value);
         }
         g_list_free_full (pending, cb_info_destroy);
     }
@@ -398,8 +391,7 @@ apteryx_prune (const char *path)
 bool
 apteryx_dump (const char *path, FILE *fp)
 {
-    unsigned char *value = NULL;
-    size_t size;
+    char *value = NULL;
 
     DEBUG ("DUMP: %s\n", path);
 
@@ -411,9 +403,9 @@ apteryx_dump (const char *path, FILE *fp)
         return false;
     }
 
-    if (strlen (path) > 0 && apteryx_get (path, &value, &size) && value)
+    if (strlen (path) > 0 && (value = apteryx_get (path)))
     {
-        fprintf (fp, "%-64s%.*s\n", path, (int) size, value);
+        fprintf (fp, "%-64s%-64s\n", path, value);
         free (value);
     }
 
@@ -434,13 +426,13 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_set (const char *path, unsigned char *value, size_t size)
+apteryx_set (const char *path, const char *value)
 {
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
     protobuf_c_boolean is_done = 0;
 
-    DEBUG ("SET: %s = %s\n", path, bytes_to_string (value, size));
+    DEBUG ("SET: %s = %s\n", path, value);
 
     /* Check path */
     if (path[0] != '/' || path[strlen(path) - 1] == '/')
@@ -458,8 +450,7 @@ apteryx_set (const char *path, unsigned char *value, size_t size)
         return false;
     }
     set.path = (char *) path;
-    set.value.data = value;
-    set.value.len = size;
+    set.value = (char *) value;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
     protobuf_c_service_destroy (rpc_client);
     if (!is_done)
@@ -470,30 +461,6 @@ apteryx_set (const char *path, unsigned char *value, size_t size)
 
     /* Success */
     return true;
-}
-
-bool
-apteryx_set_int (const char *path, const char *key, int32_t value)
-{
-    char *full_path;
-    size_t len;
-    unsigned char *v;
-    bool res = false;
-
-    /* Create full path */
-    if (key)
-        len = asprintf (&full_path, "%s/%s", path, key);
-    else
-        len = asprintf (&full_path, "%s", path);
-    if (len)
-    {
-        /* Store as a string at the moment */
-        len = asprintf ((char **) &v, "%d", value);
-        res = apteryx_set (full_path, v, len + 1);
-        free ((void *) v);
-        free (full_path);
-    }
-    return res;
 }
 
 bool
@@ -510,8 +477,34 @@ apteryx_set_string (const char *path, const char *key, const char *value)
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_set (full_path, (unsigned char *) value,
-                           value ? strlen (value) + 1 : 0);
+        res = apteryx_set (full_path, value);
+        free (full_path);
+    }
+    return res;
+}
+
+bool
+apteryx_set_int (const char *path, const char *key, int32_t value)
+{
+    char *full_path;
+    size_t len;
+    char *v;
+    bool res = false;
+
+    /* Create full path */
+    if (key)
+        len = asprintf (&full_path, "%s/%s", path, key);
+    else
+        len = asprintf (&full_path, "%s", path);
+    if (len)
+    {
+        /* Store as a string at the moment */
+        len = asprintf ((char **) &v, "%d", value);
+        if (len)
+        {
+            res = apteryx_set (full_path, v);
+            free ((void *) v);
+        }
         free (full_path);
     }
     return res;
@@ -519,8 +512,7 @@ apteryx_set_string (const char *path, const char *key, const char *value)
 
 typedef struct _get_data_t
 {
-    unsigned char *value;
-    size_t length;
+    char *value;
     bool done;
 } get_data_t;
 
@@ -532,18 +524,17 @@ handle_get_response (const Apteryx__GetResult *result, void *closure_data)
     {
         ERROR ("GET: Error processing request.\n");
     }
-    else if (result->value.len != 0)
+    else if (result->value && result->value[0] != '\0')
     {
-        data->length = result->value.len;
-        data->value = malloc (data->length);
-        memcpy (data->value, result->value.data, data->length);
+        data->value = strdup (result->value);
     }
     data->done = true;
 }
 
-bool
-apteryx_get (const char *path, unsigned char **value, size_t *size)
+char *
+apteryx_get (const char *path)
 {
+    char *value = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
     get_data_t data = {0};
@@ -555,18 +546,14 @@ apteryx_get (const char *path, unsigned char **value, size_t *size)
     {
         ERROR ("GET: invalid path (%s)!\n", path);
         assert(!debug || path[0] == '/');
-        return false;
+        return NULL;
     }
 
-    /* Start blank */
-    *value = NULL;
-    *size = 0;
-
 #ifdef USE_SHM_CACHE
-    if (cache_get (path, value, size))
+    if ((value = cache_get (path)))
     {
-        DEBUG ("    = (c)%s\n", bytes_to_string (*value, *size));
-        return (*value != NULL);
+        DEBUG ("    = (c)%s\n", value);
+        return value;
     }
 #endif
 
@@ -575,7 +562,7 @@ apteryx_get (const char *path, unsigned char **value, size_t *size)
     if (!rpc_client)
     {
         ERROR ("GET: Falied to connect to server: %s\n", strerror (errno));
-        return false;
+        return NULL;
     }
     get.path = (char *) path;
     apteryx__server__get (rpc_client, &get, handle_get_response, &data);
@@ -583,39 +570,13 @@ apteryx_get (const char *path, unsigned char **value, size_t *size)
     if (!data.done)
     {
         ERROR ("GET: No response\n");
-        return false;
+        return NULL;
     }
 
     /* Result */
-    *size = data.length;
-    *value = data.value;
+    value = data.value;
 
-    DEBUG ("    = %s\n", bytes_to_string (*value, *size));
-    return (*value != NULL);
-}
-
-int32_t
-apteryx_get_int (const char *path, const char *key)
-{
-    char *full_path;
-    size_t len;
-    unsigned char *v = NULL;
-    int value = -1;
-
-    /* Create full path */
-    if (key)
-        len = asprintf (&full_path, "%s/%s", path, key);
-    else
-        len = asprintf (&full_path, "%s", path);
-    if (len)
-    {
-        if (apteryx_get (full_path, &v, &len) && v)
-        {
-            value = atoi ((char *) v);
-            free (v);
-        }
-        free (full_path);
-    }
+    DEBUG ("    = %s\n", value);
     return value;
 }
 
@@ -624,7 +585,7 @@ apteryx_get_string (const char *path, const char *key)
 {
     char *full_path;
     size_t len;
-    unsigned char *value = NULL;
+    char *value = NULL;
     char *str = NULL;
 
     /* Create full path */
@@ -634,14 +595,38 @@ apteryx_get_string (const char *path, const char *key)
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        if (!apteryx_get ((const char *) full_path, &value, &len))
+        if ((value = apteryx_get ((const char *) full_path)))
         {
-            value = NULL;
+            str = (char *) value;
         }
-        str = (char *) value;
         free (full_path);
     }
     return str;
+}
+
+int32_t
+apteryx_get_int (const char *path, const char *key)
+{
+    char *full_path;
+    size_t len;
+    char *v = NULL;
+    int value = -1;
+
+    /* Create full path */
+    if (key)
+        len = asprintf (&full_path, "%s/%s", path, key);
+    else
+        len = asprintf (&full_path, "%s", path);
+    if (len)
+    {
+        if ((v = apteryx_get (full_path)))
+        {
+            value = atoi ((char *) v);
+            free (v);
+        }
+        free (full_path);
+    }
+    return value;
 }
 
 typedef struct _search_data_t

@@ -31,13 +31,10 @@ Apteryx paths are similar to unix paths.
 int
 main (int argc, char **argv)
 {
-    apteryx_set_string ("/interfaces", NULL, "-");
-    apteryx_set_string ("/interfaces/eth0", NULL, "-");
-    apteryx_set_string ("/interfaces/eth0", "description", "our lan");
-    apteryx_set_string ("/interfaces/eth0", "state", "up");
-    apteryx_set_string ("/interfaces/eth1", NULL, "-");
-    apteryx_set_string ("/interfaces/eth1", "description", "our wan");
-    apteryx_set_string ("/interfaces/eth1", "state", "down");
+    apteryx_set ("/interfaces/eth0/description", "our lan");
+    apteryx_set ("/interfaces/eth0/state", "up");
+    apteryx_set ("/interfaces/eth1/description", "our wan");
+    apteryx_set ("/interfaces/eth1/state", "down");
 
     printf ("\nInterfaces:\n");
     GList* paths = apteryx_search ("/interfaces/");
@@ -57,6 +54,7 @@ main (int argc, char **argv)
 
     return 0;
 }
+
 '''
 
 '''
@@ -89,18 +87,23 @@ Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p] [<path>] [<value>]
   -t   traverse database from <path>
   -w   watch changes to the path <path>
   -p   provide <value> for <path>
+
+  Internal settings
+    /apteryx/debug
+    /apteryx/counters
+    /apteryx/watchers
+    /apteryx/providers
+    /apteryx/cache
 '''
 
 Examples:
 '''
 ./apteryxd -b -p ./apteryxd.pid
-LD_LIBRARY_PATH=. ./apteryx -s /interfaces/eth0 "-"
 LD_LIBRARY_PATH=. ./apteryx -s /interfaces/eth0/description "our lan"
 LD_LIBRARY_PATH=. ./apteryx -s /interfaces/eth0/state "up"
 LD_LIBRARY_PATH=. ./apteryx -g /interfaces/eth0/description
 /interfaces/eth0/description/ = our lan
 LD_LIBRARY_PATH=. ./apteryx -t /interfaces/eth0/
-/interfaces/eth0/                                               -
-/interfaces/eth0/description/                                   our lan
-/interfaces/eth0/state/                                         up
+/interfaces/eth0/description                                    our lan
+/interfaces/eth0/state                                          up
 '''

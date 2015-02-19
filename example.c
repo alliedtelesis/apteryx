@@ -25,13 +25,10 @@
 int
 main (int argc, char **argv)
 {
-    apteryx_set_string ("/interfaces", NULL, "-");
-    apteryx_set_string ("/interfaces/eth0", NULL, "-");
-    apteryx_set_string ("/interfaces/eth0", "description", "our lan");
-    apteryx_set_string ("/interfaces/eth0", "state", "up");
-    apteryx_set_string ("/interfaces/eth1", NULL, "-");
-    apteryx_set_string ("/interfaces/eth1", "description", "our wan");
-    apteryx_set_string ("/interfaces/eth1", "state", "down");
+    apteryx_set ("/interfaces/eth0/description", "our lan");
+    apteryx_set ("/interfaces/eth0/state", "up");
+    apteryx_set ("/interfaces/eth1/description", "our wan");
+    apteryx_set ("/interfaces/eth1/state", "down");
 
     printf ("\nInterfaces:\n");
     GList* paths = apteryx_search ("/interfaces/");
