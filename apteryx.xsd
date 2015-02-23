@@ -12,6 +12,7 @@
 			<xs:attribute name="value" type="xs:string" use="optional" />
 			<xs:attribute name="help" type="xs:string" use="optional" />
 			<xs:attribute name="hidden" type="xs:boolean" use="optional" />
+			<xs:attribute name="ro" type="xs:boolean" use="optional" />
 		</xs:complexType>
 	</xs:element>
 	<xs:element name="MODULE">
