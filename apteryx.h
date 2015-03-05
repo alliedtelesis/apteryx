@@ -111,7 +111,7 @@ bool apteryx_set_string (const char *path, const char *key, const char *value);
 bool apteryx_set_int (const char *path, const char *key, int32_t value);
 
 /**
- * Set a path/value from Apteryx
+ * Get a path/value from Apteryx
  * @param path path to the value to get
  * @return value on success
  * @return NULL if the path is invalid
@@ -155,7 +155,7 @@ typedef bool (*apteryx_watch_callback) (const char *path, void *priv, const char
  * - apteryx_watch("/entity/zones/red/networks/*", network_updated, "red")
  * @param path path to the value to be watched
  * @param cb function to call when the value changes
- * @param priv something I want passed back to be when the callback is called
+ * @param priv something I want to be passed to my callback
  * @return true on successful registration
  */
 bool apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv);
