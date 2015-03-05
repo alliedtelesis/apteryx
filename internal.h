@@ -115,7 +115,7 @@ typedef struct _counters_t
     uint32_t prune;
     uint32_t prune_invalid;
 } counters_t;
-#define INC_COUNTER(c) (void)__sync_fetch_and_add(&c, 1);
+#define INC_COUNTER(c) (void)g_atomic_int_inc(&c);
 
 /* Database API */
 void db_init (void);
