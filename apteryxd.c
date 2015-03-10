@@ -417,7 +417,7 @@ handle_get_response (const Apteryx__GetResult *result, void *closure_data)
     get_data_t *data = (get_data_t *)closure_data;
     if (result == NULL)
     {
-        ERROR ("GET: Error processing request.\n");
+        DEBUG ("GET: Error processing request.\n");
     }
     else if (result->value && result->value[0] != '\0')
     {
