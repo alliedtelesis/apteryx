@@ -582,7 +582,7 @@ invoke_client_service (ProtobufCService *service,
         }
         else if ((get_time_us () - start) > RPC_TIMEOUT_US)
         {
-            ERROR ("RPC[%d]: read() timeout\n", client->fd);
+            DEBUG ("RPC[%d]: read() timeout\n", client->fd);
             goto error;
         }
         else if (rv < 0)

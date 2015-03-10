@@ -126,7 +126,7 @@ bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 
 /* RPC API */
-#define RPC_TIMEOUT_US 1000000
+#define RPC_TIMEOUT_US 2000000
 bool rpc_provide_service (const char *name, ProtobufCService *service, int num_threads, int stopfd);
 ProtobufCService *rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descriptor);
 
