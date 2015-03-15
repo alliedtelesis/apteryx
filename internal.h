@@ -77,9 +77,12 @@ static inline uint32_t htol32 (uint32_t v)
 #define ERROR(fmt, args...) \
     { \
         syslog (LOG_ERR, fmt, ## args); \
-        fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
-        fprintf (stderr, "ERROR: "); \
-        fprintf (stderr, fmt, ## args); \
+        if (debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ERROR: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
     }
 
 #define FATAL(fmt, args...) \
