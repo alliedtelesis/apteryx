@@ -31,7 +31,7 @@ all: libapteryx.so apteryx apteryxd
 
 libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o lua.o
 	@echo "Creating library "$@""
-	@$(LD) $(LDFLAGS) -G -o $@ $^ $(EXTRA_LDFLAGS)
+	@$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
 %.o: %.c
 	@echo "Compiling "$<""
