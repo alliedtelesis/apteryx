@@ -136,4 +136,10 @@ luaopen_libapteryx(lua_State *L)
     lua_register (L, "apteryx_search", lua_apteryx_search);
     return 0;
 }
+
+int
+luaopen_apteryx(lua_State *L)
+{
+    return luaopen_libapteryx(L);
+}
 #endif

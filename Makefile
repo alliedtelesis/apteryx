@@ -20,8 +20,8 @@ EXTRA_CFLAGS += -I. -I/usr/include/google `$(PKG_CONFIG) --cflags glib-2.0`
 EXTRA_LDFLAGS := `$(PKG_CONFIG) --libs glib-2.0` -lpthread
 EXTRA_LDFLAGS += -lprotobuf-c
 ifneq ($(HAVE_LUA),no)
-EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --cflags lua5.2`
-EXTRA_LDFLAGS += `$(PKG_CONFIG) --libs lua5.2`
+EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --cflags lua || $(PKG_CONFIG) --cflags lua5.2`
+EXTRA_LDFLAGS += `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --libs lua || $(PKG_CONFIG) --libs lua5.2`
 endif
 ifneq ($(USE_SHM_CACHE),no)
 EXTRA_CFLAGS += -DUSE_SHM_CACHE
