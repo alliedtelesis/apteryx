@@ -1183,6 +1183,72 @@ test_perf_provide ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static bool
+test_deadlock_callback (const char *path, void *priv, const char *value)
+{
+    apteryx_set("/test/goes/here", "changed");
+    return true;
+}
+
+void
+test_deadlock ()
+{
+    int i;
+
+    for (i = 0; i < 1000; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (apteryx_set (path, "set"));
+        CU_ASSERT (apteryx_watch (path, test_deadlock_callback, (void *) 0x12345678));
+    }
+    CU_ASSERT (apteryx_prune("/"));
+    usleep(1000);
+    apteryx_shutdown();
+    apteryx_init(false);
+
+    for (i = 0; i < 1000; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (apteryx_watch (path, NULL, NULL));
+    }
+    CU_ASSERT (apteryx_prune("/"));
+}
+
+static bool
+test_deadlock2_callback (const char *path, void *priv, const char *value)
+{
+    apteryx_watch(path, test_deadlock_callback, priv);
+    return true;
+}
+
+void
+test_deadlock2 ()
+{
+    int i;
+
+    for (i = 0; i < 1000; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (apteryx_set (path, "set"));
+        CU_ASSERT (apteryx_watch (path, test_deadlock2_callback, (void *) 0x12345678));
+    }
+    CU_ASSERT (apteryx_prune("/"));
+    usleep(200);
+    apteryx_shutdown();
+    apteryx_init(false);
+
+    for (i = 0; i < 1000; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (apteryx_watch (path, NULL, NULL));
+    }
+    CU_ASSERT (apteryx_prune("/"));
+}
+
 void
 _dump_config (FILE *fd, char *root, int tab)
 {
@@ -1315,6 +1381,8 @@ static CU_TestInfo tests_performance[] = {
     { "search null", test_perf_search_null },
     { "watch", test_perf_watch },
     { "provide", test_perf_provide },
+    { "shutdown deadlock", test_deadlock },
+    { "shutdown deadlock 2", test_deadlock2 },
     CU_TEST_INFO_NULL,
 };
 

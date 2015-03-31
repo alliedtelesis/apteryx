@@ -209,7 +209,6 @@ stop_client_threads (void)
         return;
 
     /* Stop the client thread */
-    pthread_mutex_lock (&lock);
     if (client_running && client_id != 0)
     {
         /* Signal stop and wait */
@@ -240,14 +239,15 @@ stop_client_threads (void)
             pthread_cancel (worker_id);
             pthread_join (worker_id, NULL);
         }
+        pthread_mutex_lock (&lock);
         g_list_free_full (pending_watches, cb_info_destroy);
         pending_watches = NULL;
+        pthread_mutex_unlock (&lock);
     }
 
     /* Done */
     worker_running = false;
     client_running = false;
-    pthread_mutex_unlock (&lock);
     return;
 }
 
@@ -258,6 +258,14 @@ start_client_threads (void)
 
     /* Create threads if not already running */
     pthread_mutex_lock (&lock);
+
+    /* Return early if we are shutting down */
+    if (ref_count == 0)
+    {
+        pthread_mutex_unlock (&lock);
+        return false;
+    }
+
     if (!client_running)
     {
         /* Create the worker to process the watch callbacks */
@@ -348,6 +356,8 @@ apteryx_shutdown (void)
     DEBUG ("Shutdown: Shutting down\n");
     stop_client_threads ();
     DEBUG ("Shutdown: Shutdown\n");
+    assert (!client_running);
+    assert (!worker_running);
     return true;
 }
 
