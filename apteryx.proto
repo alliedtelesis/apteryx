@@ -2,6 +2,12 @@ package apteryx;
 
 message OKResult
 {
+    required int32 result = 1;
+};
+
+message ValidateResult
+{
+    required int32 result = 1;
 };
 
 message Set
@@ -39,6 +45,14 @@ message Watch
     required uint64 priv = 5;
 };
 
+message Validate
+{
+    required string path = 1;
+    required string value = 2;
+    required uint64 id = 3;
+    required uint64 cb = 4;
+};
+
 message Provide
 {
     required string path = 1;
@@ -58,6 +72,7 @@ service server
     rpc get (Get) returns (GetResult);
     rpc search (Search) returns (SearchResult);
     rpc watch (Watch) returns (OKResult);
+    rpc validate (Validate) returns (OKResult);
     rpc provide (Provide) returns (OKResult);
     rpc prune (Prune) returns (OKResult);
 }
@@ -66,4 +81,5 @@ service client
 {
     rpc watch (Watch) returns (OKResult);
     rpc provide (Provide) returns (GetResult);
+    rpc validate (Validate) returns (ValidateResult);
 }

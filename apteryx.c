@@ -101,6 +101,26 @@ apteryx__watch (Apteryx__Client_Service *service,
     return;
 }
 
+/* Callback for validated items */
+static void
+apteryx__validate (Apteryx__Client_Service *service,
+                const Apteryx__Validate *validate,
+                Apteryx__ValidateResult_Closure closure, void *closure_data)
+{
+    Apteryx__ValidateResult result = APTERYX__VALIDATE_RESULT__INIT;
+    (void) service;
+
+    DEBUG ("VALIDATE CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+           validate->path, validate->value,
+           validate->id, validate->cb);
+
+    result.result = ((apteryx_validate_callback)validate->cb) (validate->path, validate->value);
+
+    /* Return result */
+    closure (&result, closure_data);
+    return;
+}
+
 /* Callback for provided items */
 static void
 apteryx__provide (Apteryx__Client_Service *service,
@@ -180,16 +200,16 @@ client_thread (void *data)
     stopfd = pipefd[1];
 
     /* Create service and process requests */
-    DEBUG ("Watch/Provide Thread: started...\n");
+    DEBUG ("Watch/Provide/Validate Thread: started...\n");
     client_running = true;
     sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", (uint64_t)getpid ());
     if (!rpc_provide_service (service_name, (ProtobufCService *)&service, 0, pipefd[0]))
     {
-        ERROR ("Watch/Provide Thread: Failed to start rpc service\n");
+        ERROR ("Watch/Provide/Validate Thread: Failed to start rpc service\n");
     }
 
     /* Clean up */
-    DEBUG ("Watch/Provide Thread: Exiting\n");
+    DEBUG ("Watch/Provide/Validate Thread: Exiting\n");
     close (pipefd[0]);
     close (pipefd[1]);
     stopfd = -1;
@@ -300,8 +320,13 @@ static void
 handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
 {
     if (result == NULL)
-        ERROR ("RESULT: Error processing request.\n");
-    *(protobuf_c_boolean *) closure_data = 1;
+    {
+        *(protobuf_c_boolean *) closure_data = false;
+    }
+    else
+    {
+        *(protobuf_c_boolean *) closure_data = !!result->result;
+    }
 }
 
 bool
@@ -768,6 +793,55 @@ apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
         return start_client_threads ();
 
     /* Success */
+    return true;
+}
+
+bool
+apteryx_validate (const char *path, apteryx_validate_callback cb)
+{
+    ProtobufCService *rpc_client;
+    Apteryx__Validate validate = APTERYX__VALIDATE__INIT;
+    char *empty_root = "/*";
+    bool is_done = 0;
+
+    DEBUG ("VALIDATE: %s %p\n", path, cb);
+
+    /* Check path */
+    if (!path ||
+        strcmp (path, "/") == 0 ||
+        strcmp (path, "/*") == 0 || strcmp (path, "*") == 0 || strlen (path) == 0)
+    {
+        path = empty_root;
+    }
+    if (path[0] != '/')
+    {
+        ERROR ("VALIDATE: invalid path (%s)!\n", path);
+        assert(!debug || path[0] == '/');
+        return false;
+    }
+
+    /* IPC */
+    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    if (!rpc_client)
+    {
+        ERROR ("VALIDATE: Falied to connect to server: %s\n", strerror (errno));
+        return false;
+    }
+    validate.path = (char *) path;
+    validate.id = (uint64_t) getpid ();
+    validate.cb = (uint64_t) (long) cb;
+    apteryx__server__validate (rpc_client, &validate, handle_ok_response, &is_done);
+    protobuf_c_service_destroy (rpc_client);
+    if (!is_done)
+    {
+         ERROR ("VALIDATE: No response\n");
+         return false;
+    }
+
+    /* Start the listen thread if required */
+    if (cb)
+        return start_client_threads ();
+
     return true;
 }
 

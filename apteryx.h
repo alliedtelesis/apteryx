@@ -161,6 +161,28 @@ typedef bool (*apteryx_watch_callback) (const char *path, void *priv, const char
 bool apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv);
 
 /**
+ * Callback function to be called to validate a new value
+ * @param path path for the proposed value
+ * @param value new proposed value
+ * @return 0 on success, error code on failure
+ */
+typedef int (*apteryx_validate_callback) (const char *path, const char *value);
+
+/**
+ * Validate changes in the path
+ * Supports *(wildcard) at the end of path for all children under this path
+ * Supports /(level) at the end of path for children only under this current path (one level down)
+ * Whenever a change occurs on the path, cb is called with the changed
+ * path and new value
+ * examples: (using imaginary usage example)
+ * - apteryx_validate("/entity/zones/red/networks/*", network_validate);
+ * @param path path to the value to be validated
+ * @param cb function to call when the value changes
+ * @return true on successful registration
+ */
+bool apteryx_validate (const char *path, apteryx_validate_callback cb);
+
+/**
  * Callback function to be called when a library users
  * requests a value for a "provided" path.
  * @param path path to the requested value

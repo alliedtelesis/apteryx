@@ -41,8 +41,10 @@ static counters_t counters = {};
 
 /* Watch and provide callbacks */
 static GList *watch_list = NULL;
+static GList *validation_list = NULL;
 static GList *provide_list = NULL;
 static pthread_mutex_t list_lock;
+static pthread_mutex_t validating;
 
 /* Callback */
 typedef struct _cb_info_t
@@ -260,6 +262,155 @@ setup_internal_settings (void)
 #endif
 
     return;
+}
+
+static void
+handle_validate_response (const Apteryx__ValidateResult *result, void *closure_data)
+{
+    *(int32_t *) closure_data = result->result;
+}
+
+static int
+validate_set (const char *path, const char *value)
+{
+    GList *validators = NULL;
+    GList *iter = NULL;
+    int32_t result = 0;
+
+    /* Make sure we have at least one watcher */
+    if (g_list_length (validation_list) == 0)
+    {
+        return 0;
+    }
+
+    /* Check each watcher */
+    pthread_mutex_lock (&list_lock);
+    for (iter = validation_list; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *validator = iter->data;
+        const char *ptr = NULL;
+        size_t len;
+        bool match = false;
+
+        /* exact path match */
+        if (strcmp (validator->path, path) == 0)
+        {
+            match = true;
+        }
+        else
+        {
+            len = strlen (validator->path);
+            ptr = validator->path + len - 1;
+
+            /* wildcard path match (recursive) */
+            if (*ptr == '*')
+            {
+                if (strncmp (path, validator->path, len - 1) == 0)
+                {
+                    match = true;
+                }
+
+            }
+            /* one-level-deep path match (non recursive) */
+            else if (*ptr == '/')
+            {
+
+                if ((strncmp (path, validator->path, len - 1) == 0) &&
+                    !strchr (path + len, '/'))
+                {
+                    match = true;
+                }
+            }
+        }
+
+        if (match)
+        {
+            validators = g_list_append (validators, cb_info_copy (validator));
+            validator->count++;
+        }
+    }
+    pthread_mutex_unlock (&list_lock);
+
+    /* Make sure we have at least one matched watcher */
+    if (g_list_length (validators) == 0)
+    {
+        return 0;
+    }
+
+    /* Protect sensitive values with this lock - released in apteryx_set */
+    DEBUG("SET: locking mutex\n");
+    pthread_mutex_lock(&validating);
+    DEBUG("SET: lock taken\n");
+
+    /* Call each validator */
+    for (iter = validators; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *validator = iter->data;
+        ProtobufCService *rpc_client;
+        Apteryx__Validate validate = APTERYX__VALIDATE__INIT;
+        char service_name[64];
+
+        /* Check for local provider */
+        if (validator->id == getpid ())
+        {
+            apteryx_watch_callback cb = (apteryx_watch_callback) (long) validator->cb;
+            DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
+                    validator->path, validator->id, validator->cb, validator->priv);
+            cb (path, (void *) (long) validator->priv, value);
+            continue;
+        }
+
+        DEBUG ("VALIDATE CB %s = %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
+                 validator->path, value,validator->id, validator->cb, validator->priv);
+
+        /* Setup IPC */
+        sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", validator->id);
+        DEBUG ("VALIDATE CB - connecting to %s\n", service_name);
+        rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
+        if (!rpc_client)
+        {
+            ERROR ("Invalid VALIDATE CB %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
+                    validator->path, validator->id, validator->cb, validator->priv);
+            pthread_mutex_lock (&list_lock);
+            validator = cb_info_find (watch_list, validator->path, validator->id);
+            if (validator)
+            {
+                watch_list = g_list_remove (validation_list, validator);
+                cb_info_destroy ((gpointer) validator);
+            }
+            pthread_mutex_unlock (&list_lock);
+            continue;
+        }
+        DEBUG ("VALIDATE CB - connected to %s\n", service_name);
+        /* Do remote validate */
+        validate.path = (char *)path;
+        validate.value = value ? strdup(value) : NULL;
+        validate.id = validator->id;
+        validate.cb = validator->cb;
+        apteryx__client__validate (rpc_client, &validate, handle_validate_response, &result);
+        if (result < 0)
+        {
+            DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n", (char *)path, (char*)value, validator->id, result);
+            /* exit, cleaning up on the way out */
+            /* Destroy the service */
+            protobuf_c_service_destroy (rpc_client);
+            break;
+        }
+        else
+        {
+            DEBUG("callback returned %d\n", result);
+        }
+
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
+        INC_COUNTER (counters.validation);
+    }
+    g_list_free_full (validators, cb_info_destroy);
+
+    DEBUG("returning %d\n", result < 0 ? result : 1);
+
+    /* this one is fine, but lock is still held */
+    return result < 0 ? result : 1;
 }
 
 static void
@@ -508,6 +659,8 @@ apteryx__set (Apteryx__Server_Service *service,
               Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    result.result = false;
+    int validation_result = 0;
 
     /* Check parameters */
     if (set == NULL || set->path == NULL)
@@ -520,6 +673,14 @@ apteryx__set (Apteryx__Server_Service *service,
     INC_COUNTER (counters.set);
 
     DEBUG ("SET: %s = %s\n", set->path, set->value);
+
+    /* Validate new data */
+    validation_result = validate_set (set->path, set->value);
+    if (validation_result < 0)
+    {
+        DEBUG ("SET: %s = %s REFUSED\n", set->path, set->value);
+        goto exit;
+    }
 
     /* Add/Delete to/from database */
     if (set->value && set->value[0] != '\0')
@@ -536,6 +697,17 @@ apteryx__set (Apteryx__Server_Service *service,
 
     /* Notify watchers */
     notify_watchers (set->path);
+
+    /* Set succeeded */
+    result.result = true;
+
+exit:
+    /* Release validation lock - this is a sensitive value */
+    if (validation_result)
+    {
+        DEBUG("SET: unlocking mutex\n");
+        pthread_mutex_unlock (&validating);
+    }
 
     /* Return result */
     closure (&result, closure_data);
@@ -660,6 +832,8 @@ apteryx__watch (Apteryx__Server_Service *service,
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     cb_info_t *info = NULL;
 
+    result.result = true;
+
     /* Check parameters */
     if (watch == NULL || watch->path == NULL)
     {
@@ -710,12 +884,75 @@ apteryx__watch (Apteryx__Server_Service *service,
 }
 
 static void
+apteryx__validate (Apteryx__Server_Service *service,
+                const Apteryx__Validate *validate,
+                Apteryx__OKResult_Closure closure, void *closure_data)
+{
+    Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    result.result = true;
+
+    cb_info_t *info = NULL;
+
+    /* Check parameters */
+    if (validate == NULL || validate->path == NULL)
+    {
+        ERROR ("VALIDATE: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.validation_invalid);
+        return;
+    }
+    INC_COUNTER (counters.validation);
+
+    DEBUG ("VALIDATION %s (0x%"PRIx64",0x%"PRIx64")\n", validate->path, validate->id, validate->cb);
+
+    /* Find an existing watcher */
+    pthread_mutex_lock (&list_lock);
+    info = cb_info_find (validation_list, validate->path, validate->id);
+
+    /* Create */
+    if (info == NULL && validate->cb != 0)
+    {
+        /* Add a new entry to our list */
+        DEBUG ("VALIDATION adding new to %s\n", validate->path);
+        info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+        info->path = strdup (validate->path);
+        info->id = validate->id;
+        info->cb = validate->cb;
+        validation_list = g_list_prepend (validation_list, info);
+    }
+    /* Update */
+    else if (info != NULL && validate->cb != 0)
+    {
+        DEBUG ("VALIDATION updating %s\n", validate->path);
+        /* Set the new cb and private pointer */
+        info->id = validate->id;
+        info->cb = validate->cb;
+    }
+    /* Remove */
+    else if (info != NULL)
+    {
+        /* Remove from list and free */
+        DEBUG ("VALIDATION removing %s\n", validate->path);
+        validation_list = g_list_remove (validation_list, info);
+        cb_info_destroy ((gpointer) info);
+    }
+    pthread_mutex_unlock (&list_lock);
+
+    /* Return result */
+    closure (&result, closure_data);
+    return;
+}
+
+
+static void
 apteryx__provide (Apteryx__Server_Service *service,
                   const Apteryx__Provide *provide,
                   Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     cb_info_t *info = NULL;
+
+    result.result = true;
 
     /* Check parameters */
     if (provide == NULL || provide->path == NULL)
@@ -784,6 +1021,7 @@ apteryx__prune (Apteryx__Server_Service *service,
                 Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    result.result = true;
     GList *paths = NULL, *iter;
     (void) service;
 
@@ -910,6 +1148,9 @@ main (int argc, char **argv)
 
     /* Create a lock for the shared lists */
     pthread_mutex_init (&list_lock, NULL);
+
+    /* Create a lock for currently-validating */
+    pthread_mutex_init (&validating, NULL);
 
     /* Create fd to stop server */
     if (pipe (pipefd) != 0)
