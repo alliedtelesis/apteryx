@@ -112,6 +112,8 @@ typedef struct _counters_t
     uint32_t watched_no_match;
     uint32_t watched_no_handler;
     uint32_t watched_timeout;
+    uint32_t validation;
+    uint32_t validation_invalid;
     uint32_t provide;
     uint32_t provide_invalid;
     uint32_t provided;

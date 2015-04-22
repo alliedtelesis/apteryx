@@ -996,6 +996,113 @@ test_perf_watch ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+int
+test_validate_callback(const char *path, const char *value)
+{
+    return 0;
+}
+
+int
+test_validate_refuse_callback(const char *path, const char *value)
+{
+    return -1;
+}
+
+void
+test_validate()
+{
+    _path = _value = _priv = NULL;
+    const char *path = "/entity/zones/private/state";
+
+    CU_ASSERT (apteryx_validate (path, test_validate_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "down"));
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    CU_ASSERT (!apteryx_set_string (path, NULL, "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_validate (path, NULL));
+    apteryx_set_string (path, NULL, NULL);
+}
+
+void
+test_validate_one_level()
+{
+    _path = _value = _priv = NULL;
+    const char *path = "/entity/zones/private/";
+
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (!apteryx_set_string ("/entity/zones/private", "state", "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_validate (path, NULL));
+    apteryx_set_string (path, "state", NULL);
+}
+
+void
+test_validate_wildcard()
+{
+    _path = _value = _priv = NULL;
+    const char *path = "/entity/zones/*";
+
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (!apteryx_set_string ("/entity/zones/one/two", "state", "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_validate (path, NULL));
+    apteryx_set_string (path, NULL, NULL);
+}
+
+static int already_set = 0;
+static int failed = 0;
+
+static int
+test_validate_thread_client (void *data)
+{
+    const char *path = "/entity/zones/private/state";
+
+    if(!apteryx_set_string (path, NULL, (char*)data))
+        failed++;
+    return 0;
+}
+
+int
+test_validate_conflicting_callback(const char *path, const char *value)
+{
+    return !already_set ? 0 : -1;
+}
+
+static bool
+test_validate_test_watch_callback (const char *path, void *priv, const char *value)
+{
+    already_set++;
+    return true;
+}
+
+void
+test_validate_conflicting ()
+{
+    pthread_t client1, client2;
+    const char *path = "/entity/zones/private/state";
+
+    failed = 0;
+    already_set = 0;
+
+    _path = _value = _priv = NULL;
+
+    CU_ASSERT (apteryx_validate (path, test_validate_conflicting_callback));
+    CU_ASSERT (apteryx_watch (path, test_validate_test_watch_callback, NULL));
+    usleep (TEST_SLEEP_TIMEOUT);
+    pthread_create (&client1, NULL, (void *) &test_validate_thread_client, "up");
+    pthread_create (&client2, NULL, (void *) &test_validate_thread_client, "down");
+    pthread_join (client1, NULL);
+    pthread_join (client2, NULL);
+    CU_ASSERT (failed == 1);
+    usleep (TEST_SLEEP_TIMEOUT);
+
+    CU_ASSERT (apteryx_validate (path, NULL));
+    CU_ASSERT (apteryx_watch (path, NULL, NULL));
+    apteryx_set_string (path, NULL, NULL);
+}
+
 static char*
 test_provide_callback_up (const char *path, void *priv)
 {
@@ -1366,6 +1473,14 @@ static CU_TestInfo tests_api_watch[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_api_validate[] = {
+    { "validate", test_validate },
+    { "validate one level", test_validate_one_level },
+    { "validate wildcard", test_validate_wildcard },
+    { "validate conflicting", test_validate_conflicting },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_api_provide[] = {
     { "provide", test_provide },
     { "provide replace handler", test_provide_replace_handler },
@@ -1398,6 +1513,7 @@ static CU_SuiteInfo suites[] = {
     { "Database", suite_init, suite_clean, tests_database },
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
+    { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
     { "Apteryx Performance", suite_init, suite_clean, tests_performance },
     CU_SUITE_INFO_NULL,
