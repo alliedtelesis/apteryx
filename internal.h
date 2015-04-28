@@ -45,6 +45,7 @@ typedef enum
     MODE_WATCH,
     MODE_PROVIDE,
     MODE_PRUNE,
+    MODE_TIMESTAMP,
 } APTERYX_MODE;
 
 /* Debug */
@@ -117,6 +118,8 @@ typedef struct _counters_t
     uint32_t provided_no_handler;
     uint32_t prune;
     uint32_t prune_invalid;
+    uint32_t get_ts;
+    uint32_t get_ts_invalid;
 } counters_t;
 #define INC_COUNTER(c) (void)g_atomic_int_inc(&c);
 
@@ -127,6 +130,7 @@ bool db_add (const char *path, const unsigned char *value, size_t length);
 bool db_delete (const char *path);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
+uint64_t db_get_timestamp (const char *path);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
