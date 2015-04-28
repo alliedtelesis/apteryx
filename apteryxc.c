@@ -44,7 +44,7 @@ termination_handler (void)
 void
 usage ()
 {
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-l] [<path>] [<value>]\n"
             "  -h   show this help\n"
             "  -d   debug\n"
             "  -s   set <path>=<value>\n"
@@ -52,7 +52,8 @@ usage ()
             "  -f   find <path>\n"
             "  -t   traverse database from <path>\n"
             "  -w   watch changes to the path <path>\n"
-            "  -p   provide <value> for <path>\n");
+            "  -p   provide <value> for <path>\n"
+            "  -l   last change <path>\n");
     printf ("\n");
     printf ("  Internal settings\n");
     printf ("    %sdebug\n", APTERYX_SETTINGS);
@@ -85,6 +86,7 @@ main (int argc, char **argv)
     char *param = NULL;
     GList * _iter;
     int c;
+    uint64_t value;
 
     /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
     signal (SIGTERM, (__sighandler_t) termination_handler);
@@ -115,6 +117,9 @@ main (int argc, char **argv)
             break;
         case 'p':
             mode = MODE_PROVIDE;
+            break;
+        case 'l':
+            mode = MODE_TIMESTAMP;
             break;
         case '?':
         case 'h':
@@ -221,6 +226,17 @@ main (int argc, char **argv)
         while (running)
             pause ();
         apteryx_provide (path, NULL, NULL);
+        apteryx_shutdown ();
+        break;
+    case MODE_TIMESTAMP:
+        if (!path || param)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (debug);
+        value = apteryx_get_timestamp (path);
+        printf ("%"PRIu64"\n", value);
         apteryx_shutdown ();
         break;
     default:

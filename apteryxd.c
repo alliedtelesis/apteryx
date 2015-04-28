@@ -138,6 +138,8 @@ handle_counters_get (const char *path, void *priv)
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_no_handler", counters.provided_no_handler);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune", counters.prune);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune_invalid", counters.prune_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_timestamp", counters.get_ts);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_timestamp_invalid", counters.get_ts_invalid);
 
     return value;
 }
@@ -822,6 +824,36 @@ apteryx__prune (Apteryx__Server_Service *service,
     }
 
     g_list_free_full (paths, free);
+    return;
+}
+
+static void
+apteryx__get_timestamp (Apteryx__Server_Service *service,
+                        const Apteryx__Get *get,
+                        Apteryx__GetTimeStampResult_Closure closure, void *closure_data)
+{
+    Apteryx__GetTimeStampResult result = APTERYX__GET_TIME_STAMP_RESULT__INIT;
+    uint64_t value = 0;
+
+    /* Check parameters */
+    if (get == NULL || get->path == NULL)
+    {
+        ERROR ("GET: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.get_ts_invalid);
+        return;
+    }
+    INC_COUNTER (counters.get_ts);
+
+    DEBUG ("GET: %s\n", get->path);
+
+    /* Lookup value */
+    value = db_get_timestamp (get->path);
+
+    /* Send result */
+    DEBUG ("     = %"PRIu64"\n", value);
+    result.value = value;
+    closure (&result, closure_data);
     return;
 }
 

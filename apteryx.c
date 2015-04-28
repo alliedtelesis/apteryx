@@ -814,3 +814,46 @@ apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv)
     /* Success */
     return true;
 }
+
+static void
+handle_get_ts_response (const Apteryx__GetTimeStampResult *result, void *closure_data)
+{
+    uint64_t *data = (uint64_t *)closure_data;
+    if (result == NULL)
+    {
+        ERROR ("GET: Error processing request.\n");
+    }
+    *data = result->value;
+}
+
+uint64_t
+apteryx_get_timestamp (const char *path)
+{
+    uint64_t value = 0;
+    ProtobufCService *rpc_client;
+    Apteryx__Get get = APTERYX__GET__INIT;
+
+    DEBUG ("GET_TimeStamp: %s\n", path);
+
+    /* Check path */
+    if (path[0] != '/' || path[strlen(path)-1] == '/')
+    {
+        ERROR ("GET_TimeStamp: invalid path (%s)!\n", path);
+        assert(!debug || path[0] == '/');
+        return 0;
+    }
+
+    /* IPC */
+    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    if (!rpc_client)
+    {
+        ERROR ("GET: Falied to connect to server: %s\n", strerror (errno));
+        return 0;
+    }
+    get.path = (char *) path;
+    apteryx__server__get_timestamp (rpc_client, &get, handle_get_ts_response, &value);
+    protobuf_c_service_destroy (rpc_client);
+
+    DEBUG ("    = %"PRIu64"\n", value);
+    return value;
+}

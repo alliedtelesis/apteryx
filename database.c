@@ -37,10 +37,25 @@ struct database_node
     struct database_node *parent;
     GHashTable *children;
     unsigned int removing;
+    uint64_t timestamp;
 };
 struct database_node *root = NULL;  /* The database root */
 
 static pthread_rwlock_t db_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+static uint64_t
+db_calculate_timestamp (void)
+{
+    struct timespec tms;
+    uint64_t micros = 0;
+    if (clock_gettime(CLOCK_REALTIME,&tms)) {
+        return 0;
+    }
+
+    micros = tms.tv_sec * 1000000;
+    micros += tms.tv_nsec/1000;
+    return micros;
+}
 
 static char *
 db_node_to_path (struct database_node *node, char **buf)
@@ -220,6 +235,43 @@ db_parent_get (const char *path)
     return node;
 }
 
+static void
+db_update_parent_timestamp (const char *path, uint64_t timestamp)
+{
+    struct database_node *node = NULL;
+    char *parent = strdup (path);
+    if (strlen (parent) == 0)
+    {
+        /* found the root node */
+        node = root;
+    }
+    else
+    {
+        if (strchr (parent, '/') != NULL)
+            *strrchr (parent, '/') = '\0';
+
+        node = db_path_to_node (parent);
+    }
+    if (node)
+    {
+        node->timestamp = timestamp;
+        if (node != root)
+        {
+            db_update_parent_timestamp (parent, timestamp);
+        }
+    }
+    free (parent);
+}
+
+uint64_t
+db_get_timestamp (const char *path)
+{
+    struct database_node *new_value = db_path_to_node (path);
+    if (new_value)
+        return new_value->timestamp;
+    return 0;
+}
+
 bool
 db_add (const char *path, const unsigned char *value, size_t length)
 {
@@ -247,6 +299,8 @@ db_add (const char *path, const unsigned char *value, size_t length)
         memcpy (new_value->value, value, length);
     }
     new_value->length = length;
+    new_value->timestamp = db_calculate_timestamp ();
+    db_update_parent_timestamp (path, new_value->timestamp);
     pthread_rwlock_unlock (&db_lock);
     return true;
 }
@@ -255,6 +309,7 @@ bool
 db_delete (const char *path)
 {
     pthread_rwlock_wrlock (&db_lock);
+    db_update_parent_timestamp (path, db_calculate_timestamp ());
     struct database_node *node = db_path_to_node (path);
     if (node)
         db_node_delete (node);
@@ -563,6 +618,35 @@ test_db_search_perf ()
     db_shutdown ();
 }
 
+void
+test_db_timestamping ()
+{
+    char *path = "/test/timestamps";
+    char *path2 = "/test/timestamp2";
+    char *ppath = "/test";
+
+    uint64_t last_ts;
+
+    db_init ();
+
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", 5));
+    last_ts = db_get_timestamp (path);
+    sleep (1);
+    CU_ASSERT (db_add (path2, (const unsigned char *) "test", 5));
+    CU_ASSERT (db_get_timestamp (path2) > last_ts);
+    last_ts = db_get_timestamp (path2);
+    CU_ASSERT (db_get_timestamp (path) < db_get_timestamp (path2));
+    CU_ASSERT (db_get_timestamp (ppath) == db_get_timestamp (path2));
+    CU_ASSERT (db_get_timestamp ("/") == db_get_timestamp (ppath));
+
+    CU_ASSERT (db_delete (path2));
+    CU_ASSERT (db_get_timestamp (ppath) > last_ts);
+
+    CU_ASSERT (db_delete (path));
+
+    db_shutdown ();
+}
+
 CU_TestInfo tests_database_internal[] = {
     { "delete", test_db_internal_delete },
     { "node_to_path", test_db_node_to_path },
@@ -580,6 +664,7 @@ CU_TestInfo tests_database[] = {
     { "replace", test_db_replace },
     { "search", test_db_search },
     { "search performance", test_db_search_perf },
+    { "timestamping", test_db_timestamping },
     CU_TEST_INFO_NULL,
 };
 #endif

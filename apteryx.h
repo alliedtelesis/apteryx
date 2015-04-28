@@ -182,4 +182,11 @@ typedef char* (*apteryx_provide_callback) (const char *path, void *priv);
  */
 bool apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv);
 
+
+/**
+ * Get the last change timestamp of a given path
+ * @param path path to get the timestamp for
+ * @return 0 if the path doesn't exist, last change timestamp otherwise
+ */
+uint64_t apteryx_get_timestamp (const char *path);
 #endif /* _APTERYX_H_ */
