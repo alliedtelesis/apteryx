@@ -52,6 +52,11 @@ message Prune
     required string path = 1;
 };
 
+message GetTimeStampResult
+{
+    required uint64 value = 1;
+};
+
 service server
 {
     rpc set (Set) returns (OKResult);
@@ -60,6 +65,7 @@ service server
     rpc watch (Watch) returns (OKResult);
     rpc provide (Provide) returns (OKResult);
     rpc prune (Prune) returns (OKResult);
+    rpc get_timestamp (Get) returns (GetTimeStampResult);
 }
 
 service client

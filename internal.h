@@ -127,6 +127,7 @@ bool db_add (const char *path, const unsigned char *value, size_t length);
 bool db_delete (const char *path);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
+uint64_t db_get_timestamp (const char *path);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000

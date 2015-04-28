@@ -825,6 +825,36 @@ apteryx__prune (Apteryx__Server_Service *service,
     return;
 }
 
+static void
+apteryx__get_timestamp (Apteryx__Server_Service *service,
+                        const Apteryx__Get *get,
+                        Apteryx__GetTimeStampResult_Closure closure, void *closure_data)
+{
+    Apteryx__GetTimeStampResult result = APTERYX__GET_TIME_STAMP_RESULT__INIT;
+    uint64_t value = 0;
+
+    /* Check parameters */
+    if (get == NULL || get->path == NULL)
+    {
+        ERROR ("GET: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.get_invalid);
+        return;
+    }
+    INC_COUNTER (counters.get);
+
+    DEBUG ("GET: %s\n", get->path);
+
+    /* Lookup value */
+    value = db_get_timestamp (get->path);
+
+    /* Send result */
+    DEBUG ("     = %"PRIu64"\n", value);
+    result.value = value;
+    closure (&result, closure_data);
+    return;
+}
+
 static Apteryx__Server_Service apteryx_service = APTERYX__SERVER__INIT (apteryx__);
 
 void
