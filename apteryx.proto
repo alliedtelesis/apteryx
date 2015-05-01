@@ -63,7 +63,9 @@ service server
     rpc get (Get) returns (GetResult);
     rpc search (Search) returns (SearchResult);
     rpc watch (Watch) returns (OKResult);
+    rpc unwatch (Watch) returns (OKResult);
     rpc provide (Provide) returns (OKResult);
+    rpc unprovide (Provide) returns (OKResult);
     rpc prune (Prune) returns (OKResult);
     rpc get_timestamp (Get) returns (GetTimeStampResult);
 }

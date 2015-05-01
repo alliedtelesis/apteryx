@@ -158,7 +158,21 @@ typedef bool (*apteryx_watch_callback) (const char *path, void *priv, const char
  * @param priv something I want to be passed to my callback
  * @return true on successful registration
  */
-bool apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv);
+bool apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv) __attribute__((nonnull (2)));
+
+/**
+ * UnWatch for changes in the path
+ * Supports *(wildcard) at the end of path for all children under this path
+ * Supports /(level) at the end of path for children only under this current path (one level down)
+ * Whenever a change occurs in a watched path, cb is called with the changed
+ * path and new value
+ * examples: (using libentity usage example)
+ * - apteryx_watch("/entity/zones/red/networks/*", network_updated, "red")
+ * @param path path to the value to be watched
+ * @param cb function to call when the value changes
+ * @return true on successful registration
+ */
+bool apteryx_unwatch (const char *path, apteryx_watch_callback cb) __attribute__((nonnull (2)));
 
 /**
  * Callback function to be called when a library users
@@ -180,7 +194,20 @@ typedef char* (*apteryx_provide_callback) (const char *path, void *priv);
  * @param priv something I want to be passed to my callback
  * @return true on successful registration
  */
-bool apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv);
+bool apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv) __attribute__((nonnull (2)));
+
+/**
+ * UnProvide a value that can be read on demand
+ * Whenever a get is performed on the given path/key, callback is called to get the value
+ * No *(wildcard)s are supported
+ * examples: (using contrived usage example)
+ * - apteryx_provide ("/hw/interfaces/port1.0.1/counters/tx", port_tx_counters, "port1.0.1")
+ * @param path path to the value that others will request
+ * @param cb function to be called if others request the value
+ * @return true on successful registration
+ */
+bool apteryx_unprovide (const char *path, apteryx_provide_callback cb) __attribute__((nonnull (2)));
+
 
 
 /**
