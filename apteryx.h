@@ -161,6 +161,18 @@ typedef bool (*apteryx_watch_callback) (const char *path, void *priv, const char
 bool apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv);
 
 /**
+ * UnWatch for changes in the path
+ * Unregisters interest in a path that was previously registered with
+ * apteryx_watch (doesn't care about the priv)
+ * examples: (using libentity usage example)
+ * - apteryx_unwatch("/entity/zones/red/networks/*", network_updated)
+ * @param path path to the value to be unwatched
+ * @param cb function that was called when the value changes
+ * @return true on successful deregistration
+ */
+bool apteryx_unwatch (const char *path, apteryx_watch_callback cb);
+
+/**
  * Callback function to be called to validate a new value
  * @param path path for the proposed value
  * @param value new proposed value
@@ -181,6 +193,18 @@ typedef int (*apteryx_validate_callback) (const char *path, const char *value);
  * @return true on successful registration
  */
 bool apteryx_validate (const char *path, apteryx_validate_callback cb);
+
+/**
+ * UnValidate changes in the path
+ * Unregisters interest in a path that was previously registered with
+ * apteryx_validate
+ * examples: (using imaginary usage example)
+ * - apteryx_unvalidate("/entity/zones/red/networks/*", network_validate);
+ * @param path path to the value to be validated
+ * @param cb function to call when the value changes
+ * @return true on successful deregistration
+ */
+bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
 
 /**
  * Callback function to be called when a library users
@@ -204,6 +228,18 @@ typedef char* (*apteryx_provide_callback) (const char *path, void *priv);
  */
 bool apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv);
 
+/**
+ * UnProvide a value that can be read on demand
+ * Unregisters interest in a path that was previously registered with
+ * apteryx_provide (doesn't care about the priv)
+ * No *(wildcard)s are supported
+ * examples: (using contrived usage example)
+ * - apteryx_unprovide ("/hw/interfaces/port1.0.1/counters/tx", port_tx_counters, "port1.0.1")
+ * @param path path to the value that others will request
+ * @param cb function to be called if others request the value
+ * @return true on successful deregistration
+ */
+bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
 
 /**
  * Get the last change timestamp of a given path

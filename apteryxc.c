@@ -212,7 +212,7 @@ main (int argc, char **argv)
         apteryx_watch (path, watch_callback, NULL);
         while (running)
             pause ();
-        apteryx_watch (path, NULL, NULL);
+        apteryx_unwatch (path, watch_callback);
         apteryx_shutdown ();
         break;
     case MODE_PROVIDE:
@@ -225,7 +225,7 @@ main (int argc, char **argv)
         apteryx_provide (path, provide_callback, param);
         while (running)
             pause ();
-        apteryx_provide (path, NULL, NULL);
+        apteryx_unprovide (path, provide_callback);
         apteryx_shutdown ();
         break;
     case MODE_TIMESTAMP:
