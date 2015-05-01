@@ -322,10 +322,12 @@ handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
     if (result == NULL)
     {
         *(protobuf_c_boolean *) closure_data = false;
+        errno = -ECONNABORTED;
     }
     else
     {
-        *(protobuf_c_boolean *) closure_data = !!result->result;
+        *(protobuf_c_boolean *) closure_data = result->result == 0;
+        errno = result->result;
     }
 }
 
@@ -558,6 +560,7 @@ handle_get_response (const Apteryx__GetResult *result, void *closure_data)
     if (result == NULL)
     {
         ERROR ("GET: Error processing request.\n");
+        errno = -ETIMEDOUT;
     }
     else if (result->value && result->value[0] != '\0')
     {
@@ -605,6 +608,7 @@ apteryx_get (const char *path)
     if (!data.done)
     {
         ERROR ("GET: No response\n");
+        errno = -ETIMEDOUT;
         return NULL;
     }
 

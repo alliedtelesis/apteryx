@@ -659,14 +659,15 @@ apteryx__set (Apteryx__Server_Service *service,
               Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
-    result.result = false;
+    result.result = 0;
     int validation_result = 0;
 
     /* Check parameters */
     if (set == NULL || set->path == NULL)
     {
         ERROR ("SET: Invalid parameters.\n");
-        closure (NULL, closure_data);
+        result.result = -EINVAL;
+        closure (&result, closure_data);
         INC_COUNTER (counters.set_invalid);
         return;
     }
@@ -679,6 +680,7 @@ apteryx__set (Apteryx__Server_Service *service,
     if (validation_result < 0)
     {
         DEBUG ("SET: %s = %s REFUSED\n", set->path, set->value);
+        result.result = validation_result;
         goto exit;
     }
 
@@ -699,7 +701,7 @@ apteryx__set (Apteryx__Server_Service *service,
     notify_watchers (set->path);
 
     /* Set succeeded */
-    result.result = true;
+    result.result = 0;
 
 exit:
     /* Release validation lock - this is a sensitive value */
@@ -832,13 +834,14 @@ apteryx__watch (Apteryx__Server_Service *service,
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     cb_info_t *info = NULL;
 
-    result.result = true;
+    result.result = 0;
 
     /* Check parameters */
     if (watch == NULL || watch->path == NULL)
     {
         ERROR ("WATCH: Invalid parameters.\n");
-        closure (NULL, closure_data);
+        result.result = -EINVAL;
+        closure (&result, closure_data);
         INC_COUNTER (counters.watch_invalid);
         return;
     }
@@ -889,7 +892,7 @@ apteryx__validate (Apteryx__Server_Service *service,
                 Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
-    result.result = true;
+    result.result = 0;
 
     cb_info_t *info = NULL;
 
@@ -897,7 +900,8 @@ apteryx__validate (Apteryx__Server_Service *service,
     if (validate == NULL || validate->path == NULL)
     {
         ERROR ("VALIDATE: Invalid parameters.\n");
-        closure (NULL, closure_data);
+        result.result = -EINVAL;
+        closure (&result, closure_data);
         INC_COUNTER (counters.validation_invalid);
         return;
     }
@@ -952,13 +956,14 @@ apteryx__provide (Apteryx__Server_Service *service,
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     cb_info_t *info = NULL;
 
-    result.result = true;
+    result.result = 0;
 
     /* Check parameters */
     if (provide == NULL || provide->path == NULL)
     {
         ERROR ("PROVIDE: Invalid parameters.\n");
-        closure (NULL, closure_data);
+        result.result = -EINVAL;
+        closure (&result, closure_data);
         INC_COUNTER (counters.provide_invalid);
         return;
     }
@@ -1021,7 +1026,7 @@ apteryx__prune (Apteryx__Server_Service *service,
                 Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
-    result.result = true;
+    result.result = 0;
     GList *paths = NULL, *iter;
     (void) service;
 
@@ -1029,7 +1034,8 @@ apteryx__prune (Apteryx__Server_Service *service,
     if (prune == NULL || prune->path == NULL)
     {
         ERROR ("PRUNE: Invalid parameters.\n");
-        closure (NULL, closure_data);
+        result.result = -EINVAL;
+        closure (&result, closure_data);
         INC_COUNTER (counters.prune_invalid);
         return;
     }
