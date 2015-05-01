@@ -74,15 +74,15 @@ cb_info_copy (cb_info_t *cb)
 }
 
 static cb_info_t *
-cb_info_find (GList *list, const char *path, uint64_t id)
+cb_info_find (GList *list, const char *path, uint64_t id, uint64_t cb)
 {
     GList *iter = NULL;
     cb_info_t *info;
     for (iter = list; iter; iter = iter->next)
     {
-        /* We only allow a single watcher per table/key pair per socket */
+        /* We only allow a func to watch once per path+socket */
         info = (cb_info_t *) iter->data;
-        if (info->id == id && strcmp (info->path, path) == 0)
+        if (info->id == id && info->cb == cb && strcmp (info->path, path) == 0)
             break;
         info = NULL;
     }
@@ -128,12 +128,16 @@ handle_counters_get (const char *path, void *priv)
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search_invalid", counters.search_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watch", counters.watch);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watch_invalid", counters.watch_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "unwatch", counters.unwatch);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "unwatch_invalid", counters.unwatch_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched", counters.watched);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_no_match", counters.watched_no_match);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_no_handler", counters.watched_no_handler);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_timeout", counters.watched_timeout);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provide", counters.provide);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provide_invalid", counters.provide_invalid);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "unprovide", counters.unprovide);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "unprovide_invalid", counters.unprovide_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided", counters.provided);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_no_handler", counters.provided_no_handler);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune", counters.prune);
@@ -372,7 +376,7 @@ notify_watchers (const char *path)
             ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
                    watcher->path, watcher->id, watcher->cb, watcher->priv);
             pthread_mutex_lock (&list_lock);
-            watcher = cb_info_find (watch_list, watcher->path, watcher->id);
+            watcher = cb_info_find (watch_list, watcher->path, watcher->id, watcher->cb);
             if (watcher)
             {
                 watch_list = g_list_remove (watch_list, watcher);
@@ -676,7 +680,7 @@ apteryx__watch (Apteryx__Server_Service *service,
 
     /* Find an existing watcher */
     pthread_mutex_lock (&list_lock);
-    info = cb_info_find (watch_list, watch->path, watch->id);
+    info = cb_info_find (watch_list, watch->path, watch->id, watch->cb);
 
     /* Create */
     if (info == NULL && watch->cb != 0)
@@ -697,13 +701,46 @@ apteryx__watch (Apteryx__Server_Service *service,
         info->cb = watch->cb;
         info->priv = watch->priv;
     }
+
+    pthread_mutex_unlock (&list_lock);
+
+    /* Return result */
+    closure (&result, closure_data);
+    return;
+}
+
+static void
+apteryx__unwatch (Apteryx__Server_Service *service,
+                  const Apteryx__Watch *watch,
+                  Apteryx__OKResult_Closure closure, void *closure_data)
+{
+    Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    cb_info_t *info = NULL;
+
+    /* Check parameters */
+    if (watch == NULL || watch->path == NULL)
+    {
+        ERROR ("WATCH: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.unwatch_invalid);
+        return;
+    }
+    INC_COUNTER (counters.unwatch);
+
+    DEBUG ("WATCH %s (0x%"PRIx64",0x%"PRIx64")\n", watch->path, watch->id, watch->cb);
+
+    /* Find an existing watcher */
+    pthread_mutex_lock (&list_lock);
+    info = cb_info_find (watch_list, watch->path, watch->id, watch->cb);
+
     /* Remove */
-    else if (info != NULL)
+    if (info != NULL)
     {
         /* Remove from list and free */
         watch_list = g_list_remove (watch_list, info);
         cb_info_destroy ((gpointer) info);
     }
+
     pthread_mutex_unlock (&list_lock);
 
     /* Return result */
@@ -733,7 +770,7 @@ apteryx__provide (Apteryx__Server_Service *service,
 
     /* Find an existing provider */
     pthread_mutex_lock (&list_lock);
-    info = cb_info_find (provide_list, provide->path, provide->id);
+    info = cb_info_find (provide_list, provide->path, provide->id, provide->cb);
 
     /* Create */
     if (info == NULL && provide->cb != 0)
@@ -756,6 +793,44 @@ apteryx__provide (Apteryx__Server_Service *service,
     }
     /* Remove */
     else if (info != NULL)
+    {
+        /* Remove from list and free */
+        provide_list = g_list_remove (provide_list, info);
+        cb_info_destroy ((gpointer) info);
+    }
+    pthread_mutex_unlock (&list_lock);
+
+    /* Return result */
+    closure (&result, closure_data);
+    return;
+}
+
+static void
+apteryx__unprovide (Apteryx__Server_Service *service,
+                    const Apteryx__Provide *provide,
+                    Apteryx__OKResult_Closure closure, void *closure_data)
+{
+    Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    cb_info_t *info = NULL;
+
+    /* Check parameters */
+    if (provide == NULL || provide->path == NULL)
+    {
+        ERROR ("UNPROVIDE: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.unprovide_invalid);
+        return;
+    }
+    INC_COUNTER (counters.unprovide);
+
+    DEBUG ("UNPROVIDE %s (0x%"PRIx64",0x%"PRIx64")\n", provide->path, provide->id, provide->cb);
+
+    /* Find an existing provider */
+    pthread_mutex_lock (&list_lock);
+    info = cb_info_find (provide_list, provide->path, provide->id, provide->cb);
+
+    /* Remove */
+    if (info != NULL)
     {
         /* Remove from list and free */
         provide_list = g_list_remove (provide_list, info);

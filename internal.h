@@ -108,12 +108,16 @@ typedef struct _counters_t
     uint32_t search_invalid;
     uint32_t watch;
     uint32_t watch_invalid;
+    uint32_t unwatch;
+    uint32_t unwatch_invalid;
     uint32_t watched;
     uint32_t watched_no_match;
     uint32_t watched_no_handler;
     uint32_t watched_timeout;
     uint32_t provide;
     uint32_t provide_invalid;
+    uint32_t unprovide;
+    uint32_t unprovide_invalid;
     uint32_t provided;
     uint32_t provided_no_handler;
     uint32_t prune;
