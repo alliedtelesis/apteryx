@@ -1005,7 +1005,7 @@ test_validate_callback(const char *path, const char *value)
 int
 test_validate_refuse_callback(const char *path, const char *value)
 {
-    return -1;
+    return -EPERM;
 }
 
 void
@@ -1018,6 +1018,7 @@ test_validate()
     CU_ASSERT (apteryx_set_string (path, NULL, "down"));
     CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
     CU_ASSERT (!apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (errno == -EPERM);
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_validate (path, NULL));
     apteryx_set_string (path, NULL, NULL);
@@ -1166,6 +1167,29 @@ test_provide_remove_handler ()
     CU_ASSERT (apteryx_provide (path, NULL, (void *) NULL));
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
     apteryx_provide (path, NULL, NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static char*
+test_provide_timeout_cb (const char *path, void *priv)
+{
+    sleep (1.2);
+    return strdup ("down");
+}
+
+void
+test_provide_timeout ()
+{
+    const char *path = "/interfaces/eth0/state";
+    const char *value = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_timeout_cb, (void *) 0x12345678));
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    CU_ASSERT (errno == -ETIMEDOUT);
+    if (value)
+        free ((void *) value);
+    apteryx_provide (path, NULL, NULL);
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1483,6 +1507,7 @@ static CU_TestInfo tests_api_validate[] = {
 
 static CU_TestInfo tests_api_provide[] = {
     { "provide", test_provide },
+    { "provider timeout", test_provide_timeout },
     { "provide replace handler", test_provide_replace_handler },
     { "provide no handler", test_provide_no_handler },
     { "provide remove handler", test_provide_remove_handler },
