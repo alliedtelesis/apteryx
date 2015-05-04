@@ -22,8 +22,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <ctype.h>
+#include <string.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
@@ -34,6 +36,9 @@
 
 /* UNIX socket paths */
 #define APTERYX_SERVER  "/tmp/apteryx"
+
+/* Apteryx settings */
+#define APTERYX_SETTINGS "/apteryx/"
 
 /* Mode */
 typedef enum
@@ -95,8 +100,57 @@ static inline uint32_t htol32 (uint32_t v)
         running = false; \
     }
 
-/* Internal */
-#define APTERYX_SETTINGS "/apteryx/"
+/* Callback */
+typedef struct _cb_info_t
+{
+    const char *path;
+    uint64_t id;
+    uint64_t cb;
+    uint64_t priv;
+    uint32_t count;
+} cb_info_t;
+
+/* Watch, provide and validation callbacks */
+extern GList *watch_list;
+extern GList *validation_list;
+extern GList *provide_list;
+extern pthread_mutex_t list_lock;
+
+/* Free cb info */
+static inline void
+cb_info_destroy (gpointer data)
+{
+    cb_info_t *info = (cb_info_t*)data;
+    free ((void *) info->path);
+    free (info);
+}
+
+static inline gpointer
+cb_info_copy (cb_info_t *cb)
+{
+    cb_info_t *copy = calloc (1, sizeof (*copy));
+    *copy = *cb;
+    if (cb->path)
+        copy->path = strdup (cb->path);
+    return (gpointer)copy;
+}
+
+static inline cb_info_t *
+cb_info_find (GList *list, const char *path, uint64_t id, uint64_t cb)
+{
+    GList *iter = NULL;
+    cb_info_t *info;
+    for (iter = list; iter; iter = iter->next)
+    {
+        /* We only allow a func to watch once per path+socket */
+        info = (cb_info_t *) iter->data;
+        if (info->id == id && info->cb == cb && strcmp (info->path, path) == 0)
+            break;
+        info = NULL;
+    }
+    return info;
+}
+
 /* Counters */
 typedef struct _counters_t
 {
@@ -131,6 +185,9 @@ typedef struct _counters_t
 } counters_t;
 #define INC_COUNTER(c) (void)g_atomic_int_inc(&c);
 
+/* GLobal counters */
+extern counters_t counters;
+
 /* Database API */
 void db_init (void);
 void db_shutdown (void);
@@ -144,6 +201,9 @@ uint64_t db_get_timestamp (const char *path);
 #define RPC_TIMEOUT_US 1000000
 bool rpc_provide_service (const char *name, ProtobufCService *service, int num_threads, int stopfd);
 ProtobufCService *rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descriptor);
+
+/* Apteryx configuration */
+void config_init (void);
 
 /* SHM cache */
 #define APTERYX_SHM_KEY    0xda7aba5e

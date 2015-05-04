@@ -2,10 +2,18 @@
 	targetNamespace="https://github.com/ATL-NZ/apteryx"
 	xmlns="https://github.com/ATL-NZ/apteryx"
 	elementFormDefault="qualified">
+	<xs:element name="VALUE">
+		<xs:complexType>
+			<xs:attribute name="name" type="xs:string" use="required" />
+			<xs:attribute name="value" type="xs:string" use="optional" />
+			<xs:attribute name="help" type="xs:string" use="optional" />
+		</xs:complexType>
+	</xs:element>
 	<xs:element name="NODE">
 		<xs:complexType>
 			<xs:sequence>
 				<xs:element ref="NODE" minOccurs="0" maxOccurs="unbounded" />
+				<xs:element ref="VALUE" minOccurs="0" maxOccurs="unbounded" />
 			</xs:sequence>
 			<xs:attribute name="name" type="xs:string" use="required" />
 			<xs:attribute name="default" type="xs:string" use="optional" />

@@ -47,27 +47,27 @@ static volatile bool client_running = false;
 static volatile bool worker_running = false;
 
 /* Callback */
-typedef struct _cb_info_t
+typedef struct _ccb_info_t
 {
     apteryx_watch_callback cb;
     const char *path;
     void *priv;
     char *value;
-} cb_info_t;
+} ccb_info_t;
 
 static void
-cb_info_destroy (gpointer data)
+ccb_info_destroy (gpointer data)
 {
-    cb_info_t *info = (cb_info_t*)data;
+    ccb_info_t *info = (ccb_info_t*)data;
     free ((void *) info->path);
     free ((void *) info->value);
     free (info);
 }
 
 static gpointer
-cb_info_create (const Apteryx__Watch *watch)
+ccb_info_create (const Apteryx__Watch *watch)
 {
-    cb_info_t *info = calloc (1, sizeof (cb_info_t));
+    ccb_info_t *info = calloc (1, sizeof (ccb_info_t));
     info->cb = (apteryx_watch_callback) (long) watch->cb;
     info->path = strdup (watch->path);
     info->priv = (void *) (long) watch->priv;
@@ -93,7 +93,7 @@ apteryx__watch (Apteryx__Client_Service *service,
     pthread_mutex_lock (&lock);
     if (pending_watches == NULL)
         sem_post (&wake_worker);
-    pending_watches = g_list_append (pending_watches, cb_info_create (watch));
+    pending_watches = g_list_append (pending_watches, ccb_info_create (watch));
     pthread_mutex_unlock (&lock);
 
     /* Return result */
@@ -171,11 +171,11 @@ worker_thread (void *data)
         /* Process each callback */
         for (iter = pending; iter; iter = g_list_next (iter))
         {
-            cb_info_t *info = (cb_info_t *) iter->data;
+            ccb_info_t *info = (ccb_info_t *) iter->data;
             if (info->cb)
                 info->cb (info->path, info->priv, info->value);
         }
-        g_list_free_full (pending, cb_info_destroy);
+        g_list_free_full (pending, ccb_info_destroy);
     }
     DEBUG ("Worker Thread: Exiting\n");
     sem_destroy(&wake_worker);
@@ -260,7 +260,7 @@ stop_client_threads (void)
             pthread_join (worker_id, NULL);
         }
         pthread_mutex_lock (&lock);
-        g_list_free_full (pending_watches, cb_info_destroy);
+        g_list_free_full (pending_watches, ccb_info_destroy);
         pending_watches = NULL;
         pthread_mutex_unlock (&lock);
     }
