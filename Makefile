@@ -40,7 +40,7 @@ libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o lua.o
 %.pb-c.c : %.proto
 	@$(PROTOC_C) --c_out=. $<
 
-apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o
+apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o config.o
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
