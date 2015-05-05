@@ -76,12 +76,6 @@ service server
     rpc set (Set) returns (OKResult);
     rpc get (Get) returns (GetResult);
     rpc search (Search) returns (SearchResult);
-    rpc watch (Watch) returns (OKResult);
-    rpc unwatch (Watch) returns (OKResult);
-    rpc validate (Validate) returns (OKResult);
-    rpc unvalidate (Validate) returns (OKResult);
-    rpc provide (Provide) returns (OKResult);
-    rpc unprovide (Provide) returns (OKResult);
     rpc prune (Prune) returns (OKResult);
     rpc get_timestamp (Get) returns (GetTimeStampResult);
 }

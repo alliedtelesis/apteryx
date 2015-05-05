@@ -749,304 +749,69 @@ apteryx_search (const char *path)
     return data.paths;
 }
 
+static bool
+add_callback (const char *type, const char *path, void *cb)
+{
+    size_t pid = getpid ();
+    char _path[PATH_MAX];
+
+    if (sprintf (_path, APTERYX_SETTINGS"%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
+            type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
+        return false;
+    if (!apteryx_set (_path, path))
+        return false;
+    return start_client_threads ();
+}
+
+static bool
+delete_callback (const char *type, const char *path,  void *cb)
+{
+    char _path[PATH_MAX];
+
+    if (sprintf (_path, APTERYX_SETTINGS"%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
+            type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
+        return false;
+    if (!apteryx_set (_path, NULL))
+        return false;
+    return true;
+}
+
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
 {
-    ProtobufCService *rpc_client;
-    Apteryx__Watch watch = APTERYX__WATCH__INIT;
-    char *empty_root = "/*";
-    protobuf_c_boolean is_done = 0;
-
-    DEBUG ("WATCH: %s %p %p\n", path, cb, priv);
-
-    if (!cb)
-    {
-        ERROR ("Unwatching by passing in NULL cb is NOT SUPPORTED\n");
-        return false;
-    }
-
-    /* Check path */
-    if (!path ||
-        strcmp (path, "/") == 0 ||
-        strcmp (path, "/*") == 0 || strcmp (path, "*") == 0 || strlen (path) == 0)
-    {
-        path = empty_root;
-    }
-    if (path[0] != '/')
-    {
-        ERROR ("WATCH: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        return false;
-    }
-
-    /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
-    if (!rpc_client)
-    {
-        ERROR ("WATCH: Falied to connect to server: %s\n", strerror (errno));
-        return false;
-    }
-    watch.path = (char *) path;
-    watch.id = (uint64_t) getpid ();
-    watch.cb = (uint64_t) (long) cb;
-    watch.priv = (uint64_t) (long) priv;
-    apteryx__server__watch (rpc_client, &watch, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
-    if (!is_done)
-    {
-        ERROR ("WATCH: No response\n");
-        return false;
-    }
-
-    /* Start the listen thread if required */
-    if (cb)
-        return start_client_threads ();
-
-    /* Success */
-    return true;
+    assert (priv == NULL); //deprecated
+    return add_callback ("watchers", path, (void *)cb);
 }
 
 bool
 apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 {
-    ProtobufCService *rpc_client;
-    Apteryx__Watch watch = APTERYX__WATCH__INIT;
-    char *empty_root = "/*";
-    protobuf_c_boolean is_done = 0;
-
-    DEBUG ("UNWATCH: %s %p\n", path, cb);
-
-    /* Check path */
-    if (!path ||
-        strcmp (path, "/") == 0 ||
-        strcmp (path, "/*") == 0 || strcmp (path, "*") == 0 || strlen (path) == 0)
-    {
-        path = empty_root;
-    }
-    if (path[0] != '/')
-    {
-        ERROR ("WATCH: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        return false;
-    }
-
-    /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
-    if (!rpc_client)
-    {
-        ERROR ("WATCH: Falied to connect to server: %s\n", strerror (errno));
-        return false;
-    }
-    watch.path = (char *) path;
-    watch.id = (uint64_t) getpid ();
-    watch.cb = (uint64_t) (long) cb;
-    watch.priv = 0;
-    apteryx__server__unwatch (rpc_client, &watch, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
-    if (!is_done)
-    {
-        ERROR ("WATCH: No response\n");
-        return false;
-    }
-
-    /* Success */
-    return true;
+    return delete_callback ("watchers", path, (void *)cb);
 }
 
 bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
-    ProtobufCService *rpc_client;
-    Apteryx__Validate validate = APTERYX__VALIDATE__INIT;
-    char *empty_root = "/*";
-    bool is_done = 0;
-
-    DEBUG ("VALIDATE: %s %p\n", path, cb);
-
-    if (!cb)
-    {
-        ERROR ("Unvalidating by passing in NULL cb is NOT SUPPORTED\n");
-        return false;
-    }
-
-    /* Check path */
-    if (!path ||
-        strcmp (path, "/") == 0 ||
-        strcmp (path, "/*") == 0 || strcmp (path, "*") == 0 || strlen (path) == 0)
-    {
-        path = empty_root;
-    }
-    if (path[0] != '/')
-    {
-        ERROR ("VALIDATE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        return false;
-    }
-
-    /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
-    if (!rpc_client)
-    {
-        ERROR ("VALIDATE: Falied to connect to server: %s\n", strerror (errno));
-        return false;
-    }
-    validate.path = (char *) path;
-    validate.id = (uint64_t) getpid ();
-    validate.cb = (uint64_t) (long) cb;
-    apteryx__server__validate (rpc_client, &validate, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
-    if (!is_done)
-    {
-         ERROR ("VALIDATE: No response\n");
-         return false;
-    }
-
-    /* Start the listen thread if required */
-    if (cb)
-        return start_client_threads ();
-
-    return true;
+    return add_callback ("validators", path, (void *)cb);
 }
 
 bool
 apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 {
-    ProtobufCService *rpc_client;
-    Apteryx__Validate validate = APTERYX__VALIDATE__INIT;
-    char *empty_root = "/*";
-    bool is_done = 0;
-
-    DEBUG ("UNVALIDATE: %s %p\n", path, cb);
-
-    if (!cb)
-    {
-        ERROR ("Unvalidating by passing in NULL cb is NOT SUPPORTED\n");
-        return false;
-    }
-
-    /* Check path */
-    if (!path ||
-        strcmp (path, "/") == 0 ||
-        strcmp (path, "/*") == 0 || strcmp (path, "*") == 0 || strlen (path) == 0)
-    {
-        path = empty_root;
-    }
-    if (path[0] != '/')
-    {
-        ERROR ("UNVALIDATE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        return false;
-    }
-
-    /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
-    if (!rpc_client)
-    {
-        ERROR ("VALIDATE: Falied to connect to server: %s\n", strerror (errno));
-        return false;
-    }
-    validate.path = (char *) path;
-    validate.id = (uint64_t) getpid ();
-    validate.cb = (uint64_t) (long) cb;
-    apteryx__server__unvalidate (rpc_client, &validate, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
-    if (!is_done)
-    {
-         ERROR ("UNVALIDATE: No response\n");
-         return false;
-    }
-
-    return true;
+    return delete_callback ("validators", path, (void *)cb);
 }
 
 bool
 apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv)
 {
-    ProtobufCService *rpc_client;
-    Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
-    protobuf_c_boolean is_done = 0;
-
-    DEBUG ("PROVIDE: %s %p %p\n", path, cb, priv);
-
-    if (!cb)
-    {
-        ERROR ("Unwatching by passing in NULL cb is NOT SUPPORTED\n");
-        return false;
-    }
-
-    /* Check path */
-    if (path[0] != '/')
-    {
-        ERROR ("PROVIDE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        return false;
-    }
-
-    /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
-    if (!rpc_client)
-    {
-        ERROR ("PROVIDE: Falied to connect to server: %s\n", strerror (errno));
-        return false;
-    }
-    provide.path = (char *) path;
-    provide.id = (uint64_t) getpid ();
-    provide.cb = (uint64_t) (long) cb;
-    provide.priv = (uint64_t) (long) priv;
-    apteryx__server__provide (rpc_client, &provide, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
-    if (!is_done)
-    {
-        ERROR ("PROVIDE: No response\n");
-        return false;
-    }
-
-    /* Start the listen thread if required */
-    if (cb)
-        return start_client_threads ();
-
-    /* Success */
-    return true;
+    assert (priv == NULL); //deprecated
+    return add_callback ("providers", path, (void *)cb);
 }
 
 bool
 apteryx_unprovide (const char *path, apteryx_provide_callback cb)
 {
-    ProtobufCService *rpc_client;
-    Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
-    protobuf_c_boolean is_done = 0;
-
-    DEBUG ("PROVIDE: %s %p\n", path, cb);
-
-    /* Check path */
-    if (path[0] != '/')
-    {
-        ERROR ("PROVIDE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        return false;
-    }
-
-    /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
-    if (!rpc_client)
-    {
-        ERROR ("PROVIDE: Falied to connect to server: %s\n", strerror (errno));
-        return false;
-    }
-    provide.path = (char *) path;
-    provide.id = (uint64_t) getpid ();
-    provide.cb = (uint64_t) (long) cb;
-    provide.priv = 0;
-    apteryx__server__unprovide (rpc_client, &provide, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
-    if (!is_done)
-    {
-        ERROR ("PROVIDE: No response\n");
-        return false;
-    }
-
-    /* Success */
-    return true;
+    return delete_callback ("providers", path, (void *)cb);
 }
 
 static void

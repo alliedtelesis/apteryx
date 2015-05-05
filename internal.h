@@ -54,7 +54,6 @@ typedef enum
 } APTERYX_MODE;
 
 /* Debug */
-#define APTERYX_SETTINGS "/apteryx/"
 extern bool debug;
 static inline uint64_t
 get_time_us (void)
@@ -103,6 +102,7 @@ static inline uint32_t htol32 (uint32_t v)
 /* Callback */
 typedef struct _cb_info_t
 {
+    const char *guid;
     const char *path;
     uint64_t id;
     uint64_t cb;
@@ -121,7 +121,10 @@ static inline void
 cb_info_destroy (gpointer data)
 {
     cb_info_t *info = (cb_info_t*)data;
-    free ((void *) info->path);
+    if (info->guid)
+        free ((void *) info->guid);
+    if (info->path)
+        free ((void *) info->path);
     free (info);
 }
 
@@ -130,9 +133,26 @@ cb_info_copy (cb_info_t *cb)
 {
     cb_info_t *copy = calloc (1, sizeof (*copy));
     *copy = *cb;
+    if (cb->guid)
+        copy->guid = strdup (cb->guid);
     if (cb->path)
         copy->path = strdup (cb->path);
     return (gpointer)copy;
+}
+
+static inline cb_info_t *
+cb_info_get (GList *list, const char *guid)
+{
+    GList *iter = NULL;
+    cb_info_t *info;
+    for (iter = list; iter; iter = iter->next)
+    {
+        info = (cb_info_t *) iter->data;
+        if (info->guid && strcmp (info->guid, guid) == 0)
+            break;
+        info = NULL;
+    }
+    return info;
 }
 
 static inline cb_info_t *
@@ -160,22 +180,12 @@ typedef struct _counters_t
     uint32_t get_invalid;
     uint32_t search;
     uint32_t search_invalid;
-    uint32_t watch;
-    uint32_t watch_invalid;
-    uint32_t unwatch;
-    uint32_t unwatch_invalid;
     uint32_t watched;
     uint32_t watched_no_match;
     uint32_t watched_no_handler;
     uint32_t watched_timeout;
     uint32_t validation;
-    uint32_t validation_invalid;
-    uint32_t unvalidation;
-    uint32_t unvalidation_invalid;
-    uint32_t provide;
-    uint32_t provide_invalid;
-    uint32_t unprovide;
-    uint32_t unprovide_invalid;
+    uint32_t validation_failed;
     uint32_t provided;
     uint32_t provided_no_handler;
     uint32_t prune;

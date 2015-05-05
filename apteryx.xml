@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MODULE xmlns="https://github.com/ATL-NZ/apteryx"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="https://github.com/ATL-NZ/apteryx
+	https://github.com/ATL-NZ/apteryx/releases/download/v1.17/apteryx.xsd">
+	<!--=======================================================-->
+	<NODE name="apteryx">
+		<NODE name="debug" default="0" help="Apteryx debug" value="^(0|1)$">
+			<VALUE name="disable" value="0" help="Debugging is disabled" />
+			<VALUE name="enable" value="1" help="Debugging is enabled" />
+		</NODE>
+		<NODE name="watchers">
+			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
+		</NODE>
+		<NODE name="providers">
+			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
+		</NODE>
+		<NODE name="validators">
+			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
+		</NODE>
+		<NODE name="cache" help="Formatted dump of the Apteryx cache"/>
+		<NODE name="counters" help="Formatted list of counters and values for Apteryx usage" />
+	</NODE>
+</MODULE>
