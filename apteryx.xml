@@ -21,6 +21,9 @@
 		<NODE name="validators" help="List of validated paths and registered callbacks for validating sets to that path.">
 			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
 		</NODE>
+		<NODE name="sync">
+			<NODE name="*" help="Unique identifier HASH(socket). Value is the (remote) socket." value="^[a-zA-Z0-9]*$" />
+		</NODE>
 		<NODE name="cache" help="Formatted dump of the Apteryx cache"/>
 		<NODE name="counters" help="Formatted list of counters and values for Apteryx usage" />
 	</NODE>
