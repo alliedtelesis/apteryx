@@ -1051,6 +1051,23 @@ test_validate_wildcard()
     apteryx_set_string (path, NULL, NULL);
 }
 
+void
+test_validate_wildcard_internal()
+{
+    _path = _value = _priv = NULL;
+    const char *path = "/entity/*/private/state";
+
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (!apteryx_set_string ("/entity/zones/private", "state", "up"));
+    CU_ASSERT (apteryx_set_string ("/entity/zones/private", "link", "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
+    apteryx_set_string ("/entity/zones/private", "state", NULL);
+    apteryx_set_string ("/entity/zones/private", "link", NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int already_set = 0;
 static int failed = 0;
 
@@ -1060,19 +1077,20 @@ test_validate_thread_client (void *data)
     const char *path = "/entity/zones/private/state";
 
     if(!apteryx_set_string (path, NULL, (char*)data))
-        failed++;
+        failed = errno;
     return 0;
 }
 
 int
 test_validate_conflicting_callback(const char *path, const char *value)
 {
-    return !already_set ? 0 : -1;
+    return !already_set ? 0 : -EPERM;
 }
 
 static bool
 test_validate_test_watch_callback (const char *path, void *priv, const char *value)
 {
+    usleep (900000);
     already_set++;
     return true;
 }
@@ -1095,7 +1113,7 @@ test_validate_conflicting ()
     pthread_create (&client2, NULL, (void *) &test_validate_thread_client, "down");
     pthread_join (client1, NULL);
     pthread_join (client2, NULL);
-    CU_ASSERT (failed == 1);
+    CU_ASSERT (failed == -EPERM);
     usleep (TEST_SLEEP_TIMEOUT);
 
     CU_ASSERT (apteryx_unvalidate (path, test_validate_conflicting_callback));
@@ -1501,6 +1519,7 @@ static CU_TestInfo tests_api_validate[] = {
     { "validate", test_validate },
     { "validate one level", test_validate_one_level },
     { "validate wildcard", test_validate_wildcard },
+    { "validate wildcard internal", test_validate_wildcard_internal },
     { "validate conflicting", test_validate_conflicting },
     CU_TEST_INFO_NULL,
 };
