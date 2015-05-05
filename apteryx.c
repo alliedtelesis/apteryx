@@ -46,6 +46,10 @@ static sem_t wake_worker;               /* How we wake up the watch callback han
 static volatile bool client_running = false;
 static volatile bool worker_running = false;
 
+static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t no_pending_watches;
+static int pending_watch_count = 0;
+
 /* Callback */
 typedef struct _ccb_info_t
 {
@@ -89,6 +93,10 @@ apteryx__watch (Apteryx__Client_Service *service,
            watch->path, watch->value,
            watch->id, watch->cb, watch->priv);
 
+    pthread_mutex_lock (&pending_watches_lock);
+    ++pending_watch_count;
+    pthread_mutex_unlock (&pending_watches_lock);
+
     /* Queue the callback for processing */
     pthread_mutex_lock (&lock);
     if (pending_watches == NULL)
@@ -114,8 +122,25 @@ apteryx__validate (Apteryx__Client_Service *service,
            validate->path, validate->value,
            validate->id, validate->cb);
 
+    if (!validate->cb)
+    {
+        result.result = 0;
+        goto exit;
+    }
+
+    /* We want to wait for all pending watches to be processed */
+    pthread_mutex_lock (&pending_watches_lock);
+    if (pending_watch_count)
+    {
+        pthread_cond_wait (&no_pending_watches, &pending_watches_lock);
+        pthread_mutex_unlock (&pending_watches_lock);
+    }
+    else
+        pthread_mutex_unlock (&pending_watches_lock);
+
     result.result = ((apteryx_validate_callback)validate->cb) (validate->path, validate->value);
 
+exit:
     /* Return result */
     closure (&result, closure_data);
     return;
@@ -150,7 +175,7 @@ apteryx__provide (Apteryx__Client_Service *service,
 static void*
 worker_thread (void *data)
 {
-    GList *pending, *iter;
+    GList *job;
 
     /* Process callbacks while the client thread is running */
     DEBUG ("Worker Thread: started...\n");
@@ -158,24 +183,32 @@ worker_thread (void *data)
     while (worker_running)
     {
         /* Wait for some work */
-        sem_wait (&wake_worker);
-        if (!worker_running)
-            break;
+        pthread_mutex_lock (&lock);
+        if (pending_watches == NULL)
+        {
+            pthread_mutex_unlock (&lock);
+            sem_wait (&wake_worker);
+            if (!worker_running)
+                break;
+            if (pending_watches == NULL)
+                continue;
+            pthread_mutex_lock (&lock);
+        }
 
         /* Dequeue the work */
-        pthread_mutex_lock (&lock);
-        pending = pending_watches;
-        pending_watches = NULL;
+        job = pending_watches;
+        pending_watches = g_list_next (job);
         pthread_mutex_unlock (&lock);
 
-        /* Process each callback */
-        for (iter = pending; iter; iter = g_list_next (iter))
-        {
-            ccb_info_t *info = (ccb_info_t *) iter->data;
-            if (info->cb)
-                info->cb (info->path, info->priv, info->value);
-        }
-        g_list_free_full (pending, ccb_info_destroy);
+        /* Process callback */
+        ccb_info_t *info = (ccb_info_t *) job->data;
+        if (info->cb)
+            info->cb (info->path, info->priv, info->value);
+
+        pthread_mutex_lock (&pending_watches_lock);
+        if (--pending_watch_count == 0)
+            pthread_cond_signal(&no_pending_watches);
+        pthread_mutex_unlock (&pending_watches_lock);
     }
     DEBUG ("Worker Thread: Exiting\n");
     sem_destroy(&wake_worker);
@@ -322,12 +355,13 @@ handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
     if (result == NULL)
     {
         *(protobuf_c_boolean *) closure_data = false;
-        errno = -ECONNABORTED;
+        errno = -ETIMEDOUT;
     }
     else
     {
-        *(protobuf_c_boolean *) closure_data = result->result == 0;
-        errno = result->result;
+        *(protobuf_c_boolean *) closure_data = (result->result == 0);
+        if (result->result)
+            errno = result->result;
     }
 }
 
@@ -339,6 +373,8 @@ apteryx_init (bool debug_enabled)
     ref_count++;
     debug |= debug_enabled;
     pthread_mutex_unlock (&lock);
+
+    pthread_cond_init (&no_pending_watches, NULL);
 
 #ifdef USE_SHM_CACHE
     /* Init cache */
@@ -492,7 +528,7 @@ apteryx_set (const char *path, const char *value)
     protobuf_c_service_destroy (rpc_client);
     if (!is_done)
     {
-        ERROR ("SET: No response\n");
+        ERROR ("SET: Failed %s\n", strerror(errno));
         return false;
     }
 

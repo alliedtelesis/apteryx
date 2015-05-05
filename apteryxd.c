@@ -49,7 +49,10 @@ static pthread_mutex_t validating;
 static void
 handle_validate_response (const Apteryx__ValidateResult *result, void *closure_data)
 {
-    *(int32_t *) closure_data = result->result;
+    if (!result)
+        *(int32_t *) closure_data = -ETIMEDOUT;
+    else
+        *(int32_t *) closure_data = result->result;
 }
 
 static int
@@ -103,6 +106,22 @@ validate_set (const char *path, const char *value)
                     match = true;
                 }
             }
+            /* match * within path */
+            else if ((ptr = strchr(validator->path, '*')) != NULL)
+            {
+                /* Match up to the '*' */
+                if (strncmp(path, validator->path, ptr - validator->path - 1) == 0)
+                {
+                    const char *after_needle = ptr + 1;
+                    const char *after_haystack = path + strlen(path) - strlen(after_needle);
+
+                    /* match after the star */
+                    if (strcmp(after_needle, after_haystack) == 0)
+                    {
+                        match = true;
+                    }
+                }
+            }
         }
 
         if (match)
@@ -121,7 +140,7 @@ validate_set (const char *path, const char *value)
 
     /* Protect sensitive values with this lock - released in apteryx_set */
     DEBUG("SET: locking mutex\n");
-    pthread_mutex_lock(&validating);
+    pthread_mutex_lock (&validating);
     DEBUG("SET: lock taken\n");
 
     /* Call each validator */
@@ -366,6 +385,7 @@ provide_get (const char *path)
     char *value = NULL;
     GList *iter = NULL;
 
+    pthread_mutex_lock (&list_lock);
     for (iter = provide_list; iter; iter = g_list_next (iter))
     {
         cb_info_t *provider = iter->data;
@@ -433,6 +453,7 @@ provide_get (const char *path)
             }
         }
     }
+    pthread_mutex_unlock (&list_lock);
     return value;
 }
 
@@ -480,22 +501,25 @@ apteryx__set (Apteryx__Server_Service *service,
         cache_set (set->path, NULL);
 #endif
 
-    /* Notify watchers */
-    notify_watchers (set->path);
-
     /* Set succeeded */
     result.result = 0;
 
 exit:
+    /* Return result */
+    closure (&result, closure_data);
+
+    if (validation_result >= 0)
+    {
+        /* Notify watchers */
+        notify_watchers (set->path);
+    }
+
     /* Release validation lock - this is a sensitive value */
     if (validation_result)
     {
         DEBUG("SET: unlocking mutex\n");
         pthread_mutex_unlock (&validating);
     }
-
-    /* Return result */
-    closure (&result, closure_data);
     return;
 }
 
