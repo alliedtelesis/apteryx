@@ -35,7 +35,7 @@
 static bool
 assert_apteryx_empty (void)
 {
-    GList *paths = apteryx_search ("");
+    GList *paths = apteryx_search ("/");
     if (paths != NULL)
     {
         GList *iter;
@@ -374,21 +374,10 @@ test_search_paths_root ()
     CU_ASSERT (apteryx_set_string ("/entities/zones/public", NULL, "-"));
     CU_ASSERT (apteryx_set_string ("/entities/zones/public/active", NULL, "true"));
 
-    CU_ASSERT ((paths = apteryx_search ("")) != NULL);
-    CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/interfaces", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/entities", (GCompareFunc) strcmp) != NULL);
-    g_list_free_full (paths, free);
-    paths = NULL;
-
-    CU_ASSERT ((paths = apteryx_search ("*")) != NULL);
-    CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/interfaces", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/entities", (GCompareFunc) strcmp) != NULL);
-    g_list_free_full (paths, free);
-    paths = NULL;
-
-    CU_ASSERT ((paths = apteryx_search (NULL)) != NULL);
+    CU_ASSERT ((paths = apteryx_search (NULL)) == NULL);
+    CU_ASSERT ((paths = apteryx_search ("")) == NULL);
+    CU_ASSERT ((paths = apteryx_search ("*")) == NULL);
+    CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
     CU_ASSERT (g_list_find_custom (paths, "/interfaces", (GCompareFunc) strcmp) != NULL);
     CU_ASSERT (g_list_find_custom (paths, "/entities", (GCompareFunc) strcmp) != NULL);

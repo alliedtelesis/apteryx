@@ -36,6 +36,7 @@
 
 /* Configuration */
 bool debug = false;                      /* Debug enabled */
+static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
 static int stopfd = -1;                 /* Used to stop the RPC server service */
@@ -78,6 +79,31 @@ ccb_info_create (const Apteryx__Watch *watch)
     if (watch->value && watch->value[0] != '\0')
         info->value = strdup (watch->value);
     return (gpointer)info;
+}
+
+static const char *
+validate_path (const char *path, const char **url)
+{
+    /* Database path or none at all */
+    if (path && path[0] == '/')
+    {
+        /* Use the default URL */
+        if (url)
+            *url = default_url;
+        return path;
+    }
+    /* Check for a full URL */
+    else if (path &&
+      (strncmp (path, "unix://", 7) == 0 ||
+       strncmp (path, "tcp://", 6) == 0))
+    {
+        if (url)
+            *url = path;
+        path = strrchr (path, ':') + 1;
+        return path;
+    }
+    ERROR ("Invalid path (%s)!\n", path);
+    return NULL;
 }
 
 /* Callback for watched items */
@@ -429,6 +455,7 @@ apteryx_shutdown (void)
 bool
 apteryx_prune (const char *path)
 {
+    const char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Prune prune = APTERYX__PRUNE__INIT;
     protobuf_c_boolean is_done = 0;
@@ -436,15 +463,16 @@ apteryx_prune (const char *path)
     DEBUG ("PRUNE: %s\n", path);
 
     /* Check path */
-    if (path[0] != '/')
+    path = validate_path (path, &url);
+    if (!path)
     {
         ERROR ("PRUNE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
+        assert (!debug || path);
         return false;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
     if (!rpc_client)
     {
         ERROR ("PRUNE: Falied to connect to server: %s\n", strerror (errno));
@@ -503,6 +531,7 @@ apteryx_dump (const char *path, FILE *fp)
 bool
 apteryx_set (const char *path, const char *value)
 {
+    const char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
     protobuf_c_boolean is_done = 0;
@@ -510,15 +539,16 @@ apteryx_set (const char *path, const char *value)
     DEBUG ("SET: %s = %s\n", path, value);
 
     /* Check path */
-    if (path[0] != '/' || path[strlen(path) - 1] == '/')
+    path = validate_path (path, &url);
+    if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("SET: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
+        assert (!debug || path);
         return false;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
     if (!rpc_client)
     {
         ERROR ("SET: Falied to connect to server: %s\n", strerror (errno));
@@ -610,6 +640,7 @@ handle_get_response (const Apteryx__GetResult *result, void *closure_data)
 char *
 apteryx_get (const char *path)
 {
+    const char *url = NULL;
     char *value = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
@@ -618,10 +649,11 @@ apteryx_get (const char *path)
     DEBUG ("GET: %s\n", path);
 
     /* Check path */
-    if (path[0] != '/' || path[strlen(path)-1] == '/')
+    path = validate_path (path, &url);
+    if (!path || path[strlen(path)-1] == '/')
     {
         ERROR ("GET: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
+        assert (!debug || path);
         return NULL;
     }
 
@@ -634,7 +666,7 @@ apteryx_get (const char *path)
 #endif
 
     /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
     if (!rpc_client)
     {
         ERROR ("GET: Falied to connect to server: %s\n", strerror (errno));
@@ -741,11 +773,21 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
 GList *
 apteryx_search (const char *path)
 {
+    const char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Search search = APTERYX__SEARCH__INIT;
     search_data_t data = {0};
 
     DEBUG ("SEARCH: %s\n", path);
+
+    /* Check path */
+    path = validate_path (path, &url);
+    if (!path)
+    {
+        ERROR ("SEARCH: invalid root (%s)!\n", path);
+        assert (!debug || path);
+        return false;
+    }
 
     /* Validate path */
     if (!path ||
@@ -768,7 +810,7 @@ apteryx_search (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
     if (!rpc_client)
     {
         ERROR ("SEARCH: Falied to connect to server: %s\n", strerror (errno));
@@ -869,6 +911,7 @@ handle_get_ts_response (const Apteryx__GetTimeStampResult *result, void *closure
 uint64_t
 apteryx_get_timestamp (const char *path)
 {
+    const char *url = NULL;
     uint64_t value = 0;
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
@@ -876,15 +919,16 @@ apteryx_get_timestamp (const char *path)
     DEBUG ("GET_TimeStamp: %s\n", path);
 
     /* Check path */
-    if (path[0] != '/' || path[strlen(path)-1] == '/')
+    path = validate_path (path, &url);
+    if (!path || path[strlen(path)-1] == '/')
     {
         ERROR ("GET_TimeStamp: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
+        assert (!debug || path);
         return 0;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
     if (!rpc_client)
     {
         ERROR ("GET: Falied to connect to server: %s\n", strerror (errno));
