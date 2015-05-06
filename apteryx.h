@@ -247,4 +247,12 @@ bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
  * @return 0 if the path doesn't exist, last change timestamp otherwise
  */
 uint64_t apteryx_get_timestamp (const char *path);
+
+/**
+ * Increase the number of workers that handle watch events
+ * @param value the number of new threads to add
+ * @return true on successful starting of all new threads
+ */
+bool apteryx_increase_watchers (unsigned int value);
+
 #endif /* _APTERYX_H_ */

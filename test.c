@@ -962,6 +962,39 @@ test_watch_when_busy ()
     _watch_cleanup ();
 }
 
+int dozy_done;
+
+static bool
+test_watch_dozy_callback (const char *path, void *priv, const char *value)
+{
+    usleep (RPC_TIMEOUT_US);
+    dozy_done = 1;
+    return true;
+}
+
+void
+test_watch_multi_dozey ()
+{
+    _cb_count = 0;
+    dozy_done = 0;
+    CU_ASSERT (apteryx_set_int ("/interfaces/eth0/packets", NULL, 0));
+    CU_ASSERT (apteryx_watch ("/interfaces/eth0/packets", test_watch_count_callback, (void *) 0));
+    CU_ASSERT (apteryx_watch ("/dozy/watcher", test_watch_dozy_callback, (void *) 0));
+    CU_ASSERT (apteryx_increase_watchers (5));
+    CU_ASSERT (apteryx_set_string ("/dozy/watcher", NULL, "go"));
+    CU_ASSERT (apteryx_set_int ("/interfaces/eth0/packets", NULL, 0));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (dozy_done == 0);
+    CU_ASSERT (_cb_count == 1);
+    usleep (2*RPC_TIMEOUT_US);
+    CU_ASSERT (dozy_done == 1);
+    CU_ASSERT (apteryx_unwatch ("/interfaces/eth0/packets", test_watch_count_callback));
+    CU_ASSERT (apteryx_unwatch ("/dozy/watcher", test_watch_dozy_callback));
+    apteryx_set ("/interfaces/eth0/packets", NULL);
+    apteryx_set ("/dozy/watcher", NULL);
+    _watch_cleanup ();
+}
+
 static pthread_mutex_t watch_lock;
 static bool
 test_perf_watch_callback (const char *path, void *priv, const char *value)
@@ -1494,6 +1527,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch adds / removes watches", test_watch_adds_watch },
     { "watch removes multiple watches", test_watch_removes_all_watches },
     { "watch when busy", test_watch_when_busy },
+    { "multi-watch with dozey", test_watch_multi_dozey },
     CU_TEST_INFO_NULL,
 };
 

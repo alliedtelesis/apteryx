@@ -40,11 +40,14 @@ static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
 static int stopfd = -1;                 /* Used to stop the RPC server service */
 static pthread_t client_id = 0;        /* Thread to process Apteryx events */
-static pthread_t worker_id = 0;        /* Worker to handle watch callbacks */
 static GList *pending_watches = NULL;   /* List of watches to process */
 static sem_t wake_worker;               /* How we wake up the watch callback handler */
 static volatile bool client_running = false;
-static volatile bool worker_running = false;
+static volatile bool workers_die = false;
+static pthread_t **workers = NULL;      /* Worker(s) to handle watch callbacks */
+static int workers_wanted = 1;          /* how many worker threads are wanted */
+static int workers_running = 0;         /* how many workers are running */
+static pthread_mutex_t workers_lock = PTHREAD_MUTEX_INITIALIZER; /* Protect work globals */
 
 /* Callback */
 typedef struct _ccb_info_t
@@ -90,11 +93,10 @@ apteryx__watch (Apteryx__Client_Service *service,
            watch->id, watch->cb, watch->priv);
 
     /* Queue the callback for processing */
-    pthread_mutex_lock (&lock);
-    if (pending_watches == NULL)
-        sem_post (&wake_worker);
+    pthread_mutex_lock (&workers_lock);
+    sem_post (&wake_worker);
     pending_watches = g_list_append (pending_watches, ccb_info_create (watch));
-    pthread_mutex_unlock (&lock);
+    pthread_mutex_unlock (&workers_lock);
 
     /* Return result */
     closure (&result, closure_data);
@@ -150,37 +152,37 @@ apteryx__provide (Apteryx__Client_Service *service,
 static void*
 worker_thread (void *data)
 {
-    GList *pending, *iter;
-
     /* Process callbacks while the client thread is running */
     DEBUG ("Worker Thread: started...\n");
-    worker_running = true;
-    while (worker_running)
+    pthread_mutex_lock (&workers_lock);
+    workers_running ++;
+    while (!workers_die)
     {
+        pthread_mutex_unlock (&workers_lock);
         /* Wait for some work */
         sem_wait (&wake_worker);
-        if (!worker_running)
+        if (workers_die)
             break;
 
         /* Dequeue the work */
-        pthread_mutex_lock (&lock);
-        pending = pending_watches;
-        pending_watches = NULL;
-        pthread_mutex_unlock (&lock);
-
-        /* Process each callback */
-        for (iter = pending; iter; iter = g_list_next (iter))
+        ccb_info_t *info = NULL;
+        pthread_mutex_lock (&workers_lock);
+        while (pending_watches)
         {
-            ccb_info_t *info = (ccb_info_t *) iter->data;
+            info = (ccb_info_t *) pending_watches->data;
+            pending_watches = g_list_remove (pending_watches, info);
+            pthread_mutex_unlock (&workers_lock);
+
+            /* Process the callback */
             if (info->cb)
                 info->cb (info->path, info->priv, info->value);
+            ccb_info_destroy (info);
+            pthread_mutex_lock (&workers_lock);
         }
-        g_list_free_full (pending, ccb_info_destroy);
     }
     DEBUG ("Worker Thread: Exiting\n");
-    sem_destroy(&wake_worker);
-    worker_id = 0;
-    worker_running = false;
+    workers_running --;
+    pthread_mutex_unlock (&workers_lock);
     return NULL;
 }
 
@@ -225,9 +227,12 @@ stop_client_threads (void)
     int i;
 
     /* Not from a callback please */
-    if (pthread_self () == worker_id)
-        return;
-
+    for (int i = 0; i < workers_running; i++)
+    {
+        if (pthread_self () == *workers[i])
+            return;
+    }
+    
     /* Stop the client thread */
     if (client_running && client_id != 0)
     {
@@ -246,29 +251,66 @@ stop_client_threads (void)
     }
 
     /* Stop the worker thread */
-    if (worker_running && worker_id != 0)
+    pthread_mutex_lock (&workers_lock);
+    if (workers_running)
     {
+        pthread_mutex_unlock (&workers_lock);
         /* Wait for the worker to exit */
-        worker_running = false;
-        sem_post (&wake_worker);
-        for (i=0; i < 5000 && worker_id != 0; i++)
+        workers_die = false;
+        for (i=0; i < workers_running; i++)
+            sem_post (&wake_worker);
+        pthread_mutex_lock (&workers_lock);
+        for (i=0; i < 5000 && workers_running > 0; i++)
+        {
+            pthread_mutex_unlock (&workers_lock);
             usleep (1000);
-        if (worker_id != 0)
+            pthread_mutex_lock (&workers_lock);
+        }
+        pthread_mutex_unlock (&workers_lock);
+        for (i=0; i < workers_wanted && workers_running; i++)
         {
             DEBUG ("Shutdown: Killing worker thread\n");
-            pthread_cancel (worker_id);
-            pthread_join (worker_id, NULL);
+            pthread_cancel (*workers[i]);
+            pthread_join (*workers[i], NULL);
         }
-        pthread_mutex_lock (&lock);
+        pthread_mutex_lock (&workers_lock);
         g_list_free_full (pending_watches, ccb_info_destroy);
         pending_watches = NULL;
-        pthread_mutex_unlock (&lock);
+        pthread_mutex_unlock (&workers_lock);
+    }
+    else
+    {
+        pthread_mutex_unlock (&workers_lock);
     }
 
     /* Done */
-    worker_running = false;
+    workers_running = 0;
     client_running = false;
     return;
+}
+
+static bool
+start_worker_threads (void)
+{
+    pthread_mutex_lock (&workers_lock);
+    if (workers_running < workers_wanted)
+    {
+        for (int i = workers_running; i < workers_wanted; i++)
+        {
+            workers = realloc (workers, sizeof (pthread_t) * (i + 1));
+            workers[i] = malloc (sizeof (pthread_t));
+            pthread_create (workers[i], NULL, worker_thread, NULL);
+        }
+        for (int i=0; i < 5000 && (workers_running != workers_wanted); i++)
+        {
+            pthread_mutex_unlock (&workers_lock);
+            usleep (1000);
+            pthread_mutex_lock (&workers_lock);
+        }
+    }
+    bool res = workers_running == workers_wanted;
+    pthread_mutex_unlock (&workers_lock);
+    return res;
 }
 
 static bool
@@ -288,14 +330,11 @@ start_client_threads (void)
 
     if (!client_running)
     {
-        /* Create the worker to process the watch callbacks */
+        /* Create the worker(s) to process the watch callbacks */
         sem_init (&wake_worker, 1, 0);
-        pthread_create (&worker_id, NULL, worker_thread, NULL);
-        for (i=0; i < 5000 && !worker_running; i++)
-            usleep (1000);
-        if (!worker_running || worker_id == 0)
+        if (!start_worker_threads ())
         {
-            ERROR ("Failed to create Apteryx worker thread\n");
+            ERROR ("Failed to create Apteryx worker thread(s)\n");
             pthread_mutex_unlock (&lock);
             return false;
         }
@@ -384,7 +423,7 @@ apteryx_shutdown (void)
     stop_client_threads ();
     DEBUG ("Shutdown: Shutdown\n");
     assert (!client_running);
-    assert (!worker_running);
+    assert (!workers_running);
     return true;
 }
 
@@ -855,4 +894,13 @@ apteryx_get_timestamp (const char *path)
 
     DEBUG ("    = %"PRIu64"\n", value);
     return value;
+}
+
+bool
+apteryx_increase_watchers (unsigned int value)
+{
+    pthread_mutex_lock (&workers_lock);
+    workers_wanted += value;
+    pthread_mutex_unlock (&workers_lock);
+    return start_worker_threads ();
 }
