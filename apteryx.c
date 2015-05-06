@@ -815,6 +815,7 @@ delete_callback (const char *type, const char *path,  void *cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
 {
+    assert (cb != NULL); // use apteryx_unwatch
     assert (priv == NULL); //deprecated
     return add_callback ("watchers", path, (void *)cb);
 }
@@ -828,6 +829,7 @@ apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
+    assert (cb != NULL); // use apteryx_unvalidate
     return add_callback ("validators", path, (void *)cb);
 }
 
@@ -840,6 +842,7 @@ apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 bool
 apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv)
 {
+    assert (cb != NULL); // use apteryx_unprovide
     assert (priv == NULL); //deprecated
     return add_callback ("providers", path, (void *)cb);
 }
