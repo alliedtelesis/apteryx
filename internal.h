@@ -34,10 +34,11 @@
 #include <glib.h>
 #include <protobuf-c/protobuf-c.h>
 
-/* UNIX socket paths */
-#define APTERYX_SERVER  "/tmp/apteryx"
-
-/* Apteryx settings */
+/* Default UNIX socket path */
+#define APTERYX_SERVER  "unix:///tmp/apteryx"
+/* Default PID file */
+#define APTERYX_PID     "/var/run/apteryxd.pid"
+/* Apteryx path to Apteryx settings */
 #define APTERYX_SETTINGS "/apteryx/"
 
 /* Mode */
@@ -209,8 +210,10 @@ uint64_t db_get_timestamp (const char *path);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
-bool rpc_provide_service (const char *name, ProtobufCService *service, int num_threads, int stopfd);
-ProtobufCService *rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descriptor);
+bool rpc_provide_service (const char *url, ProtobufCService *service, int num_threads, int stopfd);
+bool rpc_bind_url (const char *url);
+bool rpc_unbind_url (const char *url);
+ProtobufCService *rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor);
 
 /* Apteryx configuration */
 void config_init (void);

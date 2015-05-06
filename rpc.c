@@ -31,9 +31,21 @@
 #undef DEBUG
 #define DEBUG(fmt, args...)
 
+typedef struct rpc_socket_t
+{
+    union
+    {
+        struct sockaddr_in addr_in;
+        struct sockaddr_in6 addr_in6;
+        struct sockaddr_un addr_un;
+    } address;
+    socklen_t address_len;
+    int family;
+    int fd;
+} rpc_socket_t;
+
 typedef struct rpc_server_t
 {
-    int fd;
     bool running;
     ProtobufCService *service;
     pthread_mutex_t lock;
@@ -43,7 +55,9 @@ typedef struct rpc_server_t
     sem_t wake_workers;
     int num_workers;
     pthread_t *workers;
+    GList *sockets;
 } rpc_server_t;
+__thread rpc_server_t tl_server = {0};
 
 typedef struct rpc_client_t
 {
@@ -118,6 +132,67 @@ delete_cb (GList **list, int fd)
         *list = g_list_remove (*list, cb);
         free (cb);
     }
+}
+
+static rpc_socket_t*
+parse_url (const char *url)
+{
+    rpc_socket_t *sock = calloc (1, sizeof (rpc_socket_t));
+    char host[INET6_ADDRSTRLEN];
+    int port = 80;
+
+    /* UNIX path = "unix:///<unix-path>[:<apteryx-path>]" */
+    if (strncmp (url, "unix://", 7) == 0)
+    {
+        const char *name = url + strlen ("unix://");
+        const char *end = strchr (name, ':');
+        int len = end ? end - name : strlen (name);
+
+        sock->family = PF_UNIX;
+        sock->address_len = sizeof (sock->address.addr_un);
+        memset (&sock->address.addr_un, 0, sock->address_len);
+        sock->address.addr_un.sun_family = AF_UNIX;
+        strncpy (sock->address.addr_un.sun_path, name, len);
+        DEBUG ("RPC: UNIX://%s\n", sock->address.addr_un.sun_path);
+    }
+    /* IPv4 TCP path = "tcp://<IPv4>:<port>[:<apteryx-path>]" */
+    else if (sscanf (url, "tcp://%99[^:]:%99d", host, &port) == 2)
+    {
+        if (inet_pton (AF_INET, host, &sock->address.addr_in.sin_addr) != 1)
+        {
+            ERROR ("RPC: Invaild IPv4 address: %s\n", host);
+            free (sock);
+            return NULL;
+        }
+        sock->family = AF_INET;
+        sock->address_len = sizeof (sock->address.addr_in);
+        sock->address.addr_in.sin_family = AF_INET;
+        sock->address.addr_in.sin_port = htons (port);
+        DEBUG ("RPC: TCP://%s:%u\n", host, port);
+    }
+    /* IPv6 TCP path = "tcp:[<IPv6>]:<port>[:<apteryx-path>]" */
+    else if (sscanf (url, "tcp://[%99[^]]:%99d", host, &port) == 2)
+    {
+        if (inet_pton (AF_INET6, host, &sock->address.addr_in6.sin6_addr) != 1)
+        {
+            ERROR ("RPC: Invaild IPv6 address: %s\n", host);
+            free (sock);
+            return NULL;
+        }
+        sock->family = AF_INET6;
+        sock->address_len = sizeof (sock->address.addr_in6);
+        sock->address.addr_in6.sin6_family = AF_INET6;
+        sock->address.addr_in6.sin6_port = htons (port);
+        DEBUG ("RPC: TCP6://%s:%u\n", host, port);
+    }
+    else
+    {
+        ERROR ("RPC: Invaild URL: %s\n", url);
+        free (sock);
+        return NULL;
+    }
+
+    return sock;
 }
 
 static void
@@ -341,88 +416,139 @@ worker (void *data)
 }
 
 bool
-rpc_provide_service (const char *name, ProtobufCService *service, int num_threads, int stopfd)
+rpc_bind_url (const char *url)
 {
-    rpc_server_t server = {0};
-    struct pollfd *fds = NULL;
+    rpc_socket_t *sock;
     int on = 1;
+
+    /* Parse the URL */
+    sock = parse_url (url);
+    if (sock == NULL)
+    {
+        return false;
+    }
+
+    /* Create the listen socket */
+    sock->fd = socket (sock->family, SOCK_STREAM, 0);
+    if (sock->fd < 0)
+    {
+        ERROR ("RPC: socket() failed: %s\n", strerror (errno));
+        free (sock);
+        return false;
+    }
+    setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    if (bind (sock->fd, (struct sockaddr *)&sock->address, sock->address_len) < 0)
+    {
+        ERROR ("RPC: error binding to port: %s\n", strerror (errno));
+        close (sock->fd);
+        free (sock);
+        return false;
+    }
+    if (listen (sock->fd, 255) < 0)
+    {
+        ERROR ("RPC: listen() failed: %s\n", strerror (errno));
+        close (sock->fd);
+        free (sock);
+        return false;
+    }
+    int flags = fcntl (sock->fd, F_GETFL);
+    if (flags >= 0)
+        fcntl (sock->fd, F_SETFL, flags | O_NONBLOCK);
+
+    DEBUG ("RPC: New Server (%s)\n", url);
+    tl_server.sockets = g_list_append (tl_server.sockets, sock);
+    add_cb (&tl_server.pending, sock->fd, server_callback, (void*)&tl_server);
+
+    return true;
+}
+
+bool
+rpc_unbind_url (const char *url)
+{
+    rpc_socket_t *sock;
+    GList *iter;
+
+    /* Parse the URL */
+    sock = parse_url (url);
+    if (sock == NULL)
+    {
+        return false;
+    }
+
+    for (iter = tl_server.sockets; iter; iter = iter->next)
+    {
+        rpc_socket_t *s = (rpc_socket_t *)iter->data;
+        if (memcmp ((const void *)s, (const void *)sock,
+                sizeof (rpc_socket_t)) == 0)
+        {
+            if (s->fd >= 0)
+                close (s->fd);
+            if (s->family == PF_UNIX)
+                unlink (s->address.addr_un.sun_path);
+            free (s);
+            free (sock);
+            return true;
+        }
+    }
+    free (sock);
+    return false;
+}
+
+bool
+rpc_provide_service (const char *url, ProtobufCService *service, int num_threads, int stopfd)
+{
+    struct pollfd *fds = NULL;
+    GList *iter;
     bool rc = true;
     int i;
 
-    /* Create the listen socket */
-    struct sockaddr_un addr_un;
-    memset (&addr_un, 0, sizeof (addr_un));
-    addr_un.sun_family = AF_UNIX;
-    strncpy (addr_un.sun_path, name, sizeof (addr_un.sun_path));
-    int fd = socket (PF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0)
-    {
-        ERROR ("RPC: socket() failed: %s\n", strerror (errno));
-        rc = false;
-        goto exit;
-    }
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    if (bind (fd, (struct sockaddr *) &addr_un, (socklen_t)sizeof (addr_un)) < 0)
-    {
-        ERROR ("RPC: error binding to port: %s\n", strerror (errno));
-        rc = false;
-        goto exit;
-    }
-    if (listen (fd, 255) < 0)
-    {
-        ERROR ("RPC: listen() failed: %s\n", strerror (errno));
-        rc = false;
-        goto exit;
-    }
-    int flags = fcntl (fd, F_GETFL);
-    if (flags >= 0)
-        fcntl (fd, F_SETFL, flags | O_NONBLOCK);
+    /* Setup the thread local server structure */
+    tl_server.running = true;
+    tl_server.service = service;
+    pthread_mutex_init (&tl_server.lock, NULL);
 
-    /* Setup the server structure */
-    server.fd = fd;
-    server.running = true;
-    server.service = service;
-    pthread_mutex_init (&server.lock, NULL);
-
-    DEBUG ("RPC: New Server (%s)\n", name);
+    /* Bind the default listen socket */
+    if (!rpc_bind_url (url))
+    {
+        rc = false;
+        goto exit;
+    }
 
     /* Start any worker threads */
     if (num_threads > 0)
     {
-        if (pipe (server.wake_server) != 0)
+        if (pipe (tl_server.wake_server) != 0)
             ERROR ("Failed to create pipe to wake server\n");
-        add_cb (&server.pending, server.wake_server[0], NULL, (void*)&server);
-        sem_init (&server.wake_workers, 1, 0);
-        server.num_workers = num_threads;
-        server.workers = calloc (num_threads, sizeof (pthread_t));
+        add_cb (&tl_server.pending, tl_server.wake_server[0], NULL, (void*)&tl_server);
+        sem_init (&tl_server.wake_workers, 1, 0);
+        tl_server.num_workers = num_threads;
+        tl_server.workers = calloc (num_threads, sizeof (pthread_t));
         for (i=0; i < num_threads; i++)
-            pthread_create (&server.workers[i], NULL,
-                    (void *) &worker, (void *) &server);
+            pthread_create (&tl_server.workers[i], NULL,
+                    (void *) &worker, (void *) &tl_server);
     }
 
     /* Add callbacks for stopping and new connections */
     if (stopfd > 0)
-        add_cb (&server.pending, stopfd, stop_callback, (void*)&server);
-    add_cb (&server.pending, fd, server_callback, (void*)&server);
+        add_cb (&tl_server.pending, stopfd, stop_callback, (void*)&tl_server);
 
     /* Loop while not asked to stop */
-    while (server.running)
+    while (tl_server.running)
     {
-        GList *iter;
         int num_fds;
 
         /* Create the event list */
-        pthread_mutex_lock (&server.lock);
-        num_fds = g_list_length (server.pending);
+        pthread_mutex_lock (&tl_server.lock);
+        num_fds = g_list_length (tl_server.pending);
         fds = realloc (fds, num_fds * sizeof (struct pollfd));
-        for (i=0, iter = server.pending; iter; iter = iter->next, i++)
+        for (i=0, iter = tl_server.pending; iter; iter = iter->next, i++)
         {
             callback_t *cb = (callback_t *)iter->data;
             fds[i].fd = cb->fd;
             fds[i].events = POLLIN;
             fds[i].revents = 0;
         }
-        pthread_mutex_unlock (&server.lock);
+        pthread_mutex_unlock (&tl_server.lock);
 
         DEBUG ("RPC: Waiting for %d events\n", num_fds);
         if (poll (fds, num_fds, -1) <= 0)
@@ -430,24 +556,24 @@ rpc_provide_service (const char *name, ProtobufCService *service, int num_thread
             DEBUG ("RPC: polling error: %s\n", strerror (errno));
         }
 
-        if (server.workers)
+        if (tl_server.workers)
         {
             /* The list may be invalid  */
-            if (fds[0].revents && fds[0].fd == server.wake_server[0])
+            if (fds[0].revents && fds[0].fd == tl_server.wake_server[0])
             {
                 /* We have been woken because of a list change */
                 uint8_t dummy = read (fds[0].fd, &dummy, 1);
                 continue;
             }
-            else if (num_fds != g_list_length (server.pending))
+            else if (num_fds != g_list_length (tl_server.pending))
             {
                 /* List has been changed due to callback */
                 continue;
             }
 
             /* Process any valid callbacks */
-            pthread_mutex_lock (&server.lock);
-            iter = server.pending;
+            pthread_mutex_lock (&tl_server.lock);
+            iter = tl_server.pending;
             i = 0;
             while (iter != NULL)
             {
@@ -456,56 +582,63 @@ rpc_provide_service (const char *name, ProtobufCService *service, int num_thread
                 if (fds[i].revents && cb->func)
                 {
                     DEBUG ("RPC: Event for fd %d\n", cb->fd);
-                    server.pending = g_list_remove (server.pending, cb);
-                    server.working = g_list_append (server.working, cb);
-                    sem_post (&server.wake_workers);
+                    tl_server.pending = g_list_remove (tl_server.pending, cb);
+                    tl_server.working = g_list_append (tl_server.working, cb);
+                    sem_post (&tl_server.wake_workers);
                 }
                 iter = next;
                 i++;
             }
-            pthread_mutex_unlock (&server.lock);
+            pthread_mutex_unlock (&tl_server.lock);
         }
         else
         {
-            server.working = g_list_copy (server.pending);
-            for (i=0, iter = server.working; iter; iter = iter->next, i++)
+            tl_server.working = g_list_copy (tl_server.pending);
+            for (i=0, iter = tl_server.working; iter; iter = iter->next, i++)
             {
                 if (fds[i].revents)
                 {
                     callback_t *cb = (callback_t *)iter->data;
                     DEBUG ("RPC: Callback for fd %d\n", fds[i].fd);
                     if (cb->func (cb->fd, cb->data) < 0)
-                        delete_cb (&server.pending, fds[i].fd);
+                        delete_cb (&tl_server.pending, fds[i].fd);
                 }
             }
-            g_list_free (server.working);
-            server.working = NULL;
+            g_list_free (tl_server.working);
+            tl_server.working = NULL;
         }
     }
 
 exit:
-    DEBUG ("RPC: Shutdown server (%s)\n", name);
-    if (server.workers)
+    DEBUG ("RPC: Shutdown servers (%s)\n", url);
+    if (tl_server.workers)
     {
         for (i=0; i < num_threads; i++)
         {
-            sem_post (&server.wake_workers);
+            sem_post (&tl_server.wake_workers);
             usleep (1000);
-            if (server.workers[i] != -1)
+            if (tl_server.workers[i] != -1)
             {
-                pthread_cancel (server.workers[i]);
-                pthread_join (server.workers[i], NULL);
+                pthread_cancel (tl_server.workers[i]);
+                pthread_join (tl_server.workers[i], NULL);
             }
         }
-        free (server.workers);
+        free (tl_server.workers);
     }
-    if (server.pending)
-        g_list_free_full (server.pending, free);
+    for (i=0, iter = tl_server.sockets; iter; iter = iter->next, i++)
+    {
+        rpc_socket_t *sock = (rpc_socket_t *)iter->data;
+        if (sock->fd >= 0)
+            close (sock->fd);
+        if (sock->family == PF_UNIX)
+            unlink (sock->address.addr_un.sun_path);
+    }
+    g_list_free_full (tl_server.sockets, free);
+    g_list_free_full (tl_server.pending, free);
     if (fds)
         free (fds);
-    if (fd >= 0)
-        close (fd);
-    unlink (name);
+    pthread_mutex_destroy (&tl_server.lock);
+    tl_server.running = false;
     return rc;
 }
 
@@ -644,44 +777,54 @@ destroy_client_service (ProtobufCService *service)
 }
 
 ProtobufCService *
-rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descriptor)
+rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor)
 {
+    rpc_socket_t *sock;
     rpc_client_t *client;
-    struct sockaddr_un addr_un;
-    int fd = -1;
 
-    DEBUG ("RPC: New Client (connecting to server %s)\n", name);
-    memset (&addr_un, 0, sizeof (addr_un));
-    addr_un.sun_family = AF_UNIX;
-    strncpy (addr_un.sun_path, name, sizeof (addr_un.sun_path));
-    fd = socket (PF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0)
+    /* Parse URL */
+    sock = parse_url (url);
+    if (sock == NULL)
+    {
+        return NULL;
+    }
+    DEBUG ("RPC: New Client\n");
+
+    /* Create socket */
+    sock->fd = socket (sock->family, SOCK_STREAM, 0);
+    if (sock->fd < 0)
     {
         ERROR ("RPC: socket() failed: %s\n", strerror (errno));
+        free (sock);
         return NULL;
     }
-    int flags = fcntl (fd, F_GETFL);
+    int flags = fcntl (sock->fd, F_GETFL);
     if (flags >= 0)
-        fcntl (fd, F_SETFL, flags | O_NONBLOCK);
-    if (connect (fd, (struct sockaddr *) &addr_un, (socklen_t)sizeof (addr_un)) < 0)
+        fcntl (sock->fd, F_SETFL, flags | O_NONBLOCK);
+    if (connect (sock->fd, (struct sockaddr *) &sock->address, sock->address_len) < 0
+            && errno != EINPROGRESS)
     {
         ERROR ("RPC: error connecting to remote host: %s\n", strerror (errno));
-        close (fd);
+        close (sock->fd);
+        free (sock);
         return NULL;
     }
-    DEBUG ("RPC[%d]: Connected to Server (%s)\n", fd, name);
+    DEBUG ("RPC[%d]: Connected to Server\n", sock->fd);
 
+    /* Create client */
     client = calloc (1, sizeof (rpc_client_t));
     if (!client)
     {
         ERROR ("RPC: Failed to allocate memory for client service\n");
-        close (fd);
+        close (sock->fd);
+        free (sock);
         return NULL;
     }
     client->service.descriptor = descriptor;
     client->service.invoke = invoke_client_service;
     client->service.destroy = destroy_client_service;
-    client->fd = fd;
+    client->fd = sock->fd;
     pthread_mutex_init (&client->lock, NULL);
+    free (sock);
     return (ProtobufCService *)client;
 }
