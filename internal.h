@@ -105,7 +105,6 @@ typedef struct _cb_info_t
     const char *path;
     uint64_t id;
     uint64_t cb;
-    uint64_t priv;
     uint32_t count;
 } cb_info_t;
 
