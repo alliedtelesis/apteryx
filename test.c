@@ -249,6 +249,7 @@ test_perf_tcp_set ()
     bool res;
 
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    usleep (TEST_SLEEP_TIMEOUT);
     start = get_time_us ();
     for (i = 0; i < 1000; i++)
     {
@@ -272,6 +273,7 @@ test_perf_tcp6_set ()
     bool res;
 
     CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
+    usleep (TEST_SLEEP_TIMEOUT);
     start = get_time_us ();
     for (i = 0; i < 1000; i++)
     {
@@ -328,6 +330,7 @@ test_perf_tcp_get ()
     int i;
 
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_set (path, "private"));
     start = get_time_us ();
     for (i = 0; i < 1000; i++)
@@ -353,6 +356,7 @@ test_perf_tcp6_get ()
     int i;
 
     CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
+    usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_set (path, "private"));
     start = get_time_us ();
     for (i = 0; i < 1000; i++)
