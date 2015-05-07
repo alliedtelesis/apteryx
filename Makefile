@@ -27,7 +27,7 @@ ifneq ($(USE_SHM_CACHE),no)
 EXTRA_CFLAGS += -DUSE_SHM_CACHE
 endif
 
-all: libapteryx.so apteryx apteryxd
+all: libapteryx.so apteryx apteryxd apteryx-sync
 
 libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o lua.o
 	@echo "Creating library "$@""
@@ -45,6 +45,10 @@ apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o config.o
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
 apteryx: apteryxc.c libapteryx.so
+	@echo "Building $@"
+	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
+
+apteryx-sync: syncer.c libapteryx.so
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
 
