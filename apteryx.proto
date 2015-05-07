@@ -42,7 +42,6 @@ message Watch
     required string value = 2;
     required uint64 id = 3;
     required uint64 cb = 4;
-    required uint64 priv = 5;
 };
 
 message Validate
@@ -58,7 +57,6 @@ message Provide
     required string path = 1;
     required uint64 id = 2;
     required uint64 cb = 3;
-    required uint64 priv = 4;
 };
 
 message Prune

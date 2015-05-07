@@ -136,14 +136,14 @@ validate_set (const char *path, const char *value)
         if (validator->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) validator->cb;
-            DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                    validator->path, validator->id, validator->cb, validator->priv);
-            cb (path, (void *) (long) validator->priv, value);
+            DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                    validator->path, validator->id, validator->cb);
+            cb (path, value);
             continue;
         }
 
-        DEBUG ("VALIDATE CB %s = %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                 validator->path, value,validator->id, validator->cb, validator->priv);
+        DEBUG ("VALIDATE CB %s = %s (0x%"PRIx64",0x%"PRIx64")\n",
+                 validator->path, value,validator->id, validator->cb);
 
         /* Setup IPC */
         sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", validator->id);
@@ -151,8 +151,8 @@ validate_set (const char *path, const char *value)
         rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
         if (!rpc_client)
         {
-            ERROR ("Invalid VALIDATE CB %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                    validator->path, validator->id, validator->cb, validator->priv);
+            ERROR ("Invalid VALIDATE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                    validator->path, validator->id, validator->cb);
             pthread_mutex_lock (&list_lock);
             validator = cb_info_find (watch_list, validator->path, validator->cb, validator->id);
             if (validator)
@@ -287,22 +287,22 @@ notify_watchers (const char *path)
         if (watcher->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
-            DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                    watcher->path, watcher->id, watcher->cb, watcher->priv);
-            cb (path, (void *) (long) watcher->priv, value);
+            DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                    watcher->path, watcher->id, watcher->cb);
+            cb (path, value);
             continue;
         }
 
-        DEBUG ("WATCH CB %s = %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                value, watcher->path, watcher->id, watcher->cb, watcher->priv);
+        DEBUG ("WATCH CB %s = %s (0x%"PRIx64",0x%"PRIx64")\n",
+                value, watcher->path, watcher->id, watcher->cb);
 
         /* Setup IPC */
         sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", watcher->id);
         rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
         if (!rpc_client)
         {
-            ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                   watcher->path, watcher->id, watcher->cb, watcher->priv);
+            ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                   watcher->path, watcher->id, watcher->cb);
             pthread_mutex_lock (&list_lock);
             watcher = cb_info_find (watch_list, watcher->path, watcher->id, watcher->cb);
             if (watcher)
@@ -320,7 +320,6 @@ notify_watchers (const char *path)
         watch.value = value;
         watch.id = watcher->id;
         watch.cb = watcher->cb;
-        watch.priv = watcher->priv;
         apteryx__client__watch (rpc_client, &watch, handle_set_response, &is_done);
         if (!is_done)
         {
@@ -388,22 +387,22 @@ provide_get (const char *path)
             if (provider->id == getpid ())
             {
                 apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->cb;
-                DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                                           provider->path, provider->id, provider->cb, provider->priv);
-                value = cb (path, (void *) (long) provider->priv);
+                DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                                           provider->path, provider->id, provider->cb);
+                value = cb (path);
                 break;
             }
 
-            DEBUG ("PROVIDE CB \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                   provider->path, provider->id, provider->cb, provider->priv);
+            DEBUG ("PROVIDE CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                   provider->path, provider->id, provider->cb);
 
             /* Setup IPC */
             sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", provider->id);
             rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
             if (!rpc_client)
             {
-                ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-                       provider->path, provider->id, provider->cb, provider->priv);
+                ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                       provider->path, provider->id, provider->cb);
                 provide_list = g_list_remove (provide_list, provider);
                 cb_info_destroy ((gpointer) provider);
                 INC_COUNTER (counters.provided_no_handler);
@@ -414,7 +413,6 @@ provide_get (const char *path)
             provide.path = (char *) path;
             provide.id = provider->id;
             provide.cb = provider->cb;
-            provide.priv = provider->priv;
             apteryx__client__provide (rpc_client, &provide,
                                       handle_get_response, &data);
             if (!data.done)

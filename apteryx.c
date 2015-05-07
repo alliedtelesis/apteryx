@@ -51,7 +51,6 @@ typedef struct _ccb_info_t
 {
     apteryx_watch_callback cb;
     const char *path;
-    void *priv;
     char *value;
 } ccb_info_t;
 
@@ -70,7 +69,6 @@ ccb_info_create (const Apteryx__Watch *watch)
     ccb_info_t *info = calloc (1, sizeof (ccb_info_t));
     info->cb = (apteryx_watch_callback) (long) watch->cb;
     info->path = strdup (watch->path);
-    info->priv = (void *) (long) watch->priv;
     if (watch->value && watch->value[0] != '\0')
         info->value = strdup (watch->value);
     return (gpointer)info;
@@ -85,9 +83,9 @@ apteryx__watch (Apteryx__Client_Service *service,
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     (void) service;
 
-    DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
+    DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
            watch->path, watch->value,
-           watch->id, watch->cb, watch->priv);
+           watch->id, watch->cb);
 
     /* Queue the callback for processing */
     pthread_mutex_lock (&lock);
@@ -132,12 +130,12 @@ apteryx__provide (Apteryx__Client_Service *service,
     char *value = NULL;
     (void) service;
 
-    DEBUG ("PROVIDE CB: \"%s\" (0x%"PRIx64",0x%"PRIx64",0x%"PRIx64")\n",
-           provide->path, provide->id, provide->cb, provide->priv);
+    DEBUG ("PROVIDE CB: \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+           provide->path, provide->id, provide->cb);
 
     /* Call the callback */
     if (cb)
-        value = cb (provide->path, (void *) (long) provide->priv);
+        value = cb (provide->path);
 
     /* Return result */
     result.value = value;
@@ -173,7 +171,7 @@ worker_thread (void *data)
         {
             ccb_info_t *info = (ccb_info_t *) iter->data;
             if (info->cb)
-                info->cb (info->path, info->priv, info->value);
+                info->cb (info->path, info->value);
         }
         g_list_free_full (pending, ccb_info_destroy);
     }
@@ -777,9 +775,8 @@ delete_callback (const char *type, const char *path,  void *cb)
 }
 
 bool
-apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
+apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    assert (priv == NULL); //deprecated
     return add_callback ("watchers", path, (void *)cb);
 }
 
@@ -802,9 +799,8 @@ apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 }
 
 bool
-apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv)
+apteryx_provide (const char *path, apteryx_provide_callback cb)
 {
-    assert (priv == NULL); //deprecated
     return add_callback ("providers", path, (void *)cb);
 }
 

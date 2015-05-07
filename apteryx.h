@@ -139,11 +139,10 @@ GList *apteryx_search (const char *root);
  * Callback function to be called when a
  * watched value changes.
  * @param path path to the watched value
- * @param priv something I passed to apteryx_watch to be passed back to me
  * @param value new value of the watched path
  * @return true on success
  */
-typedef bool (*apteryx_watch_callback) (const char *path, void *priv, const char *value);
+typedef bool (*apteryx_watch_callback) (const char *path, const char *value);
 
 /**
  * Watch for changes in the path
@@ -155,15 +154,14 @@ typedef bool (*apteryx_watch_callback) (const char *path, void *priv, const char
  * - apteryx_watch("/entity/zones/red/networks/*", network_updated, "red")
  * @param path path to the value to be watched
  * @param cb function to call when the value changes
- * @param priv something I want to be passed to my callback
  * @return true on successful registration
  */
-bool apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv);
+bool apteryx_watch (const char *path, apteryx_watch_callback cb);
 
 /**
  * UnWatch for changes in the path
  * Unregisters interest in a path that was previously registered with
- * apteryx_watch (doesn't care about the priv)
+ * apteryx_watch
  * examples: (using libentity usage example)
  * - apteryx_unwatch("/entity/zones/red/networks/*", network_updated)
  * @param path path to the value to be unwatched
@@ -210,10 +208,9 @@ bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
  * Callback function to be called when a library users
  * requests a value for a "provided" path.
  * @param path path to the requested value
- * @param priv something I passed to apteryx_provide to be passed back to me
  * @return the provided value on success, otherwise NULL
  */
-typedef char* (*apteryx_provide_callback) (const char *path, void *priv);
+typedef char* (*apteryx_provide_callback) (const char *path);
 
 /**
  * Provide a value that can be read on demand
@@ -223,15 +220,14 @@ typedef char* (*apteryx_provide_callback) (const char *path, void *priv);
  * - apteryx_provide ("/hw/interfaces/port1.0.1/counters/tx", port_tx_counters, "port1.0.1")
  * @param path path to the value that others will request
  * @param cb function to be called if others request the value
- * @param priv something I want to be passed to my callback
  * @return true on successful registration
  */
-bool apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv);
+bool apteryx_provide (const char *path, apteryx_provide_callback cb);
 
 /**
  * UnProvide a value that can be read on demand
  * Unregisters interest in a path that was previously registered with
- * apteryx_provide (doesn't care about the priv)
+ * apteryx_provide
  * No *(wildcard)s are supported
  * examples: (using contrived usage example)
  * - apteryx_unprovide ("/hw/interfaces/port1.0.1/counters/tx", port_tx_counters, "port1.0.1")
