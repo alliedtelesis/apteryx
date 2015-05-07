@@ -457,7 +457,7 @@ apteryx_bind (const char *url)
 {
     char path[PATH_MAX];
 
-    if (sprintf (path, APTERYX_SETTINGS"sockets/%"PRIX64"",
+    if (sprintf (path, APTERYX_SOCKETS_PATH"/%"PRIX64"",
             (size_t)g_str_hash (url)) <= 0)
         return false;
     return apteryx_set (path, url);
@@ -468,7 +468,7 @@ apteryx_unbind (const char *url)
 {
     char path[PATH_MAX];
 
-    if (sprintf (path, APTERYX_SETTINGS"sockets/%"PRIX64"",
+    if (sprintf (path, APTERYX_SOCKETS_PATH"/%"PRIX64"",
             (size_t)g_str_hash (url)) <= 0)
         return false;
     return apteryx_set (path, NULL);
@@ -857,7 +857,7 @@ add_callback (const char *type, const char *path, void *cb)
     size_t pid = getpid ();
     char _path[PATH_MAX];
 
-    if (sprintf (_path, APTERYX_SETTINGS"%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
+    if (sprintf (_path, "%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
             type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
@@ -870,7 +870,7 @@ delete_callback (const char *type, const char *path,  void *cb)
 {
     char _path[PATH_MAX];
 
-    if (sprintf (_path, APTERYX_SETTINGS"%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
+    if (sprintf (_path, "%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
             type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, NULL))
@@ -883,26 +883,26 @@ apteryx_watch (const char *path, apteryx_watch_callback cb, void *priv)
 {
     assert (cb != NULL); // use apteryx_unwatch
     assert (priv == NULL); //deprecated
-    return add_callback ("watchers", path, (void *)cb);
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
 bool
 apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 {
-    return delete_callback ("watchers", path, (void *)cb);
+    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
 bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
     assert (cb != NULL); // use apteryx_unvalidate
-    return add_callback ("validators", path, (void *)cb);
+    return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb);
 }
 
 bool
 apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 {
-    return delete_callback ("validators", path, (void *)cb);
+    return delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb);
 }
 
 bool
@@ -910,13 +910,13 @@ apteryx_provide (const char *path, apteryx_provide_callback cb, void *priv)
 {
     assert (cb != NULL); // use apteryx_unprovide
     assert (priv == NULL); //deprecated
-    return add_callback ("providers", path, (void *)cb);
+    return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
 }
 
 bool
 apteryx_unprovide (const char *path, apteryx_provide_callback cb)
 {
-    return delete_callback ("providers", path, (void *)cb);
+    return delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
 }
 
 static void

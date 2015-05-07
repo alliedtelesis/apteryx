@@ -71,8 +71,8 @@
 /** Apteryx configuration
   /apteryx
   /apteryx/debug                           - Apteryx debug
-  /apteryx/socket                          - List of sockets (urls) that apteryxd will accept connections on.
-  /apteryx/socket/-                        - Unique identifier based on HASH(url). Value is the url to listen on.
+  /apteryx/sockets                         - List of sockets (urls) that apteryxd will accept connections on.
+  /apteryx/sockets/-                       - Unique identifier based on HASH(url). Value is the url to listen on.
   /apteryx/watchers                        - List of watched paths and registered callbacks for those watches.
   /apteryx/watchers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/providers                       - List of provided paths and registered callbacks for providing gets to that path.
@@ -87,7 +87,7 @@
 #define APTERYX_DEBUG_DEFAULT                        0
 #define APTERYX_DEBUG_DISABLE                        0
 #define APTERYX_DEBUG_ENABLE                         1
-#define APTERYX_SOCKET_PATH                      "/apteryx/socket"
+#define APTERYX_SOCKETS_PATH                     "/apteryx/sockets"
 #define APTERYX_WATCHERS_PATH                    "/apteryx/watchers"
 #define APTERYX_PROVIDERS_PATH                   "/apteryx/providers"
 #define APTERYX_VALIDATORS_PATH                  "/apteryx/validators"

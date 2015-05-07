@@ -602,7 +602,7 @@ apteryx__search (Apteryx__Server_Service *service,
         int len = strlen (search->path);
         if (strncmp (provider->path, search->path, len) == 0 &&
             provider->path[len] != '*' &&
-            strncmp (provider->path, APTERYX_SETTINGS, strlen (APTERYX_SETTINGS)) != 0)
+            strncmp (provider->path, APTERYX_PATH, strlen (APTERYX_PATH)) != 0)
         {
             char *ptr, *path = strdup (provider->path);
             if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)

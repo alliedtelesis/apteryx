@@ -396,15 +396,17 @@ parse_url (const char *url)
         sock->address_len = sizeof (sock->address.addr_un);
         memset (&sock->address.addr_un, 0, sock->address_len);
         sock->address.addr_un.sun_family = AF_UNIX;
-        strncpy (sock->address.addr_un.sun_path, name, len);
+        strncpy (sock->address.addr_un.sun_path, name,
+                len >= sizeof (sock->address.addr_un.sun_path) ?
+                       sizeof (sock->address.addr_un.sun_path)-1 : len);
         DEBUG ("RPC: unix://%s\n", sock->address.addr_un.sun_path);
     }
     /* IPv4 TCP path = "tcp://<IPv4>:<port>[:<apteryx-path>]" */
-    else if (sscanf (url, "tcp://%99[^:]:%99d", host, &port) == 2)
+    else if (sscanf (url, "tcp://%16[^:]:%d", host, &port) == 2)
     {
         if (inet_pton (AF_INET, host, &sock->address.addr_in.sin_addr) != 1)
         {
-            ERROR ("RPC: Invaild IPv4 address: %s\n", host);
+            ERROR ("RPC: Invalid IPv4 address: %s\n", host);
             free (sock);
             return NULL;
         }
@@ -417,11 +419,11 @@ parse_url (const char *url)
                 host, INET6_ADDRSTRLEN), port);
     }
     /* IPv6 TCP path = "tcp:[<IPv6>]:<port>[:<apteryx-path>]" */
-    else if (sscanf (url, "tcp://[%99[^]]]:%99d", host, &port) == 2)
+    else if (sscanf (url, "tcp://[%48[^]]]:%d", host, &port) == 2)
     {
         if (inet_pton (AF_INET6, host, &sock->address.addr_in6.sin6_addr) != 1)
         {
-            ERROR ("RPC: Invaild IPv6 address: %s\n", host);
+            ERROR ("RPC: Invalid IPv6 address: %s\n", host);
             free (sock);
             return NULL;
         }
@@ -435,7 +437,7 @@ parse_url (const char *url)
     }
     else
     {
-        ERROR ("RPC: Invaild URL: %s\n", url);
+        ERROR ("RPC: Invalid URL: %s\n", url);
         free (sock);
         return NULL;
     }

@@ -38,8 +38,6 @@
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
 /* Default PID file */
 #define APTERYX_PID     "/var/run/apteryxd.pid"
-/* Apteryx path to Apteryx settings */
-#define APTERYX_SETTINGS "/apteryx/"
 
 /* Mode */
 typedef enum

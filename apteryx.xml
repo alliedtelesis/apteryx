@@ -9,7 +9,7 @@
 			<VALUE name="disable" value="0" help="Debugging is disabled" />
 			<VALUE name="enable" value="1" help="Debugging is enabled" />
 		</NODE>
-		<NODE name="socket" help="List of sockets (urls) that apteryxd will accept connections on.">
+		<NODE name="sockets" help="List of sockets (urls) that apteryxd will accept connections on.">
 			<NODE name="*" help="Unique identifier based on HASH(url). Value is the url to listen on." />
 		</NODE>
 		<NODE name="watchers" help="List of watched paths and registered callbacks for those watches.">
