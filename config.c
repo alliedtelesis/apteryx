@@ -18,6 +18,7 @@
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
 #include <glib.h>
+#include "apteryx.h"
 #include "internal.h"
 
 static bool
@@ -29,6 +30,24 @@ handle_debug_set (const char *path, void *priv, const char *value)
         debug = false;
     DEBUG ("DEBUG %s\n", debug ? "enabled" : "disabled");
     return true;
+}
+
+static bool
+handle_sockets_set (const char *path, void *priv, const char *value)
+{
+    const char *guid = path + strlen (APTERYX_SOCKETS_PATH"/");
+    bool res = true;
+
+    DEBUG ("SOCKET %s:%s\n", guid, value);
+
+    pthread_mutex_lock (&list_lock);
+    if (value)
+        res = rpc_bind_url (guid, value);
+    else
+        res = rpc_unbind_url (guid, value);
+    pthread_mutex_unlock (&list_lock);
+
+    return res;
 }
 
 static bool
@@ -88,7 +107,7 @@ update_callback (GList **list, const char *guid, const char *value)
 static bool
 handle_watchers_set (const char *path, void *priv, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_SETTINGS"watchers/");
+    const char *guid = path + strlen (APTERYX_WATCHERS_PATH"/");
     DEBUG ("CFG-Watch: %s = %s\n", guid, value);
     return update_callback (&watch_list, guid, value);
 }
@@ -96,7 +115,7 @@ handle_watchers_set (const char *path, void *priv, const char *value)
 static bool
 handle_providers_set (const char *path, void *priv, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_SETTINGS"providers/");
+    const char *guid = path + strlen (APTERYX_PROVIDERS_PATH"/");
     DEBUG ("CFG-Provide: %s = %s\n", guid, value);
     return update_callback (&provide_list, guid, value);
 }
@@ -104,7 +123,7 @@ handle_providers_set (const char *path, void *priv, const char *value)
 static bool
 handle_validators_set (const char *path, void *priv, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_SETTINGS"validators/");
+    const char *guid = path + strlen (APTERYX_VALIDATORS_PATH"/");
     DEBUG ("CFG-Validate: %s = %s\n", guid, value);
     return update_callback (&validation_list, guid, value);
 }
@@ -155,7 +174,7 @@ config_init (void)
 
     /* Debug set */
     info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_SETTINGS"debug");
+    info->path = strdup (APTERYX_DEBUG_PATH);
     info->id = (uint64_t) getpid ();
     info->cb = (uint64_t) (size_t) handle_debug_set;
     info->priv = 0;
@@ -163,15 +182,23 @@ config_init (void)
 
     /* Counters */
     info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_SETTINGS"counters");
+    info->path = strdup (APTERYX_COUNTERS);
     info->id = (uint64_t) getpid ();
     info->cb = (uint64_t) (size_t) handle_counters_get;
     info->priv = 0;
     provide_list = g_list_prepend (provide_list, info);
 
+    /* Sockets */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SOCKETS_PATH"/");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_sockets_set;
+    info->priv = 0;
+    watch_list = g_list_prepend (watch_list, info);
+
     /* Watchers */
     info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_SETTINGS"watchers/");
+    info->path = strdup (APTERYX_WATCHERS_PATH"/");
     info->id = (uint64_t) getpid ();
     info->cb = (uint64_t) (size_t) handle_watchers_set;
     info->priv = 0;
@@ -179,7 +206,7 @@ config_init (void)
 
     /* Providers */
     info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_SETTINGS"providers/");
+    info->path = strdup (APTERYX_PROVIDERS_PATH"/");
     info->id = (uint64_t) getpid ();
     info->cb = (uint64_t) (size_t) handle_providers_set;
     info->priv = 0;
@@ -187,7 +214,7 @@ config_init (void)
 
     /* Validators */
     info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_SETTINGS"validators/");
+    info->path = strdup (APTERYX_VALIDATORS_PATH"/");
     info->id = (uint64_t) getpid ();
     info->cb = (uint64_t) (size_t) handle_validators_set;
     info->priv = 0;
@@ -196,7 +223,7 @@ config_init (void)
 #ifdef USE_SHM_CACHE
     /* Cache */
     info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_SETTINGS"cache");
+    info->path = strdup (APTERYX_CACHE);
     info->id = (uint64_t) getpid ();
     info->cb = (uint64_t) (size_t) handle_cache_get;
     info->priv = 0;

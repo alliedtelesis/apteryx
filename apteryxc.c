@@ -56,11 +56,13 @@ usage ()
             "  -l   last change <path>\n");
     printf ("\n");
     printf ("  Internal settings\n");
-    printf ("    %sdebug\n", APTERYX_SETTINGS);
-    printf ("    %scounters\n", APTERYX_SETTINGS);
-    printf ("    %swatchers\n", APTERYX_SETTINGS);
-    printf ("    %sproviders\n", APTERYX_SETTINGS);
-    printf ("    %scache\n", APTERYX_SETTINGS);
+    printf ("    %s\n", APTERYX_DEBUG_PATH);
+    printf ("    %s\n", APTERYX_SOCKETS_PATH);
+    printf ("    %s\n", APTERYX_WATCHERS_PATH);
+    printf ("    %s\n", APTERYX_PROVIDERS_PATH);
+    printf ("    %s\n", APTERYX_VALIDATORS_PATH);
+    printf ("    %s\n", APTERYX_CACHE);
+    printf ("    %s\n", APTERYX_COUNTERS);
     printf ("\n");
 }
 

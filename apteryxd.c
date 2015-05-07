@@ -602,7 +602,7 @@ apteryx__search (Apteryx__Server_Service *service,
         int len = strlen (search->path);
         if (strncmp (provider->path, search->path, len) == 0 &&
             provider->path[len] != '*' &&
-            strncmp (provider->path, APTERYX_SETTINGS, strlen (APTERYX_SETTINGS)) != 0)
+            strncmp (provider->path, APTERYX_PATH, strlen (APTERYX_PATH)) != 0)
         {
             char *ptr, *path = strdup (provider->path);
             if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
@@ -738,24 +738,26 @@ termination_handler (void)
 void
 help (void)
 {
-    printf ("Usage: apteryxd [-h] [-b] [-d] [-p <pidfile>]\n"
+    printf ("Usage: apteryxd [-h] [-b] [-d] [-p <pidfile>] [-l <url>]\n"
             "  -h   show this help\n"
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
-            "  -p   use <pidfile> instead of /var/run/apteryxd.pid\n");
+            "  -p   use <pidfile> (defaults to "APTERYX_PID")\n"
+            "  -l   listen on URL <url> (defaults to "APTERYX_SERVER")\n");
 }
 
 int
 main (int argc, char **argv)
 {
-    const char *pid_file = "/var/run/apteryxd.pid";
+    const char *pid_file = APTERYX_PID;
+    const char *url = APTERYX_SERVER;
     bool background = false;
     int pipefd[2];
     FILE *fp;
     int i;
 
     /* Parse options */
-    while ((i = getopt (argc, argv, "hdbp:")) != -1)
+    while ((i = getopt (argc, argv, "hdbp:l:")) != -1)
     {
         switch (i)
         {
@@ -768,6 +770,9 @@ main (int argc, char **argv)
             break;
         case 'p':
             pid_file = optarg;
+            break;
+        case 'l':
+            url = optarg;
             break;
         case '?':
         case 'h':
@@ -822,7 +827,7 @@ main (int argc, char **argv)
     stopfd = pipefd[1];
 
     /* Create server and process requests - 4 threads */
-    if (!rpc_provide_service (APTERYX_SERVER, (ProtobufCService *)&apteryx_service, 8, pipefd[0]))
+    if (!rpc_provide_service (url, (ProtobufCService *)&apteryx_service, 8, pipefd[0]))
     {
         ERROR ("Failed to start rpc service\n");
     }
@@ -837,6 +842,7 @@ exit:
     /* Cleanup watchers and providers */
     g_list_free_full (watch_list, cb_info_destroy);
     g_list_free_full (provide_list, cb_info_destroy);
+    g_list_free_full (validation_list, cb_info_destroy);
 
 #ifdef USE_SHM_CACHE
     /* Shut cache */

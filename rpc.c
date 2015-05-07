@@ -31,9 +31,23 @@
 #undef DEBUG
 #define DEBUG(fmt, args...)
 
+typedef struct rpc_socket_t
+{
+    const char *id;
+    const char *url;
+    union
+    {
+        struct sockaddr_in addr_in;
+        struct sockaddr_in6 addr_in6;
+        struct sockaddr_un addr_un;
+    } address;
+    socklen_t address_len;
+    int family;
+    int fd;
+} rpc_socket_t;
+
 typedef struct rpc_server_t
 {
-    int fd;
     bool running;
     ProtobufCService *service;
     pthread_mutex_t lock;
@@ -43,7 +57,9 @@ typedef struct rpc_server_t
     sem_t wake_workers;
     int num_workers;
     pthread_t *workers;
+    GList *sockets;
 } rpc_server_t;
+__thread rpc_server_t *tl_server = NULL;
 
 typedef struct rpc_client_t
 {
@@ -306,7 +322,8 @@ worker (void *data)
     int ret;
     int i;
 
-    DEBUG ("RPC: New Worker (%lu)\n", (unsigned long)self);
+    DEBUG ("RPC: New Worker (%p:%lu)\n", server, (unsigned long)self);
+    tl_server = server;
     while (server->running)
     {
         sem_wait (&server->wake_workers);
@@ -337,54 +354,203 @@ worker (void *data)
     for (i=0; i < server->num_workers; i++)
         if (server->workers[i] == self)
             server->workers[i] = -1;
+    DEBUG ("RPC: End Worker (%p:%lu)\n", server, (unsigned long)self);
     return 0;
 }
 
-bool
-rpc_provide_service (const char *name, ProtobufCService *service, int num_threads, int stopfd)
+static rpc_socket_t *
+find_socket (const char *id, const char *url)
 {
-    rpc_server_t server = {0};
-    struct pollfd *fds = NULL;
+    rpc_socket_t *sock = NULL;
+    GList *iter;
+
+    /* Look through the list */
+    for (iter = tl_server->sockets; iter; iter = iter->next)
+    {
+        sock = (rpc_socket_t *)iter->data;
+        if ((id && strcmp (id, sock->id) == 0) ||
+            (url && strcmp (url, sock->url) == 0))
+        {
+            break;
+        }
+        sock = NULL;
+    }
+    return sock;
+}
+
+static rpc_socket_t*
+parse_url (const char *url)
+{
+    rpc_socket_t *sock = calloc (1, sizeof (rpc_socket_t));
+    char host[INET6_ADDRSTRLEN];
+    int port = 80;
+
+    /* UNIX path = "unix:///<unix-path>[:<apteryx-path>]" */
+    if (strncmp (url, "unix://", 7) == 0)
+    {
+        const char *name = url + strlen ("unix://");
+        const char *end = strchr (name, ':');
+        int len = end ? end - name : strlen (name);
+
+        sock->family = PF_UNIX;
+        sock->address_len = sizeof (sock->address.addr_un);
+        memset (&sock->address.addr_un, 0, sock->address_len);
+        sock->address.addr_un.sun_family = AF_UNIX;
+        strncpy (sock->address.addr_un.sun_path, name,
+                len >= sizeof (sock->address.addr_un.sun_path) ?
+                       sizeof (sock->address.addr_un.sun_path)-1 : len);
+        DEBUG ("RPC: unix://%s\n", sock->address.addr_un.sun_path);
+    }
+    /* IPv4 TCP path = "tcp://<IPv4>:<port>[:<apteryx-path>]" */
+    else if (sscanf (url, "tcp://%16[^:]:%d", host, &port) == 2)
+    {
+        if (inet_pton (AF_INET, host, &sock->address.addr_in.sin_addr) != 1)
+        {
+            ERROR ("RPC: Invalid IPv4 address: %s\n", host);
+            free (sock);
+            return NULL;
+        }
+        sock->family = AF_INET;
+        sock->address_len = sizeof (sock->address.addr_in);
+        sock->address.addr_in.sin_family = AF_INET;
+        sock->address.addr_in.sin_port = htons (port);
+        DEBUG ("RPC: tcp://%s:%u\n",
+            inet_ntop (AF_INET, &sock->address.addr_in.sin_addr,
+                host, INET6_ADDRSTRLEN), port);
+    }
+    /* IPv6 TCP path = "tcp:[<IPv6>]:<port>[:<apteryx-path>]" */
+    else if (sscanf (url, "tcp://[%48[^]]]:%d", host, &port) == 2)
+    {
+        if (inet_pton (AF_INET6, host, &sock->address.addr_in6.sin6_addr) != 1)
+        {
+            ERROR ("RPC: Invalid IPv6 address: %s\n", host);
+            free (sock);
+            return NULL;
+        }
+        sock->family = AF_INET6;
+        sock->address_len = sizeof (sock->address.addr_in6);
+        sock->address.addr_in6.sin6_family = AF_INET6;
+        sock->address.addr_in6.sin6_port = htons (port);
+        DEBUG ("RPC: tcp://[%s]:%u\n",
+            inet_ntop (AF_INET6, &sock->address.addr_in6.sin6_addr,
+                host, INET6_ADDRSTRLEN), port);
+    }
+    else
+    {
+        ERROR ("RPC: Invalid URL: %s\n", url);
+        free (sock);
+        return NULL;
+    }
+
+    return sock;
+}
+
+bool
+rpc_bind_url (const char *id, const char *url)
+{
+    rpc_socket_t *sock;
     int on = 1;
+
+    /* Check the socket does not already exist */
+    sock = find_socket (id, url);
+    if (sock)
+    {
+        ERROR ("RPC: Socket(%s:%s) already bound.\n", id, url);
+        return false;
+    }
+
+    /* Parse the URL */
+    sock = parse_url (url);
+    if (sock == NULL)
+    {
+        return false;
+    }
+
+    /* Create the listen socket */
+    sock->fd = socket (sock->family, SOCK_STREAM, 0);
+    if (sock->fd < 0)
+    {
+        ERROR ("RPC: Socket(%s:%s) failed: %s\n", id, url, strerror (errno));
+        free (sock);
+        return false;
+    }
+    setsockopt(sock->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    if (bind (sock->fd, (struct sockaddr *)&sock->address, sock->address_len) < 0)
+    {
+        ERROR ("RPC: Socket(%s:%s) error binding: %s\n", id, url, strerror (errno));
+        close (sock->fd);
+        free (sock);
+        return false;
+    }
+    if (listen (sock->fd, 255) < 0)
+    {
+        ERROR ("RPC: Socket(%s:%s) listen failed: %s\n", id, url, strerror (errno));
+        close (sock->fd);
+        free (sock);
+        return false;
+    }
+    int flags = fcntl (sock->fd, F_GETFL);
+    if (flags >= 0)
+        fcntl (sock->fd, F_SETFL, flags | O_NONBLOCK);
+
+    DEBUG ("RPC: New Socket (%d:%s:%s)\n", sock->fd, id, url);
+    sock->id = strdup (id);
+    sock->url = strdup (url);
+    tl_server->sockets = g_list_append (tl_server->sockets, sock);
+    add_cb (&tl_server->pending, sock->fd, server_callback, (void*)tl_server);
+
+    return true;
+}
+
+bool
+rpc_unbind_url (const char *id, const char *url)
+{
+    rpc_socket_t *sock;
+
+    /* Check the socket does not already exist */
+    sock = find_socket (id, url);
+    if (!sock)
+    {
+        ERROR ("RPC: Socket(%s:%s) not bound.\n", id, url);
+        return false;
+    }
+
+    /* Close and free */
+    delete_cb (&tl_server->pending, sock->fd);
+    tl_server->sockets = g_list_remove (tl_server->sockets, sock);
+    if (sock->fd >= 0)
+        close (sock->fd);
+    if (sock->family == PF_UNIX)
+        unlink (sock->address.addr_un.sun_path);
+    free ((void*) sock->id);
+    free ((void*) sock->url);
+    free (sock);
+    return false;
+}
+
+bool
+rpc_provide_service (const char *url, ProtobufCService *service, int num_threads, int stopfd)
+{
+    rpc_server_t server = {};
+    struct pollfd *fds = NULL;
+    GList *iter;
     bool rc = true;
     int i;
 
-    /* Create the listen socket */
-    struct sockaddr_un addr_un;
-    memset (&addr_un, 0, sizeof (addr_un));
-    addr_un.sun_family = AF_UNIX;
-    strncpy (addr_un.sun_path, name, sizeof (addr_un.sun_path));
-    int fd = socket (PF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0)
-    {
-        ERROR ("RPC: socket() failed: %s\n", strerror (errno));
-        rc = false;
-        goto exit;
-    }
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    if (bind (fd, (struct sockaddr *) &addr_un, (socklen_t)sizeof (addr_un)) < 0)
-    {
-        ERROR ("RPC: error binding to port: %s\n", strerror (errno));
-        rc = false;
-        goto exit;
-    }
-    if (listen (fd, 255) < 0)
-    {
-        ERROR ("RPC: listen() failed: %s\n", strerror (errno));
-        rc = false;
-        goto exit;
-    }
-    int flags = fcntl (fd, F_GETFL);
-    if (flags >= 0)
-        fcntl (fd, F_SETFL, flags | O_NONBLOCK);
-
-    /* Setup the server structure */
-    server.fd = fd;
+    /* Setup the thread local server structure */
     server.running = true;
     server.service = service;
     pthread_mutex_init (&server.lock, NULL);
+    tl_server = &server;
 
-    DEBUG ("RPC: New Server (%s)\n", name);
+    DEBUG ("RPC: New server (%p)\n", &server);
+
+    /* Bind the default listen socket */
+    if (!rpc_bind_url ("default", url))
+    {
+        rc = false;
+        goto exit;
+    }
 
     /* Start any worker threads */
     if (num_threads > 0)
@@ -403,12 +569,10 @@ rpc_provide_service (const char *name, ProtobufCService *service, int num_thread
     /* Add callbacks for stopping and new connections */
     if (stopfd > 0)
         add_cb (&server.pending, stopfd, stop_callback, (void*)&server);
-    add_cb (&server.pending, fd, server_callback, (void*)&server);
 
     /* Loop while not asked to stop */
     while (server.running)
     {
-        GList *iter;
         int num_fds;
 
         /* Create the event list */
@@ -484,7 +648,7 @@ rpc_provide_service (const char *name, ProtobufCService *service, int num_thread
     }
 
 exit:
-    DEBUG ("RPC: Shutdown server (%s)\n", name);
+    DEBUG ("RPC: Shutdown server (%p)\n", &server);
     if (server.workers)
     {
         for (i=0; i < num_threads; i++)
@@ -499,13 +663,23 @@ exit:
         }
         free (server.workers);
     }
-    if (server.pending)
-        g_list_free_full (server.pending, free);
+    for (i=0, iter = server.sockets; iter; iter = iter->next, i++)
+    {
+        rpc_socket_t *sock = (rpc_socket_t *)iter->data;
+        DEBUG ("RPC: Close socket (%s:%s)\n", sock->id, sock->url);
+        if (sock->fd >= 0)
+            close (sock->fd);
+        if (sock->family == PF_UNIX)
+            unlink (sock->address.addr_un.sun_path);
+        free ((void*) sock->id);
+        free ((void*) sock->url);
+    }
+    g_list_free_full (server.sockets, free);
+    g_list_free_full (server.pending, free);
     if (fds)
         free (fds);
-    if (fd >= 0)
-        close (fd);
-    unlink (name);
+    pthread_mutex_destroy (&server.lock);
+    server.running = false;
     return rc;
 }
 
@@ -644,44 +818,54 @@ destroy_client_service (ProtobufCService *service)
 }
 
 ProtobufCService *
-rpc_connect_service (const char *name, const ProtobufCServiceDescriptor *descriptor)
+rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor)
 {
+    rpc_socket_t *sock;
     rpc_client_t *client;
-    struct sockaddr_un addr_un;
-    int fd = -1;
 
-    DEBUG ("RPC: New Client (connecting to server %s)\n", name);
-    memset (&addr_un, 0, sizeof (addr_un));
-    addr_un.sun_family = AF_UNIX;
-    strncpy (addr_un.sun_path, name, sizeof (addr_un.sun_path));
-    fd = socket (PF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0)
+    /* Parse URL */
+    sock = parse_url (url);
+    if (sock == NULL)
+    {
+        return NULL;
+    }
+    DEBUG ("RPC: New Client\n");
+
+    /* Create socket */
+    sock->fd = socket (sock->family, SOCK_STREAM, 0);
+    if (sock->fd < 0)
     {
         ERROR ("RPC: socket() failed: %s\n", strerror (errno));
+        free (sock);
         return NULL;
     }
-    int flags = fcntl (fd, F_GETFL);
+    int flags = fcntl (sock->fd, F_GETFL);
     if (flags >= 0)
-        fcntl (fd, F_SETFL, flags | O_NONBLOCK);
-    if (connect (fd, (struct sockaddr *) &addr_un, (socklen_t)sizeof (addr_un)) < 0)
+        fcntl (sock->fd, F_SETFL, flags | O_NONBLOCK);
+    if (connect (sock->fd, (struct sockaddr *) &sock->address, sock->address_len) < 0
+            && errno != EINPROGRESS)
     {
         ERROR ("RPC: error connecting to remote host: %s\n", strerror (errno));
-        close (fd);
+        close (sock->fd);
+        free (sock);
         return NULL;
     }
-    DEBUG ("RPC[%d]: Connected to Server (%s)\n", fd, name);
+    DEBUG ("RPC[%d]: Connected to Server\n", sock->fd);
 
+    /* Create client */
     client = calloc (1, sizeof (rpc_client_t));
     if (!client)
     {
         ERROR ("RPC: Failed to allocate memory for client service\n");
-        close (fd);
+        close (sock->fd);
+        free (sock);
         return NULL;
     }
     client->service.descriptor = descriptor;
     client->service.invoke = invoke_client_service;
     client->service.destroy = destroy_client_service;
-    client->fd = fd;
+    client->fd = sock->fd;
     pthread_mutex_init (&client->lock, NULL);
+    free (sock);
     return (ProtobufCService *)client;
 }
