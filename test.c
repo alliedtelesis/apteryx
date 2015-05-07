@@ -28,9 +28,12 @@
 #include <assert.h>
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
-#define TEST_SLEEP_TIMEOUT 100000
 #include "apteryx.h"
 #include "internal.h"
+
+#define TEST_SLEEP_TIMEOUT  100000
+#define TEST_TCP_URL        "tcp://127.0.0.1:9999"
+#define TEST_TCP6_URL       "tcp://[::1]:9999"
 
 static bool
 assert_apteryx_empty (void)
@@ -238,6 +241,52 @@ test_perf_set ()
 }
 
 void
+test_perf_tcp_set ()
+{
+    const char *path = TEST_TCP_URL":/entity/zones/private/name";
+    uint64_t start;
+    int i;
+    bool res;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    start = get_time_us ();
+    for (i = 0; i < 1000; i++)
+    {
+        CU_ASSERT ((res = apteryx_set (path, "private")));
+        if (!res)
+            goto exit;
+    }
+    printf ("%ldus ... ", (get_time_us () - start) / 1000);
+exit:
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_tcp6_set ()
+{
+    const char *path = TEST_TCP6_URL":/entity/zones/private/name";
+    uint64_t start;
+    int i;
+    bool res;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
+    start = get_time_us ();
+    for (i = 0; i < 1000; i++)
+    {
+        CU_ASSERT ((res = apteryx_set (path, "private")));
+        if (!res)
+            goto exit;
+    }
+    printf ("%ldus ... ", (get_time_us () - start) / 1000);
+exit:
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP6_URL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_get_no_value ()
 {
     const char *path = "/entity/zones/private/name";
@@ -267,6 +316,56 @@ test_perf_get ()
     printf ("%ldus ... ", (get_time_us () - start) / 1000);
   exit:
     CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_tcp_get ()
+{
+    const char *path = TEST_TCP_URL":/entity/zones/private/name";
+    const char *value = NULL;
+    uint64_t start;
+    int i;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set (path, "private"));
+    start = get_time_us ();
+    for (i = 0; i < 1000; i++)
+    {
+        CU_ASSERT ((value = apteryx_get (path)) != NULL);
+        if (!value)
+            goto exit;
+        free ((void *) value);
+    }
+    printf ("%ldus ... ", (get_time_us () - start) / 1000);
+exit:
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL))
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_tcp6_get ()
+{
+    const char *path = TEST_TCP6_URL":/entity/zones/private/name";
+    const char *value = NULL;
+    uint64_t start;
+    int i;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
+    CU_ASSERT (apteryx_set (path, "private"));
+    start = get_time_us ();
+    for (i = 0; i < 1000; i++)
+    {
+        CU_ASSERT ((value = apteryx_get (path)) != NULL);
+        if (!value)
+            goto exit;
+        free ((void *) value);
+    }
+    printf ("%ldus ... ", (get_time_us () - start) / 1000);
+exit:
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP6_URL))
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1479,6 +1578,8 @@ static CU_TestInfo tests_api[] = {
     { "multi threads writing to same table", test_thread_multi_write },
     { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
+    { "shutdown deadlock", test_deadlock },
+    { "shutdown deadlock 2", test_deadlock2 },
     CU_TEST_INFO_NULL,
 };
 
@@ -1527,14 +1628,16 @@ static CU_TestInfo tests_api_provide[] = {
 
 static CU_TestInfo tests_performance[] = {
     { "set", test_perf_set },
+    { "set(tcp)", test_perf_tcp_set },
+    { "set(tcp6)", test_perf_tcp6_set },
     { "get", test_perf_get },
+    { "get(tcp)", test_perf_tcp_get },
+    { "get(tcp6)", test_perf_tcp6_get },
     { "get null", test_perf_get_null },
     { "search", test_perf_search },
     { "search null", test_perf_search_null },
     { "watch", test_perf_watch },
     { "provide", test_perf_provide },
-    { "shutdown deadlock", test_deadlock },
-    { "shutdown deadlock 2", test_deadlock2 },
     CU_TEST_INFO_NULL,
 };
 

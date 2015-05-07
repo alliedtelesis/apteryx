@@ -32,6 +32,24 @@ handle_debug_set (const char *path, void *priv, const char *value)
 }
 
 static bool
+handle_sockets_set (const char *path, void *priv, const char *value)
+{
+    const char *guid = path + strlen (APTERYX_SETTINGS"sockets/");
+    bool res = true;
+
+    DEBUG ("SOCKET %s:%s\n", guid, value);
+
+    pthread_mutex_lock (&list_lock);
+    if (value)
+        res = rpc_bind_url (guid, value);
+    else
+        res = rpc_unbind_url (guid, value);
+    pthread_mutex_unlock (&list_lock);
+
+    return res;
+}
+
+static bool
 update_callback (GList **list, const char *guid, const char *value)
 {
     cb_info_t *info;
@@ -168,6 +186,14 @@ config_init (void)
     info->cb = (uint64_t) (size_t) handle_counters_get;
     info->priv = 0;
     provide_list = g_list_prepend (provide_list, info);
+
+    /* Sockets */
+    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    info->path = strdup (APTERYX_SETTINGS"sockets/");
+    info->id = (uint64_t) getpid ();
+    info->cb = (uint64_t) (size_t) handle_sockets_set;
+    info->priv = 0;
+    watch_list = g_list_prepend (watch_list, info);
 
     /* Watchers */
     info = (cb_info_t *) calloc (1, sizeof (cb_info_t));

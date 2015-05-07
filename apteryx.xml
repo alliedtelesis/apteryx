@@ -9,13 +9,16 @@
 			<VALUE name="disable" value="0" help="Debugging is disabled" />
 			<VALUE name="enable" value="1" help="Debugging is enabled" />
 		</NODE>
-		<NODE name="watchers">
+		<NODE name="socket" help="List of sockets (urls) that apteryxd will accept connections on.">
+			<NODE name="*" help="Unique identifier based on HASH(url). Value is the url to listen on." />
+		</NODE>
+		<NODE name="watchers" help="List of watched paths and registered callbacks for those watches.">
 			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
 		</NODE>
-		<NODE name="providers">
+		<NODE name="providers" help="List of provided paths and registered callbacks for providing gets to that path.">
 			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
 		</NODE>
-		<NODE name="validators">
+		<NODE name="validators" help="List of validated paths and registered callbacks for validating sets to that path.">
 			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
 		</NODE>
 		<NODE name="cache" help="Formatted dump of the Apteryx cache"/>

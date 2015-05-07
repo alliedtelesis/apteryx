@@ -453,6 +453,28 @@ apteryx_shutdown (void)
 }
 
 bool
+apteryx_bind (const char *url)
+{
+    char path[PATH_MAX];
+
+    if (sprintf (path, APTERYX_SETTINGS"sockets/%"PRIX64"",
+            (size_t)g_str_hash (url)) <= 0)
+        return false;
+    return apteryx_set (path, url);
+}
+
+bool
+apteryx_unbind (const char *url)
+{
+    char path[PATH_MAX];
+
+    if (sprintf (path, APTERYX_SETTINGS"sockets/%"PRIX64"",
+            (size_t)g_str_hash (url)) <= 0)
+        return false;
+    return apteryx_set (path, NULL);
+}
+
+bool
 apteryx_prune (const char *path)
 {
     const char *url = NULL;

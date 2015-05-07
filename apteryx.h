@@ -68,6 +68,32 @@
 #include <stdint.h>
 #include <glib.h>
 
+/** Apteryx configuration
+  /apteryx
+  /apteryx/debug                           - Apteryx debug
+  /apteryx/socket                          - List of sockets (urls) that apteryxd will accept connections on.
+  /apteryx/socket/-                        - Unique identifier based on HASH(url). Value is the url to listen on.
+  /apteryx/watchers                        - List of watched paths and registered callbacks for those watches.
+  /apteryx/watchers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
+  /apteryx/providers                       - List of provided paths and registered callbacks for providing gets to that path.
+  /apteryx/providers/-                     - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
+  /apteryx/validators                      - List of validated paths and registered callbacks for validating sets to that path.
+  /apteryx/validators/-                    - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
+  /apteryx/cache                           - Formatted dump of the Apteryx cache
+  /apteryx/counters                        - Formatted list of counters and values for Apteryx usage
+ */
+#define APTERYX_PATH                             "/apteryx"
+#define APTERYX_DEBUG_PATH                       "/apteryx/debug"
+#define APTERYX_DEBUG_DEFAULT                        0
+#define APTERYX_DEBUG_DISABLE                        0
+#define APTERYX_DEBUG_ENABLE                         1
+#define APTERYX_SOCKET_PATH                      "/apteryx/socket"
+#define APTERYX_WATCHERS_PATH                    "/apteryx/watchers"
+#define APTERYX_PROVIDERS_PATH                   "/apteryx/providers"
+#define APTERYX_VALIDATORS_PATH                  "/apteryx/validators"
+#define APTERYX_CACHE                            "/apteryx/cache"
+#define APTERYX_COUNTERS                         "/apteryx/counters"
+
 /** Initialise this instance of the Apteryx library.
  * @param debug verbose debug to stdout
  * @return true on success
@@ -79,6 +105,16 @@ bool apteryx_init (bool debug);
  * @return true on success
  */
 bool apteryx_shutdown (void);
+
+/**
+ * Bind the Apteryx server to accepts connections on the specified URL.
+ *
+ * @param url path to bind to
+ * @return true on successful (un)binding
+ * @return false if the (un)bind fails
+ */
+bool apteryx_bind (const char *url);
+bool apteryx_unbind (const char *url);
 
 /**
  * Remove a path and all reachable children

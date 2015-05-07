@@ -211,8 +211,8 @@ uint64_t db_get_timestamp (const char *path);
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
 bool rpc_provide_service (const char *url, ProtobufCService *service, int num_threads, int stopfd);
-bool rpc_bind_url (const char *url);
-bool rpc_unbind_url (const char *url);
+bool rpc_bind_url (const char *id, const char *url);
+bool rpc_unbind_url (const char *id, const char *url);
 ProtobufCService *rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor);
 
 /* Apteryx configuration */
