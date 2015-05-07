@@ -67,16 +67,18 @@ usage ()
 }
 
 static bool
-watch_callback (const char *path, void *priv, const char *value)
+watch_callback (const char *path, const char *value)
 {
     printf ("%s = %s\n", path, value);
     return true;
 }
 
+static char *provide_value = NULL;
+
 static char*
-provide_callback (const char *path, void *priv)
+provide_callback (const char *path)
 {
-    return strdup ((char *) priv);
+    return strdup ((char *) provide_value);
 }
 
 /* Application entry point */
@@ -211,7 +213,7 @@ main (int argc, char **argv)
             path = "/";
         }
         apteryx_init (debug);
-        apteryx_watch (path, watch_callback, NULL);
+        apteryx_watch (path, watch_callback);
         while (running)
             pause ();
         apteryx_unwatch (path, watch_callback);
@@ -224,7 +226,8 @@ main (int argc, char **argv)
             return 0;
         }
         apteryx_init (debug);
-        apteryx_provide (path, provide_callback, param);
+        provide_value = param;
+        apteryx_provide (path, provide_callback);
         while (running)
             pause ();
         apteryx_unprovide (path, provide_callback);
