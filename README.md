@@ -11,6 +11,7 @@ i.e. /root/node1/node2/node3 = value
 * **GET** - get the value stored at the specified path
 * **PROVIDE** - provide the value stored at the specified path
 * **SEARCH** - look for sub-paths that match the requested root path
+* **VALIDATE** - accept / deny sets that match the specified path
 
 ## Paths
 Apteryx paths are similar to unix paths.
@@ -20,6 +21,15 @@ Apteryx paths are similar to unix paths.
 * Double separator is prohibited (i.e. "/test//example" is invalid)
 * Some functions take a path and a key, this is treated as if they were joined with a separator, i.e. func(path, key, ...) called with ("/test/example", "name",...) would access "/test/example/name"
 * Avoid collisions by selecting a starting path that is unique and not shorthand, i.e. "/av" is not acceptable, but "/antivirus" is, preferably the name of the library also matches the path used. 
+
+## Validating
+Care must be taken when registering validation functions with apteryx_validate.
+Calls made to apteryx_set will block until the apteryx_validate callback is
+processed - this introduces a possible loop that can only be broken with a
+timeout.
+
+In order to avoid this, a process should avoid setting a value that it validates
+itself, and particularly avoid doing this from a watch callback.
 
 ## Example
 ```
@@ -107,3 +117,4 @@ LD_LIBRARY_PATH=. ./apteryx -t /interfaces/eth0/
 /interfaces/eth0/description                                    our lan
 /interfaces/eth0/state                                          up
 '''
+
