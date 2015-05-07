@@ -162,7 +162,7 @@ apteryx__validate (Apteryx__Client_Service *service,
     else
         pthread_mutex_unlock (&pending_watches_lock);
 
-    result.result = ((apteryx_validate_callback)validate->cb) (validate->path, validate->value);
+    result.result = ((apteryx_validate_callback)(size_t)validate->cb) (validate->path, validate->value);
 
 exit:
     /* Return result */
@@ -455,7 +455,7 @@ apteryx_bind (const char *url)
 {
     char path[PATH_MAX];
 
-    if (sprintf (path, APTERYX_SOCKETS_PATH"/%"PRIX64"",
+    if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
         return false;
     return apteryx_set (path, url);
@@ -466,7 +466,7 @@ apteryx_unbind (const char *url)
 {
     char path[PATH_MAX];
 
-    if (sprintf (path, APTERYX_SOCKETS_PATH"/%"PRIX64"",
+    if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
         return false;
     return apteryx_set (path, NULL);
@@ -855,7 +855,7 @@ add_callback (const char *type, const char *path, void *cb)
     size_t pid = getpid ();
     char _path[PATH_MAX];
 
-    if (sprintf (_path, "%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
+    if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
@@ -868,7 +868,7 @@ delete_callback (const char *type, const char *path,  void *cb)
 {
     char _path[PATH_MAX];
 
-    if (sprintf (_path, "%s/%"PRIX64"-%"PRIX64"-%"PRIX64"",
+    if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, NULL))
