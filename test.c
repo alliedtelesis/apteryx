@@ -1447,12 +1447,12 @@ test_deadlock ()
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf(&path, "/test/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_set (path, "set"));
         CU_ASSERT (apteryx_watch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune("/"));
+    CU_ASSERT (apteryx_prune("/test"));
     usleep(1000);
     apteryx_shutdown();
     apteryx_init(false);
@@ -1460,17 +1460,19 @@ test_deadlock ()
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf(&path, "/test/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune("/"));
+    CU_ASSERT (apteryx_prune("/test"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
 }
 
 static bool
 test_deadlock2_callback (const char *path, const char *value)
 {
-    apteryx_watch(path, test_deadlock_callback);
+    apteryx_watch (path, test_deadlock_callback);
     return true;
 }
 
@@ -1482,24 +1484,27 @@ test_deadlock2 ()
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf(&path, "/test/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_set (path, "set"));
         CU_ASSERT (apteryx_watch (path, test_deadlock2_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune("/"));
-    usleep(200);
-    apteryx_shutdown();
-    apteryx_init(false);
+    CU_ASSERT (apteryx_prune ("/test"));
+    usleep (200);
+    apteryx_shutdown ();
+    apteryx_init (false);
 
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, "/entity/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf (&path, "/test/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_unwatch (path, test_deadlock2_callback));
+        CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune("/"));
+    CU_ASSERT (apteryx_prune ("/test"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
 }
 
 void

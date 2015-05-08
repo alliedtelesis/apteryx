@@ -101,73 +101,17 @@ static inline uint32_t htol32 (uint32_t v)
 /* Callback */
 typedef struct _cb_info_t
 {
+    bool active;
+
     const char *guid;
     const char *path;
     uint64_t id;
     uint64_t cb;
+
+    GList **list;
+    int refcnt;
     uint32_t count;
 } cb_info_t;
-
-/* Watch, provide and validation callbacks */
-extern GList *watch_list;
-extern GList *validation_list;
-extern GList *provide_list;
-extern pthread_mutex_t list_lock;
-
-/* Free cb info */
-static inline void
-cb_info_destroy (gpointer data)
-{
-    cb_info_t *info = (cb_info_t*)data;
-    if (info->guid)
-        free ((void *) info->guid);
-    if (info->path)
-        free ((void *) info->path);
-    free (info);
-}
-
-static inline gpointer
-cb_info_copy (cb_info_t *cb)
-{
-    cb_info_t *copy = calloc (1, sizeof (*copy));
-    *copy = *cb;
-    if (cb->guid)
-        copy->guid = strdup (cb->guid);
-    if (cb->path)
-        copy->path = strdup (cb->path);
-    return (gpointer)copy;
-}
-
-static inline cb_info_t *
-cb_info_get (GList *list, const char *guid)
-{
-    GList *iter = NULL;
-    cb_info_t *info;
-    for (iter = list; iter; iter = iter->next)
-    {
-        info = (cb_info_t *) iter->data;
-        if (info->guid && strcmp (info->guid, guid) == 0)
-            break;
-        info = NULL;
-    }
-    return info;
-}
-
-static inline cb_info_t *
-cb_info_find (GList *list, const char *path, uint64_t id, uint64_t cb)
-{
-    GList *iter = NULL;
-    cb_info_t *info;
-    for (iter = list; iter; iter = iter->next)
-    {
-        /* We only allow a func to watch once per path+socket */
-        info = (cb_info_t *) iter->data;
-        if (info->id == id && info->cb == cb && strcmp (info->path, path) == 0)
-            break;
-        info = NULL;
-    }
-    return info;
-}
 
 /* Counters */
 typedef struct _counters_t
@@ -179,13 +123,14 @@ typedef struct _counters_t
     uint32_t search;
     uint32_t search_invalid;
     uint32_t watched;
-    uint32_t watched_no_match;
     uint32_t watched_no_handler;
     uint32_t watched_timeout;
-    uint32_t validation;
-    uint32_t validation_failed;
+    uint32_t validated;
+    uint32_t validated_no_handler;
+    uint32_t validated_timeout;
     uint32_t provided;
     uint32_t provided_no_handler;
+    uint32_t provided_timeout;
     uint32_t prune;
     uint32_t prune_invalid;
     uint32_t get_ts;
@@ -214,6 +159,22 @@ ProtobufCService *rpc_connect_service (const char *url, const ProtobufCServiceDe
 
 /* Apteryx configuration */
 void config_init (void);
+
+/* Callbacks to clients */
+extern GList *watch_list;
+extern GList *validation_list;
+extern GList *provide_list;
+void cb_init (void);
+cb_info_t * cb_create (GList **list, const char *guid, const char *path, uint64_t id, uint64_t callback);
+void cb_destroy (cb_info_t *cb);
+void cb_release (cb_info_t *cb);
+cb_info_t * cb_find (GList **list, const char *guid);
+#define CB_MATCH_EXACT      1
+#define CB_MATCH_WILD       2
+#define CB_MATCH_CHILD      4
+#define CB_MATCH_WILD_PATH  8
+GList *cb_match (GList **list, const char *path, int critera);
+void cb_shutdown (void);
 
 /* SHM cache */
 #define APTERYX_SHM_KEY    0xda7aba5e
