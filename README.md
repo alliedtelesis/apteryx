@@ -15,6 +15,7 @@ i.e. /root/node1/node2/node3 = value
 * **SEARCH** - look for sub-paths that match the requested root path
 * **INDEX** - provide search results for the specified root path
 * **PRUNE** - from a requested root path, set values for all sub-paths to NULL
+* **PROXY** - proxy gets and sets to the requested path via the specified URL
 
 ## Paths
 Apteryx paths are similar to unix paths.
@@ -24,6 +25,12 @@ Apteryx paths are similar to unix paths.
 * Double separator is prohibited (i.e. "/test//example" is invalid)
 * Some functions take a path and a key, this is treated as if they were joined with a separator, i.e. func(path, key, ...) called with ("/test/example", "name",...) would access "/test/example/name"
 * Avoid collisions by selecting a starting path that is unique and not shorthand, i.e. "/av" is not acceptable, but "/antivirus" is, preferably the name of the library also matches the path used. 
+* Full paths include the Apteryx instance url e.g.
+```
+UNIX       "unix:///<unix-path>[:<apteryx-path>]"    e.g. unix:///tmp/apteryx:/system/hostname
+TCP(IPv4)  "tcp://<IPv4>:<port>[:<apteryx-path>]"    e.g. tcp://192.168.1.2:9999:/system/hostname
+TCP(IPv6)  "tcp:[<IPv6>]:<port>[:<apteryx-path>]"    e.g. tcp://[fc00::1]:9999:/system/hostname
+```
 
 ## Validating
 Care must be taken when registering validation functions with apteryx_validate. Calls made to apteryx_set will block until the apteryx_validate callback is processed - this introduces a possible loop that can only be broken with a timeout. In order to avoid this, a process should avoid setting a value that it validates itself, and particularly avoid doing this from a watch callback.
@@ -108,7 +115,7 @@ make test
 
 ## Client
 ```
-Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-l] [<path>] [<value>]
+Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]
   -h   show this help
   -d   debug
   -s   set <path>=<value>
@@ -117,6 +124,7 @@ Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-l] [<path>] [<value>]
   -t   traverse database from <path>
   -w   watch changes to the path <path>
   -p   provide <value> for <path>
+  -x   proxy <path> via url <value>
   -l   last change <path>
 
   Internal settings
@@ -125,6 +133,7 @@ Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-l] [<path>] [<value>]
     /apteryx/watchers
     /apteryx/providers
     /apteryx/validators
+    /apteryx/proxies
     /apteryx/cache
     /apteryx/counters
 ```
@@ -139,5 +148,10 @@ LD_LIBRARY_PATH=. ./apteryx -g /interfaces/eth0/description
 LD_LIBRARY_PATH=. ./apteryx -t /interfaces/eth0/
 /interfaces/eth0/description                                    our lan
 /interfaces/eth0/state                                          up
-'''
+./apteryxd -b -p apteryx2.pid -l tcp://127.0.0.1:9999
+LD_LIBRARY_PATH=. ./apteryx -s tcp://127.0.0.1:9999:/test/dog cat
+LD_LIBRARY_PATH=. ./apteryx -g /remote/node/test/dog
+LD_LIBRARY_PATH=. ./apteryx -x /remote/node/* tcp://127.0.0.1:9999
+LD_LIBRARY_PATH=. ./apteryx -g /remote/node/test/dog
+```
 

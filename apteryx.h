@@ -17,6 +17,7 @@
  *     SEARCH - look for sub-paths that match the requested root path
  *     INDEX - provide search results for the specified root path
  *     PRUNE - from a requested root path, set values for all sub-paths to NULL
+ *     PROXY - proxy gets and sets to the requested path via the specified URL
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -51,6 +52,8 @@
   /apteryx/validators/-                    - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/indexers                        - List of indexed paths and registered callbacks for providing search results for that path.
   /apteryx/indexers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
+  /apteryx/proxies                         - List of proxied paths and remote url to proxy gets and sets to.
+  /apteryx/proxies/-                       - Unique identifier based on PID-HASH(path)-HASH(url). Value is the full url for the path.
   /apteryx/cache                           - Formatted dump of the Apteryx cache
   /apteryx/counters                        - Formatted list of counters and values for Apteryx usage
  */
@@ -64,6 +67,7 @@
 #define APTERYX_PROVIDERS_PATH                   "/apteryx/providers"
 #define APTERYX_VALIDATORS_PATH                  "/apteryx/validators"
 #define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
+#define APTERYX_PROXIES_PATH                     "/apteryx/proxies"
 #define APTERYX_CACHE                            "/apteryx/cache"
 #define APTERYX_COUNTERS                         "/apteryx/counters"
 
@@ -81,12 +85,13 @@ bool apteryx_shutdown (void);
 
 /**
  * Bind the Apteryx server to accepts connections on the specified URL.
- *
+ * Can be used to enable remote access to Apteryx (e.g. for proxy).
  * @param url path to bind to
  * @return true on successful (un)binding
  * @return false if the (un)bind fails
  */
 bool apteryx_bind (const char *url);
+/** Stop accepting connections on the specified URL. */
 bool apteryx_unbind (const char *url);
 
 /**
@@ -238,6 +243,19 @@ typedef char* (*apteryx_provide_callback) (const char *path);
 bool apteryx_provide (const char *path, apteryx_provide_callback cb);
 /** UnProvide a value that can be read on demand */
 bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
+
+/**
+ * Proxy get and sets for the requested path to the specified remote url.
+ * Whenever a get is performed on the given path/key, callback is called to get the value
+ * Path must include wildcard.
+ * - apteryx_proxy ("/remote/host1/*", "tcp://192.168.1.1:9999")
+ * @param path path to the value that others will set/get
+ * @param url url to the remote apteryx instance
+ * @return true on successful registration
+ */
+bool apteryx_proxy (const char *path, const char *url);
+/** Remove the proxy for this path */
+bool apteryx_unproxy (const char *path, const char *url);
 
 /**
  * Get the last change timestamp of a given path

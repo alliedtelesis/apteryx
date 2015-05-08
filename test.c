@@ -1598,6 +1598,104 @@ test_perf_provide ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_proxy_get ()
+{
+    const char *value = NULL;
+
+    CU_ASSERT (apteryx_set ("/test/local", "test"));
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT ((value = apteryx_get ("/test/remote/test/local")) != NULL);
+    CU_ASSERT (value && strcmp (value, "test") == 0);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_set ()
+{
+    const char *value = NULL;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/remote/test/local", "test"));
+    CU_ASSERT ((value = apteryx_get ("/test/local")) != NULL);
+    CU_ASSERT (value && strcmp (value, "test") == 0);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (apteryx_set ("/test/remote/test/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_not_listening ()
+{
+    CU_ASSERT (apteryx_set ("/test/local", "test"));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_get ("/test/remote/test/local") == NULL);
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_before_db_get ()
+{
+    const char *value = NULL;
+
+    CU_ASSERT (apteryx_set ("/test/local", "dog"));
+    CU_ASSERT (apteryx_set ("/test/remote/test/local", "cat"));
+    cache_set ("/test/remote/test/local", NULL);
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT ((value = apteryx_get ("/test/remote/test/local")) != NULL);
+    CU_ASSERT (value && strcmp (value, "dog") == 0);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/remote/test/local", NULL));
+    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_before_db_set ()
+{
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/remote/test/local", "test"));
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_get ("/test/remote/test/local") == NULL);
+    CU_ASSERT (apteryx_set ("/test/remote/test/local", NULL));
+    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_set_validated ()
+{
+    CU_ASSERT (apteryx_validate ("/test/local", test_validate_refuse_callback));
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (!apteryx_set ("/test/remote/test/local", "test"));
+    CU_ASSERT (errno == -EPERM);
+    CU_ASSERT (apteryx_unvalidate ("/test/local", test_validate_refuse_callback));
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
@@ -1822,6 +1920,16 @@ static CU_TestInfo tests_api_provide[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_api_proxy[] = {
+    { "proxy get", test_proxy_get },
+    { "proxy set", test_proxy_set },
+    { "proxy not listening", test_proxy_not_listening },
+    { "proxy before db get", test_proxy_before_db_get },
+    { "proxy before db set", test_proxy_before_db_set },
+    { "proxy set validated", test_proxy_set_validated },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_performance[] = {
     { "set", test_perf_set },
     { "set(tcp)", test_perf_tcp_set },
@@ -1849,6 +1957,7 @@ static CU_SuiteInfo suites[] = {
     { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
+    { "Apteryx API Proxy", suite_init, suite_clean, tests_api_proxy },
     { "Apteryx Performance", suite_init, suite_clean, tests_performance },
     CU_SUITE_INFO_NULL,
 };
