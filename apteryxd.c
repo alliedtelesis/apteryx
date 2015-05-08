@@ -39,11 +39,7 @@ static int stopfd = -1;
 /* Statistics and debug */
 counters_t counters = {};
 
-/* Watch and provide callbacks */
-GList *watch_list = NULL;
-GList *validation_list = NULL;
-GList *provide_list = NULL;
-pthread_mutex_t list_lock;
+/* Synchronise validation */
 static pthread_mutex_t validating;
 
 static void
@@ -62,86 +58,14 @@ validate_set (const char *path, const char *value)
     GList *iter = NULL;
     int32_t result = 0;
 
-    /* Make sure we have at least one watcher */
-    if (g_list_length (validation_list) == 0)
-    {
+    /* Retrieve a list of validators for this path */
+    validators = cb_match (&validation_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
+    if (!validators)
         return 0;
-    }
-
-    /* Check each watcher */
-    pthread_mutex_lock (&list_lock);
-    for (iter = validation_list; iter; iter = g_list_next (iter))
-    {
-        cb_info_t *validator = iter->data;
-        const char *ptr = NULL;
-        size_t len;
-        bool match = false;
-
-        /* exact path match */
-        if (strcmp (validator->path, path) == 0)
-        {
-            match = true;
-        }
-        else
-        {
-            len = strlen (validator->path);
-            ptr = validator->path + len - 1;
-
-            /* wildcard path match (recursive) */
-            if (*ptr == '*')
-            {
-                if (strncmp (path, validator->path, len - 1) == 0)
-                {
-                    match = true;
-                }
-
-            }
-            /* one-level-deep path match (non recursive) */
-            else if (*ptr == '/')
-            {
-
-                if ((strncmp (path, validator->path, len - 1) == 0) &&
-                    !strchr (path + len, '/'))
-                {
-                    match = true;
-                }
-            }
-            /* match * within path */
-            else if ((ptr = strchr(validator->path, '*')) != NULL)
-            {
-                /* Match up to the '*' */
-                if (strncmp(path, validator->path, ptr - validator->path - 1) == 0)
-                {
-                    const char *after_needle = ptr + 1;
-                    const char *after_haystack = path + strlen(path) - strlen(after_needle);
-
-                    /* match after the star */
-                    if (strcmp(after_needle, after_haystack) == 0)
-                    {
-                        match = true;
-                    }
-                }
-            }
-        }
-
-        if (match)
-        {
-            validators = g_list_append (validators, cb_info_copy (validator));
-            validator->count++;
-        }
-    }
-    pthread_mutex_unlock (&list_lock);
-
-    /* Make sure we have at least one matched watcher */
-    if (g_list_length (validators) == 0)
-    {
-        return 0;
-    }
 
     /* Protect sensitive values with this lock - released in apteryx_set */
-    DEBUG("SET: locking mutex\n");
     pthread_mutex_lock (&validating);
-    DEBUG("SET: lock taken\n");
 
     /* Call each validator */
     for (iter = validators; iter; iter = g_list_next (iter))
@@ -151,38 +75,32 @@ validate_set (const char *path, const char *value)
         Apteryx__Validate validate = APTERYX__VALIDATE__INIT;
         char service_name[64];
 
-        /* Check for local provider */
+        /* Check for local validator */
         if (validator->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) validator->cb;
-            DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+            DEBUG ("VALIDATE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
                     validator->path, validator->id, validator->cb);
             cb (path, value);
             continue;
         }
 
         DEBUG ("VALIDATE CB %s = %s (0x%"PRIx64",0x%"PRIx64")\n",
-                 validator->path, value,validator->id, validator->cb);
+                 validator->path, value, validator->id, validator->cb);
 
         /* Setup IPC */
         sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", validator->id);
-        DEBUG ("VALIDATE CB - connecting to %s\n", service_name);
         rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
         if (!rpc_client)
         {
+            /* Throw away the no good validator */
             ERROR ("Invalid VALIDATE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                     validator->path, validator->id, validator->cb);
-            pthread_mutex_lock (&list_lock);
-            validator = cb_info_find (watch_list, validator->path, validator->cb, validator->id);
-            if (validator)
-            {
-                watch_list = g_list_remove (validation_list, validator);
-                cb_info_destroy ((gpointer) validator);
-            }
-            pthread_mutex_unlock (&list_lock);
+            cb_destroy (validator);
+            INC_COUNTER (counters.validated_no_handler);
             continue;
         }
-        DEBUG ("VALIDATE CB - connected to %s\n", service_name);
+
         /* Do remote validate */
         validate.path = (char *)path;
         validate.value = (char *)value;
@@ -191,27 +109,21 @@ validate_set (const char *path, const char *value)
         apteryx__client__validate (rpc_client, &validate, handle_validate_response, &result);
         if (result < 0)
         {
-            DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n", (char *)path, (char*)value, validator->id, result);
-            /* exit, cleaning up on the way out */
+            DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n",
+                    (char *)path, (char*)value, validator->id, result);
             /* Destroy the service */
             protobuf_c_service_destroy (rpc_client);
-            INC_COUNTER (counters.validation_failed);
+            INC_COUNTER (counters.validated_timeout);
             break;
-        }
-        else
-        {
-            DEBUG("callback returned %d\n", result);
         }
 
         /* Destroy the service */
         protobuf_c_service_destroy (rpc_client);
-        INC_COUNTER (counters.validation);
+        INC_COUNTER (counters.validated);
     }
-    g_list_free_full (validators, cb_info_destroy);
+    g_list_free_full (validators, (GDestroyNotify) cb_release);
 
-    DEBUG("returning %d\n", result < 0 ? result : 1);
-
-    /* this one is fine, but lock is still held */
+    /* This one is fine, but lock is still held */
     return result < 0 ? result : 1;
 }
 
@@ -229,64 +141,11 @@ notify_watchers (const char *path)
     char *value = NULL;
     size_t vsize;
 
-    /* Make sure we have at least one watcher */
-    if (g_list_length (watch_list) == 0)
+    /* Retrieve a list of watchers for this path */
+    watchers = cb_match (&watch_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!watchers)
         return;
-
-    /* Check each watcher */
-    pthread_mutex_lock (&list_lock);
-    for (iter = watch_list; iter; iter = g_list_next (iter))
-    {
-        cb_info_t *watcher = iter->data;
-        const char *ptr = NULL;
-        size_t len;
-        bool match = false;
-
-        /* exact path match */
-        if (strcmp (watcher->path, path) == 0)
-        {
-            match = true;
-        }
-        else
-        {
-            len = strlen (watcher->path);
-            ptr = watcher->path + len - 1;
-
-            /* wildcard path match (recursive) */
-            if (*ptr == '*')
-            {
-                if (strncmp (path, watcher->path, len - 1) == 0)
-                {
-                    match = true;
-                }
-
-            }
-            /* one-level-deep path match (non recursive) */
-            else if (*ptr == '/')
-            {
-
-                if ((strncmp (path, watcher->path, len - 1) == 0) &&
-                    strlen(path) >= len && !strchr (path + len, '/'))
-                {
-                    match = true;
-                }
-            }
-        }
-
-        if (match)
-        {
-            watchers = g_list_append (watchers, cb_info_copy (watcher));
-            watcher->count++;
-        }
-    }
-    pthread_mutex_unlock (&list_lock);
-
-    /* Make sure we have at least one matched watcher */
-    if (g_list_length (watchers) == 0)
-    {
-        INC_COUNTER (counters.watched_no_match);
-        return;
-    }
 
     /* Find the new value for this path */
     value = NULL;
@@ -302,7 +161,7 @@ notify_watchers (const char *path)
         Apteryx__Watch watch = APTERYX__WATCH__INIT;
         char service_name[64];
 
-        /* Check for local provider */
+        /* Check for local watcher */
         if (watcher->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
@@ -312,24 +171,18 @@ notify_watchers (const char *path)
             continue;
         }
 
-        DEBUG ("WATCH CB %s = %s (0x%"PRIx64",0x%"PRIx64")\n",
-                value, watcher->path, watcher->id, watcher->cb);
+        DEBUG ("WATCH CB %s = %s (%s 0x%"PRIx64",0x%"PRIx64")\n",
+                path, value, watcher->path, watcher->id, watcher->cb);
 
         /* Setup IPC */
         sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", watcher->id);
         rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
         if (!rpc_client)
         {
+            /* Throw away the no good validator */
             ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                    watcher->path, watcher->id, watcher->cb);
-            pthread_mutex_lock (&list_lock);
-            watcher = cb_info_find (watch_list, watcher->path, watcher->id, watcher->cb);
-            if (watcher)
-            {
-                watch_list = g_list_remove (watch_list, watcher);
-                cb_info_destroy ((gpointer) watcher);
-            }
-            pthread_mutex_unlock (&list_lock);
+            cb_destroy (watcher);
             INC_COUNTER (counters.watched_no_handler);
             continue;
         }
@@ -350,7 +203,7 @@ notify_watchers (const char *path)
         protobuf_c_service_destroy (rpc_client);
         INC_COUNTER (counters.watched);
     }
-    g_list_free_full (watchers, cb_info_destroy);
+    g_list_free_full (watchers, (GDestroyNotify) cb_release);
 
     /* Free memory if allocated */
     if (value)
@@ -381,77 +234,75 @@ handle_get_response (const Apteryx__GetResult *result, void *closure_data)
 static char *
 provide_get (const char *path)
 {
+    GList *providers = NULL;
     char *value = NULL;
     GList *iter = NULL;
 
-    pthread_mutex_lock (&list_lock);
-    for (iter = provide_list; iter; iter = g_list_next (iter))
+    /* Retrieve a list of providers for this path */
+    providers = cb_match (&provide_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!providers)
+        return 0;
+
+    /* Find the first good provider */
+    for (iter = providers; iter; iter = g_list_next (iter))
     {
         cb_info_t *provider = iter->data;
-        int len = strlen (provider->path);
-        const char *ptr = provider->path + len - 1;
+        ProtobufCService *rpc_client;
+        get_data_t data = {0};
+        Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
+        char service_name[64];
 
-        if (strcmp (provider->path, path) == 0 ||
-            (*ptr == '*' && strncmp (path, provider->path, len - 1) == 0))
+        /* Check for local provider */
+        if (provider->id == getpid ())
         {
-            ProtobufCService *rpc_client;
-            get_data_t data = {0};
-            Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
-            char service_name[64];
+            apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->cb;
+            DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                                       provider->path, provider->id, provider->cb);
+            value = cb (path);
+            break;
+        }
 
-            /* Counters */
-            INC_COUNTER (counters.provided);
-            INC_COUNTER (provider->count);
+        DEBUG ("PROVIDE CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+               provider->path, provider->id, provider->cb);
 
-            /* Check for local provider */
-            if (provider->id == getpid ())
-            {
-                apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->cb;
-                DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                                           provider->path, provider->id, provider->cb);
-                value = cb (path);
-                break;
-            }
-
-            DEBUG ("PROVIDE CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+        /* Setup IPC */
+        sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", provider->id);
+        rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
+        if (!rpc_client)
+        {
+            /* Throw away the no good validator */
+            ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                    provider->path, provider->id, provider->cb);
+            cb_destroy (provider);
+            INC_COUNTER (counters.provided_no_handler);
+            continue;
+        }
 
-            /* Setup IPC */
-            sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", provider->id);
-            rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
-            if (!rpc_client)
-            {
-                ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                       provider->path, provider->id, provider->cb);
-                provide_list = g_list_remove (provide_list, provider);
-                cb_info_destroy ((gpointer) provider);
-                INC_COUNTER (counters.provided_no_handler);
-                continue;
-            }
+        /* Do remote get */
+        provide.path = (char *) path;
+        provide.id = provider->id;
+        provide.cb = provider->cb;
+        apteryx__client__provide (rpc_client, &provide, handle_get_response, &data);
+        if (!data.done)
+        {
+            INC_COUNTER (counters.provided_timeout);
+            ERROR ("No response from provider for path \"%s\"\n", (char *)path);
+        }
 
-            /* Do remote get */
-            provide.path = (char *) path;
-            provide.id = provider->id;
-            provide.cb = provider->cb;
-            apteryx__client__provide (rpc_client, &provide,
-                                      handle_get_response, &data);
-            if (!data.done)
-            {
-                ERROR ("No response from provider\n");
-            }
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
 
-            /* Destroy the service */
-            protobuf_c_service_destroy (rpc_client);
-
-            /* Result */
-            if (data.value)
-            {
-                value = data.value;
-                break;
-            }
+        /* Result */
+        INC_COUNTER (counters.provided);
+        if (data.value)
+        {
+            value = data.value;
+            break;
         }
     }
-    pthread_mutex_unlock (&list_lock);
+    g_list_free_full (providers, (GDestroyNotify) cb_release);
+
     return value;
 }
 
@@ -593,6 +444,7 @@ apteryx__search (Apteryx__Server_Service *service,
 
     /* Search database */
     results = db_search (search->path);
+#if 0 //TODO search provided paths
     /* Search providers */
     for (iter = provide_list; iter; iter = g_list_next (iter))
     {
@@ -611,6 +463,7 @@ apteryx__search (Apteryx__Server_Service *service,
                 free (path);
         }
     }
+#endif
     /* Prepare the results */
     result.n_paths = g_list_length (results);
     if (result.n_paths > 0)
@@ -802,6 +655,8 @@ main (int argc, char **argv)
 
     /* Initialise the database */
     db_init ();
+    /* Initialise callbacks to clients */
+    cb_init ();
     /* Configuration Set/Get */
     config_init ();
 
@@ -809,9 +664,6 @@ main (int argc, char **argv)
     /* Init cache */
     cache_init ();
 #endif
-
-    /* Create a lock for the shared lists */
-    pthread_mutex_init (&list_lock, NULL);
 
     /* Create a lock for currently-validating */
     pthread_mutex_init (&validating, NULL);
@@ -837,16 +689,12 @@ exit:
     close (pipefd[0]);
     close (pipefd[1]);
 
-    /* Cleanup watchers and providers */
-    g_list_free_full (watch_list, cb_info_destroy);
-    g_list_free_full (provide_list, cb_info_destroy);
-    g_list_free_full (validation_list, cb_info_destroy);
-
 #ifdef USE_SHM_CACHE
     /* Shut cache */
     cache_shutdown (true);
 #endif
-
+    /* Cleanup callbacks */
+    cb_shutdown ();
     /* Clean up the database */
     db_shutdown ();
 

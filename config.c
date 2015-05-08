@@ -40,12 +40,10 @@ handle_sockets_set (const char *path, const char *value)
 
     DEBUG ("SOCKET %s:%s\n", guid, value);
 
-    pthread_mutex_lock (&list_lock);
     if (value)
         res = rpc_bind_url (guid, value);
     else
         res = rpc_unbind_url (guid, value);
-    pthread_mutex_unlock (&list_lock);
 
     return res;
 }
@@ -53,53 +51,47 @@ handle_sockets_set (const char *path, const char *value)
 static bool
 update_callback (GList **list, const char *guid, const char *value)
 {
-    cb_info_t *info;
-    uint64_t pid, cb, hash;
+    cb_info_t *cb;
+    uint64_t pid, callback, hash;
 
-    //TEMP until full URL client support implemented
-    if (sscanf (guid, "%"PRIX64"-%"PRIx64"-%"PRIx64"", &pid, &cb, &hash) != 3)
+    /* Parse callback info from the encoded guid */
+    if (sscanf (guid, "%"PRIX64"-%"PRIx64"-%"PRIx64"",
+            &pid, &callback, &hash) != 3)
     {
         ERROR ("Invalid GUID (%s)\n", guid ?: "NULL");
         return false;
     }
 
     /* Find an existing callback */
-    pthread_mutex_lock (&list_lock);
-    info = cb_info_get (*list, guid);
-    if (!info && !value)
+    cb = cb_find (list, guid);
+    if (!cb && !value)
     {
-        pthread_mutex_unlock (&list_lock);
-        ERROR ("Invalid Callback GUID(%s)\n", guid);
+        ERROR ("Non-existant Callback GUID(%s)\n", guid);
         return true;
     }
-
-    /* New settings require a new callback */
-    if (!info)
+    else if (cb && value)
     {
-        info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-        info->guid = strdup (guid);
-        *list = g_list_prepend (*list , info);
+        ERROR ("Callback GUID(%s) already exists - releasing old version\n", guid);
+        cb_destroy (cb);
+        cb_release (cb);
     }
 
-    /* Make the change */
+    /* Create or destroy */
     if (value)
     {
-        /* Create/update a callback */
-        if (info->path)
-            free ((void *) info->path);
-        info->path = strdup (value);
-        //TEMP until full URL client support implemented
-        info->id = pid;
-        info->cb = cb;
+        /* Create a callback */
+        DEBUG ("Callback GUID(%s) created\n", guid);
+        cb = cb_create (list, guid, value, pid, callback);
     }
     else
     {
         /* Remove the callback */
-        *list = g_list_remove (*list, info);
-        cb_info_destroy ((gpointer) info);
+        DEBUG ("Callback GUID(%s) released\n", guid);
+        cb_destroy (cb);
     }
-    pthread_mutex_unlock (&list_lock);
 
+    /* Release the reference */
+    cb_release (cb);
     return true;
 }
 
@@ -143,13 +135,14 @@ handle_counters_get (const char *path)
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search", counters.search);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search_invalid", counters.search_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched", counters.watched);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_no_match", counters.watched_no_match);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_no_handler", counters.watched_no_handler);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_timeout", counters.watched_timeout);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validation", counters.validation);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validation failed", counters.validation_failed);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validated", counters.validated);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validated_no_handler", counters.validated_no_handler);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validated_timeout", counters.validated_timeout);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided", counters.provided);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_no_handler", counters.provided_no_handler);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_timeout", counters.provided_timeout);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune", counters.prune);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune_invalid", counters.prune_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_timestamp", counters.get_ts);
@@ -169,56 +162,42 @@ handle_cache_get (const char *path)
 void
 config_init (void)
 {
-    cb_info_t *info;
+    cb_info_t *cb;
 
     /* Debug set */
-    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_DEBUG_PATH);
-    info->id = (uint64_t) getpid ();
-    info->cb = (uint64_t) (size_t) handle_debug_set;
-    watch_list = g_list_prepend (watch_list, info);
+    cb = cb_create (&watch_list, "debug", APTERYX_DEBUG_PATH,
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_debug_set);
+    cb_release (cb);
 
     /* Counters */
-    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_COUNTERS);
-    info->id = (uint64_t) getpid ();
-    info->cb = (uint64_t) (size_t) handle_counters_get;
-    provide_list = g_list_prepend (provide_list, info);
+    cb = cb_create (&provide_list, "counters", APTERYX_COUNTERS,
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
+    cb_release (cb);
 
     /* Sockets */
-    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_SOCKETS_PATH"/");
-    info->id = (uint64_t) getpid ();
-    info->cb = (uint64_t) (size_t) handle_sockets_set;
-    watch_list = g_list_prepend (watch_list, info);
+    cb = cb_create (&watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
+    cb_release (cb);
 
     /* Watchers */
-    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_WATCHERS_PATH"/");
-    info->id = (uint64_t) getpid ();
-    info->cb = (uint64_t) (size_t) handle_watchers_set;
-    watch_list = g_list_prepend (watch_list, info);
+    cb = cb_create (&watch_list, "watchers", APTERYX_WATCHERS_PATH"/",
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set);
+    cb_release (cb);
 
     /* Providers */
-    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_PROVIDERS_PATH"/");
-    info->id = (uint64_t) getpid ();
-    info->cb = (uint64_t) (size_t) handle_providers_set;
-    watch_list = g_list_prepend (watch_list, info);
+    cb = cb_create (&watch_list, "providers", APTERYX_PROVIDERS_PATH"/",
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_providers_set);
+    cb_release (cb);
 
     /* Validators */
-    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_VALIDATORS_PATH"/");
-    info->id = (uint64_t) getpid ();
-    info->cb = (uint64_t) (size_t) handle_validators_set;
-    watch_list = g_list_prepend (watch_list, info);
+    cb = cb_create (&watch_list, "validators", APTERYX_VALIDATORS_PATH"/",
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set);
+    cb_release (cb);
 
 #ifdef USE_SHM_CACHE
     /* Cache */
-    info = (cb_info_t *) calloc (1, sizeof (cb_info_t));
-    info->path = strdup (APTERYX_CACHE);
-    info->id = (uint64_t) getpid ();
-    info->cb = (uint64_t) (size_t) handle_cache_get;
-    provide_list = g_list_prepend (provide_list, info);
+    cb = cb_create (&watch_list, "cache", APTERYX_CACHE,
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_cache_get);
+    cb_release (cb);
 #endif
 }

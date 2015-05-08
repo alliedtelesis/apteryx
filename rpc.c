@@ -365,6 +365,7 @@ find_socket (const char *id, const char *url)
     GList *iter;
 
     /* Look through the list */
+    pthread_mutex_lock (&tl_server->lock);
     for (iter = tl_server->sockets; iter; iter = iter->next)
     {
         sock = (rpc_socket_t *)iter->data;
@@ -375,6 +376,7 @@ find_socket (const char *id, const char *url)
         }
         sock = NULL;
     }
+    pthread_mutex_unlock (&tl_server->lock);
     return sock;
 }
 
@@ -496,8 +498,10 @@ rpc_bind_url (const char *id, const char *url)
     DEBUG ("RPC: New Socket (%d:%s:%s)\n", sock->fd, id, url);
     sock->id = strdup (id);
     sock->url = strdup (url);
+    pthread_mutex_lock (&tl_server->lock);
     tl_server->sockets = g_list_append (tl_server->sockets, sock);
     add_cb (&tl_server->pending, sock->fd, server_callback, (void*)tl_server);
+    pthread_mutex_unlock (&tl_server->lock);
 
     return true;
 }
@@ -516,8 +520,10 @@ rpc_unbind_url (const char *id, const char *url)
     }
 
     /* Close and free */
+    pthread_mutex_lock (&tl_server->lock);
     delete_cb (&tl_server->pending, sock->fd);
     tl_server->sockets = g_list_remove (tl_server->sockets, sock);
+    pthread_mutex_unlock (&tl_server->lock);
     if (sock->fd >= 0)
         close (sock->fd);
     if (sock->family == PF_UNIX)
