@@ -306,6 +306,78 @@ provide_get (const char *path)
     return value;
 }
 
+static char *
+proxy_get (const char *path)
+{
+    GList *proxies = NULL;
+    char *value = NULL;
+    GList *iter = NULL;
+
+    /* Retrieve a list of proxies for this path */
+    proxies = cb_match (&proxy_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!proxies)
+        return 0;
+
+    /* Find the first good proxy */
+    for (iter = proxies; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *proxy = iter->data;
+        int len = strlen (proxy->path);
+        ProtobufCService *rpc_client;
+        get_data_t data = {0};
+        Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
+
+        /* Counters */
+        INC_COUNTER (counters.proxied);
+        INC_COUNTER (proxy->count);
+
+        /* Strip proxied path */
+        if (proxy->path[len-1] == '*')
+            len -= 1;
+        if (proxy->path[len-1] == '/')
+            len -= 1;
+        path = path + len;
+        DEBUG ("PROXY CB \"%s\" to \"%s\"\n", path, proxy->uri);
+
+        /* Setup IPC */
+        rpc_client = rpc_connect_service (proxy->uri, &apteryx__client__descriptor);
+        if (!rpc_client)
+        {
+            ERROR ("Invalid PROXY CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                    proxy->path, proxy->id, proxy->cb);
+            cb_destroy (proxy);
+            INC_COUNTER (counters.proxied_no_handler);
+            continue;
+        }
+
+        /* Do remote get */
+        provide.path = (char *) path;
+        provide.id = proxy->id;
+        provide.cb = proxy->cb;
+        apteryx__client__provide (rpc_client, &provide,
+                                  handle_get_response, &data);
+        if (!data.done)
+        {
+            INC_COUNTER (counters.proxied_timeout);
+            ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        }
+
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
+
+        /* Result */
+        INC_COUNTER (counters.proxied)
+        if (data.value)
+        {
+            value = data.value;
+            break;
+        }
+    }
+    g_list_free_full (proxies, (GDestroyNotify) cb_release);
+    return value;
+}
+
 static void
 apteryx__set (Apteryx__Server_Service *service,
               const Apteryx__Set *set,
@@ -398,9 +470,10 @@ apteryx__get (Apteryx__Server_Service *service,
     vsize = 0;
     if (!db_get (get->path, (unsigned char**)&value, &vsize))
     {
-        if ((value = provide_get (get->path)) == NULL)
+        if ((value = provide_get (get->path)) == NULL &&
+            (value = proxy_get (get->path)) == NULL)
         {
-            DEBUG ("GET: not in database or provided\n");
+            DEBUG ("GET: not in database or provided or proxied\n");
         }
     }
 #ifdef USE_SHM_CACHE
@@ -649,6 +722,11 @@ main (int argc, char **argv)
     if (background)
     {
         fp = fopen (pid_file, "w");
+        if (!fp)
+        {
+            ERROR ("Failed to create PID file %s\n", pid_file);
+            goto exit;
+        }
         fprintf (fp, "%d\n", getpid ());
         fclose (fp);
     }

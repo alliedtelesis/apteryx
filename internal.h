@@ -48,6 +48,7 @@ typedef enum
     MODE_TRAVERSE,
     MODE_WATCH,
     MODE_PROVIDE,
+    MODE_PROXY,
     MODE_PRUNE,
     MODE_TIMESTAMP,
 } APTERYX_MODE;
@@ -105,6 +106,7 @@ typedef struct _cb_info_t
 
     const char *guid;
     const char *path;
+    const char *uri;
     uint64_t id;
     uint64_t cb;
 
@@ -131,6 +133,9 @@ typedef struct _counters_t
     uint32_t provided;
     uint32_t provided_no_handler;
     uint32_t provided_timeout;
+    uint32_t proxied;
+    uint32_t proxied_no_handler;
+    uint32_t proxied_timeout;
     uint32_t prune;
     uint32_t prune_invalid;
     uint32_t get_ts;
@@ -164,6 +169,7 @@ void config_init (void);
 extern GList *watch_list;
 extern GList *validation_list;
 extern GList *provide_list;
+extern GList *proxy_list;
 void cb_init (void);
 cb_info_t * cb_create (GList **list, const char *guid, const char *path, uint64_t id, uint64_t callback);
 void cb_destroy (cb_info_t *cb);

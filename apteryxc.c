@@ -44,7 +44,7 @@ termination_handler (void)
 void
 usage ()
 {
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-l] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]\n"
             "  -h   show this help\n"
             "  -d   debug\n"
             "  -s   set <path>=<value>\n"
@@ -53,6 +53,7 @@ usage ()
             "  -t   traverse database from <path>\n"
             "  -w   watch changes to the path <path>\n"
             "  -p   provide <value> for <path>\n"
+            "  -x   proxy <path> via url <value>\n"
             "  -l   last change <path>\n");
     printf ("\n");
     printf ("  Internal settings\n");
@@ -61,6 +62,7 @@ usage ()
     printf ("    %s\n", APTERYX_WATCHERS_PATH);
     printf ("    %s\n", APTERYX_PROVIDERS_PATH);
     printf ("    %s\n", APTERYX_VALIDATORS_PATH);
+    printf ("    %s\n", APTERYX_PROXIES_PATH);
     printf ("    %s\n", APTERYX_CACHE);
     printf ("    %s\n", APTERYX_COUNTERS);
     printf ("\n");
@@ -97,7 +99,7 @@ main (int argc, char **argv)
     signal (SIGINT, (__sighandler_t) termination_handler);
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftwp")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftwpx")) != -1)
     {
         switch (c)
         {
@@ -121,6 +123,9 @@ main (int argc, char **argv)
             break;
         case 'p':
             mode = MODE_PROVIDE;
+            break;
+        case 'x':
+            mode = MODE_PROXY;
             break;
         case 'l':
             mode = MODE_TIMESTAMP;
@@ -231,6 +236,16 @@ main (int argc, char **argv)
         while (running)
             pause ();
         apteryx_unprovide (path, provide_callback);
+        apteryx_shutdown ();
+        break;
+    case MODE_PROXY:
+        if (!path || !param)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (debug);
+        apteryx_proxy (path, param);
         apteryx_shutdown ();
         break;
     case MODE_TIMESTAMP:
