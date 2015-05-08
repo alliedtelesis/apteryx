@@ -136,14 +136,14 @@ cache_shutdown (bool force)
     return;
 }
 
-bool
+void
 cache_set (const char *path, const char *value)
 {
     hash_entry_t *entry;
 
     if (!cache || strlen (path) + 1 > MAX_PATH ||
         (value && strlen (value) + 1 > MAX_VALUE))
-        return false;
+        return;
 
     pthread_rwlock_wrlock (&cache->rwlock);
     entry = &cache->table[g_str_hash (path) % NUM_BUCKETS];
@@ -158,7 +158,7 @@ cache_set (const char *path, const char *value)
     }
     pthread_rwlock_unlock (&cache->rwlock);
 
-    return false;
+    return;
 }
 
 char *

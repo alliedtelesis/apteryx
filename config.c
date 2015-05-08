@@ -48,7 +48,7 @@ handle_sockets_set (const char *path, const char *value)
     return res;
 }
 
-static bool
+static cb_info_t *
 update_callback (GList **list, const char *guid, const char *value)
 {
     cb_info_t *cb;
@@ -59,19 +59,19 @@ update_callback (GList **list, const char *guid, const char *value)
             &pid, &callback, &hash) != 3)
     {
         ERROR ("Invalid GUID (%s)\n", guid ?: "NULL");
-        return false;
+        return NULL;
     }
 
     /* Find an existing callback */
     cb = cb_find (list, guid);
     if (!cb && !value)
     {
-        ERROR ("Non-existant Callback GUID(%s)\n", guid);
-        return true;
+        DEBUG ("Non-existant Callback GUID(%s)\n", guid);
+        return NULL;
     }
     else if (cb && value)
     {
-        ERROR ("Callback GUID(%s) already exists - releasing old version\n", guid);
+        DEBUG ("Callback GUID(%s) already exists - releasing old version\n", guid);
         cb_destroy (cb);
         cb_release (cb);
     }
@@ -90,33 +90,76 @@ update_callback (GList **list, const char *guid, const char *value)
         cb_destroy (cb);
     }
 
-    /* Release the reference */
-    cb_release (cb);
-    return true;
+    /* Return the reference */
+    return cb;
 }
 
 static bool
 handle_watchers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_WATCHERS_PATH"/");
+    cb_info_t *cb;
+
     DEBUG ("CFG-Watch: %s = %s\n", guid, value);
-    return update_callback (&watch_list, guid, value);
+
+    cb = update_callback (&watch_list, guid, value);
+    cb_release (cb);
+    return true;
 }
 
 static bool
 handle_providers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_PROVIDERS_PATH"/");
+    cb_info_t *cb;
+
     DEBUG ("CFG-Provide: %s = %s\n", guid, value);
-    return update_callback (&provide_list, guid, value);
+
+    cb = update_callback (&provide_list, guid, value);
+    cb_release (cb);
+    return true;
 }
 
 static bool
 handle_validators_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_VALIDATORS_PATH"/");
+    cb_info_t *cb;
+
     DEBUG ("CFG-Validate: %s = %s\n", guid, value);
-    return update_callback (&validation_list, guid, value);
+
+    cb = update_callback (&validation_list, guid, value);
+    cb_release (cb);
+    return true;
+}
+
+static bool
+handle_proxies_set (const char *path, const char *value)
+{
+    const char *guid = path + strlen (APTERYX_PROXIES_PATH"/");
+    cb_info_t *cb;
+
+    DEBUG ("CFG-Proxy: %s = %s\n", guid, value);
+
+    cb = update_callback (&proxy_list, guid, value);
+    if (cb && value)
+    {
+        if (strncmp (value, "unix://", 7) != 0 &&
+            strncmp (value, "tcp://", 6) != 0)
+        {
+            ERROR ("Invalid Callback URL (%s)\n", value);
+            cb_release (cb);
+            return false;
+        }
+        path = strrchr (value, ':') + 1;
+        if (cb->uri)
+            free ((void *) cb->uri);
+        cb->uri = strndup (value, strlen (value) - strlen (path) - 1);
+        strcpy ((char*)cb->path, path);
+        DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
+    }
+    cb_release (cb);
+    return true;
 }
 
 static char*
@@ -143,6 +186,9 @@ handle_counters_get (const char *path)
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided", counters.provided);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_no_handler", counters.provided_no_handler);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_timeout", counters.provided_timeout);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "proxied", counters.proxied);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "proxied_no_handler", counters.proxied_no_handler);
+    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "proxied_timeout", counters.proxied_timeout);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune", counters.prune);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune_invalid", counters.prune_invalid);
     buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_timestamp", counters.get_ts);
@@ -192,6 +238,11 @@ config_init (void)
     /* Validators */
     cb = cb_create (&watch_list, "validators", APTERYX_VALIDATORS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set);
+    cb_release (cb);
+
+    /* Proxies */
+    cb = cb_create (&watch_list, "proxies", APTERYX_PROXIES_PATH"/",
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set);
     cb_release (cb);
 
 #ifdef USE_SHM_CACHE
