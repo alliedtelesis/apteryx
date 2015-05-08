@@ -417,6 +417,144 @@ provide_get (const char *path)
     return value;
 }
 
+static char *
+proxy_get (const char *path)
+{
+    GList *proxies = NULL;
+    char *value = NULL;
+    GList *iter = NULL;
+
+    /* Retrieve a list of proxies for this path */
+    proxies = cb_match (&proxy_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!proxies)
+        return 0;
+
+    /* Find the first good proxy */
+    for (iter = proxies; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *proxy = iter->data;
+        int len = strlen (proxy->path);
+        ProtobufCService *rpc_client;
+        get_data_t data = {0};
+        Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
+
+        /* Strip proxied path */
+        if (proxy->path[len-1] == '*')
+            len -= 1;
+        if (proxy->path[len-1] == '/')
+            len -= 1;
+        path = path + len;
+        DEBUG ("PROXY CB \"%s\" to \"%s\"\n", path, proxy->uri);
+
+        /* Setup IPC */
+        rpc_client = rpc_connect_service (proxy->uri, &apteryx__client__descriptor);
+        if (!rpc_client)
+        {
+            ERROR ("Invalid PROXY CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                    proxy->path, proxy->id, proxy->cb);
+            cb_destroy (proxy);
+            INC_COUNTER (counters.proxied_no_handler);
+            continue;
+        }
+
+        /* Do remote get */
+        provide.path = (char *) path;
+        provide.id = proxy->id;
+        provide.cb = proxy->cb;
+        apteryx__client__provide (rpc_client, &provide,
+                                  handle_get_response, &data);
+        if (!data.done)
+        {
+            INC_COUNTER (counters.proxied_timeout);
+            ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        }
+
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
+
+        /* Result */
+        INC_COUNTER (counters.proxied);
+        INC_COUNTER (proxy->count);
+        if (data.value)
+        {
+            value = data.value;
+            break;
+        }
+    }
+    g_list_free_full (proxies, (GDestroyNotify) cb_release);
+    return value;
+}
+
+static void
+handle_set_response (const Apteryx__OKResult *result, void *closure_data)
+{
+    if (result == NULL)
+    {
+        *(int *) closure_data = -ETIMEDOUT;
+    }
+    else
+    {
+        *(int *) closure_data = result->result;
+    }
+}
+
+static int
+proxy_set (const char *path, const char *value)
+{
+    GList *proxies = NULL;
+    GList *iter = NULL;
+    int result = 1;
+
+    /* Retrieve a list of proxies for this path */
+    proxies = cb_match (&proxy_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!proxies)
+        return 1;
+
+    /* Find the first good proxy */
+    for (iter = proxies; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *proxy = iter->data;
+        int len = strlen (proxy->path);
+        ProtobufCService *rpc_client;
+        Apteryx__Set set = APTERYX__SET__INIT;
+
+        /* Strip proxied path */
+        if (proxy->path[len-1] == '*')
+            len -= 1;
+        if (proxy->path[len-1] == '/')
+            len -= 1;
+        path = path + len;
+        DEBUG ("PROXY CB \"%s\" to \"%s\"\n", path, proxy->uri);
+
+        /* Setup IPC */
+        rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor);
+        if (!rpc_client)
+        {
+            ERROR ("Invalid PROXY CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                    proxy->path, proxy->id, proxy->cb);
+            cb_destroy (proxy);
+            INC_COUNTER (counters.proxied_no_handler);
+            continue;
+        }
+
+        /* Do remote set */
+        set.path = (char *) path;
+        set.value = (char *) value;
+        apteryx__server__set (rpc_client, &set, handle_set_response, &result);
+
+        INC_COUNTER (counters.proxied);
+        INC_COUNTER (proxy->count);
+
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
+        break;
+    }
+    g_list_free_full (proxies, (GDestroyNotify) cb_release);
+    return result;
+}
+
 static void
 apteryx__set (Apteryx__Server_Service *service,
               const Apteryx__Set *set,
@@ -425,6 +563,7 @@ apteryx__set (Apteryx__Server_Service *service,
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     result.result = 0;
     int validation_result = 0;
+    int proxy_result = 0;
 
     /* Check parameters */
     if (set == NULL || set->path == NULL)
@@ -439,11 +578,21 @@ apteryx__set (Apteryx__Server_Service *service,
 
     DEBUG ("SET: %s = %s\n", set->path, set->value);
 
+    /* Check proxy first */
+    proxy_result = proxy_set (set->path, set->value);
+    if (proxy_result <= 0)
+    {
+        DEBUG ("SET: %s = %s proxied (result=%d)\n",
+                set->path, set->value, proxy_result);
+        result.result = proxy_result;
+        goto exit;
+    }
+
     /* Validate new data */
     validation_result = validate_set (set->path, set->value);
     if (validation_result < 0)
     {
-        DEBUG ("SET: %s = %s REFUSED\n", set->path, set->value);
+        DEBUG ("SET: %s = %s refused by validate\n", set->path, set->value);
         result.result = validation_result;
         goto exit;
     }
@@ -507,19 +656,25 @@ apteryx__get (Apteryx__Server_Service *service,
     /* Lookup value */
     value = NULL;
     vsize = 0;
-    if (!db_get (get->path, (unsigned char**)&value, &vsize))
+    /* Proxy first */
+    if ((value = proxy_get (get->path)) == NULL)
     {
-        if ((value = provide_get (get->path)) == NULL)
+        /* Database second */
+        if (!db_get (get->path, (unsigned char**)&value, &vsize))
         {
-            DEBUG ("GET: not in database or provided\n");
+            /* Provide third */
+            if ((value = provide_get (get->path)) == NULL)
+            {
+                DEBUG ("GET: not in database or provided or proxied\n");
+            }
         }
-    }
 #ifdef USE_SHM_CACHE
-    else
-    {
-        cache_set (get->path, value);
-    }
+        else
+        {
+            cache_set (get->path, value);
+        }
 #endif
+    }
 
     /* Send result */
     DEBUG ("     = %s\n", value);

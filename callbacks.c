@@ -27,6 +27,7 @@ GList *watch_list = NULL;
 GList *validation_list = NULL;
 GList *provide_list = NULL;
 GList *index_list = NULL;
+GList *proxy_list = NULL;
 static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
@@ -58,6 +59,8 @@ cb_free (gpointer data, void *param)
         free ((void *) cb->guid);
     if (cb->path)
         free ((void *) cb->path);
+    if (cb->uri)
+        free ((void *) cb->uri);
     free (cb);
 }
 
@@ -189,6 +192,8 @@ cb_shutdown (void)
     g_list_foreach (watch_list, cb_free, NULL);
     g_list_foreach (provide_list, cb_free, NULL);
     g_list_foreach (validation_list, cb_free, NULL);
+    g_list_foreach (index_list, cb_free, NULL);
+    g_list_foreach (proxy_list, cb_free, NULL);
     return;
 }
 
