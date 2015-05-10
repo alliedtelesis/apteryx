@@ -59,7 +59,7 @@ update_callback (GList **list, const char *guid, const char *value)
     //TEMP until full URL client support implemented
     if (sscanf (guid, "%"PRIX64"-%"PRIx64"-%"PRIx64"", &pid, &cb, &hash) != 3)
     {
-        ERROR ("Invalid GUID(%s)\n", guid);
+        ERROR ("Invalid GUID (%s)\n", guid ?: "NULL");
         return false;
     }
 
