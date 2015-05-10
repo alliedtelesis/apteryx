@@ -185,7 +185,7 @@ validate_set (const char *path, const char *value)
         DEBUG ("VALIDATE CB - connected to %s\n", service_name);
         /* Do remote validate */
         validate.path = (char *)path;
-        validate.value = value ? strdup(value) : NULL;
+        validate.value = (char *)value;
         validate.id = validator->id;
         validate.cb = validator->cb;
         apteryx__client__validate (rpc_client, &validate, handle_validate_response, &result);
@@ -266,7 +266,7 @@ notify_watchers (const char *path)
             {
 
                 if ((strncmp (path, watcher->path, len - 1) == 0) &&
-                    !strchr (path + len, '/'))
+                    strlen(path) >= len && !strchr (path + len, '/'))
                 {
                     match = true;
                 }

@@ -134,7 +134,8 @@ db_node_delete (struct database_node *node)
         return;
 
     node->removing++;
-    if (node->parent && node->parent->children)
+
+    if (node->removing <= 1 && node->parent && node->parent->children)
     {
         g_hash_table_remove (node->parent->children, node->key);
         if (g_hash_table_size (node->parent->children) == 0 && node->parent->length == 0)
