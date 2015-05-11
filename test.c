@@ -1396,6 +1396,20 @@ test_provide_callback_get ()
 }
 
 void
+test_provide_callback_get_null ()
+{
+    const char *path = "/interfaces/eth0/status";
+    const char *value = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_callback_get_cb));
+    errno = 0;
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    CU_ASSERT (errno != -ETIMEDOUT);
+    apteryx_unprovide (path, test_provide_callback_get_cb);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_perf_provide ()
 {
     const char *path = "/entity/zones/private/state";
@@ -1621,6 +1635,7 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide from different threads", test_provide_different_thread },
     { "provide from different process", test_provide_different_process },
     { "provide callback get", test_provide_callback_get },
+    { "provide callback get null", test_provide_callback_get_null },
     CU_TEST_INFO_NULL,
 };
 
