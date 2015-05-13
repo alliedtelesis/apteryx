@@ -1661,10 +1661,12 @@ static CU_TestInfo tests_performance[] = {
 
 extern CU_TestInfo tests_database_internal[];
 extern CU_TestInfo tests_database[];
+extern CU_TestInfo tests_callbacks[];
 
 static CU_SuiteInfo suites[] = {
     { "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
+    { "Callbacks", suite_init, suite_clean, tests_callbacks },
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
