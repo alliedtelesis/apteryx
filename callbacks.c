@@ -18,6 +18,10 @@
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
 #include "internal.h"
+#ifdef TEST
+#include <CUnit/CUnit.h>
+#include <CUnit/Basic.h>
+#endif
 
 GList *watch_list = NULL;
 GList *validation_list = NULL;
@@ -178,3 +182,115 @@ cb_shutdown (void)
     g_list_foreach (validation_list, cb_free, NULL);
     return;
 }
+
+#ifdef TEST
+#define TEST_CB_MAX_ENTRIES 100000
+#define TEST_CB_MAX_ITERATIONS 100
+
+void
+test_cb_init ()
+{
+    cb_init ();
+    cb_shutdown ();
+}
+
+void
+test_cb_release ()
+{
+    cb_info_t *cb;
+    cb = cb_create (&watch_list, "abc", "/test", 1, 0);
+    cb_release (cb);
+    CU_ASSERT (cb->refcnt == 1);
+    cb_release (cb);
+    CU_ASSERT (g_list_length (watch_list) == 0);
+}
+
+void
+test_cb_destroy ()
+{
+    cb_info_t *cb;
+    cb = cb_create (&watch_list, "abc", "/test", 1, 0);
+    cb_destroy (cb);
+    CU_ASSERT (g_list_length (watch_list) == 1);
+    cb_release (cb);
+    CU_ASSERT (g_list_length (watch_list) == 0);
+}
+
+typedef enum
+{
+    INDEX_LAST,
+    INDEX_FIRST,
+    INDEX_RANDOM,
+} PERF_TEST_INDEX;
+static bool
+match_perf_test (PERF_TEST_INDEX index)
+{
+    bool ret = false;
+    char path[128];
+    char guid[128];
+    cb_info_t *cb;
+    uint64_t start;
+    int i;
+
+    cb_init ();
+    for (i = 0; i < TEST_CB_MAX_ENTRIES; i++)
+    {
+        sprintf (path, "/database/test%d/test%d", i, i);
+        sprintf (guid, "%zX", (size_t)g_str_hash (path));
+        cb = cb_create (&watch_list, guid, path, 1, 0);
+        cb_release (cb);
+    }
+    CU_ASSERT (g_list_length (watch_list) == TEST_CB_MAX_ENTRIES);
+
+    start = get_time_us ();
+    for (i = 0; i < TEST_CB_MAX_ITERATIONS; i++)
+    {
+        GList *matches;
+        int test = index == INDEX_FIRST ? 0 :
+                (index == INDEX_LAST ? (TEST_CB_MAX_ENTRIES - 1) :
+                  random () % TEST_CB_MAX_ENTRIES);
+        sprintf (path, "/database/test%d/test%d", test, test);
+        matches = cb_match (&watch_list, path,
+                CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+        if (g_list_length (matches) != 1)
+            goto exit;
+        g_list_free_full (matches, (GDestroyNotify) cb_release);
+    }
+    printf ("%ldus ... ", (get_time_us () - start) / TEST_CB_MAX_ITERATIONS);
+    ret = true;
+exit:
+    g_list_foreach (watch_list, cb_free, NULL);
+    CU_ASSERT (g_list_length (watch_list) == 0);
+    watch_list = NULL;
+    cb_shutdown ();
+    return ret;
+}
+
+void
+test_cb_match_perf_first ()
+{
+    CU_ASSERT (match_perf_test (INDEX_FIRST));
+}
+
+void
+test_cb_match_perf_last ()
+{
+    CU_ASSERT (match_perf_test (INDEX_LAST));
+}
+
+void
+test_cb_match_perf_random ()
+{
+    CU_ASSERT (match_perf_test (INDEX_RANDOM));
+}
+
+CU_TestInfo tests_callbacks[] = {
+    { "init", test_cb_init },
+    { "release", test_cb_release },
+    { "destroy", test_cb_destroy },
+    { "match performance random", test_cb_match_perf_random },
+    { "match performance first", test_cb_match_perf_first },
+    { "match performance last", test_cb_match_perf_last },
+    CU_TEST_INFO_NULL,
+};
+#endif

@@ -57,9 +57,9 @@ apteryxd = \
 	LD_LIBRARY_PATH=./ $(TEST_WRAPPER) ./$(1); \
 	kill -TERM `cat /tmp/apteryxd.pid`;
 
-test_apteryx: all test.c database.c
+test_apteryx: all test.c database.c callbacks.c
 	@echo "Building Unit tests"
-	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ test.c database.c -lcunit -L. -lapteryx $(EXTRA_LDFLAGS)
+	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ test.c database.c callbacks.c -lcunit -L. -lapteryx $(EXTRA_LDFLAGS)
 
 test: test_apteryx
 	@echo "Running unit test: $<"
