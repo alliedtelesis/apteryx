@@ -580,7 +580,7 @@ apteryx_set (const char *path, const char *value)
     protobuf_c_service_destroy (rpc_client);
     if (!is_done)
     {
-        ERROR ("SET: Failed %s\n", strerror(errno));
+        DEBUG ("SET: Failed %s\n", strerror(errno));
         return false;
     }
 
@@ -913,6 +913,34 @@ bool
 apteryx_unprovide (const char *path, apteryx_provide_callback cb)
 {
     return delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
+}
+
+bool
+apteryx_proxy (const char *path, const char *url)
+{
+    bool res = false;
+    char *value = NULL;
+    assert (url != NULL);
+    if (asprintf (&value, "%s:%s", url, path) <= 0)
+        return false;
+    res = add_callback (APTERYX_PROXIES_PATH, value,
+            (void *)(size_t)g_str_hash (url));
+    free (value);
+    return res;
+}
+
+bool
+apteryx_unproxy (const char *path, const char *url)
+{
+    bool res = false;
+    char *value = NULL;
+    assert (url != NULL);
+    if (asprintf (&value, "%s:%s", url, path) <= 0)
+        return false;
+    res = delete_callback (APTERYX_PROXIES_PATH, value,
+            (void *)(size_t)g_str_hash (url));
+    free (value);
+    return res;
 }
 
 static void
