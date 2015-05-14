@@ -10,43 +10,13 @@
  *
  * API:
  *     SET - set the value for the specified path
+ *     VALIDATE - accept / deny sets that match the specified path
  *     WATCH - watch for changes in the specified path
  *     GET - get the value stored at the specified path
  *     PROVIDE - provide the value stored at the specified path
  *     SEARCH - look for sub-paths that match the requested root path
- *
- * Example Usage:
- *
- *   apteryx_set ("/interfaces/eth0/description", "our lan");
- *   apteryx_set ("/interfaces/eth0/state", "up");
- *   apteryx_set ("/interfaces/eth1/description", "our wan");
- *   apteryx_set ("/interfaces/eth1/state", "down");
- *
- *   printf ("\nInterfaces:\n");
- *   GList* paths = apteryx_search ("/interfaces/");
- *   for (GList* _iter= paths; _iter; _iter = _iter->next)
- *   {
- *       char *path, *value;
- *       path = (char *)_iter->data;
- *       printf ("  %s\n", strrchr (path, '/') + 1);
- *       value = apteryx_get_string (path, "description");
- *       printf ("    description     %s\n", value);
- *       free ((void*)value);
- *       value = apteryx_get_string (path, "state");
- *       printf ("    state           %s\n", value);
- *       free ((void*)value);
- *   }
- *   g_list_free_full (paths, free);
- *
- * Output:
- *
- * Interfaces:
- *   eth0
- *     description      our lan
- *     state            up
- *   eth1
- *     description      our wan
- *     state            down
+ *     INDEX - provide search results for the specified root path
+ *     PRUNE - from a requested root path, set values for all sub-paths to NULL
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -79,6 +49,8 @@
   /apteryx/providers/-                     - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/validators                      - List of validated paths and registered callbacks for validating sets to that path.
   /apteryx/validators/-                    - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
+  /apteryx/indexers                        - List of indexed paths and registered callbacks for providing search results for that path.
+  /apteryx/indexers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/cache                           - Formatted dump of the Apteryx cache
   /apteryx/counters                        - Formatted list of counters and values for Apteryx usage
  */
@@ -91,6 +63,7 @@
 #define APTERYX_WATCHERS_PATH                    "/apteryx/watchers"
 #define APTERYX_PROVIDERS_PATH                   "/apteryx/providers"
 #define APTERYX_VALIDATORS_PATH                  "/apteryx/validators"
+#define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
 #define APTERYX_CACHE                            "/apteryx/cache"
 #define APTERYX_COUNTERS                         "/apteryx/counters"
 
@@ -173,6 +146,30 @@ GList *apteryx_search (const char *root);
 
 /**
  * Callback function to be called when a
+ * path is searched.
+ * @param root root of the searched path
+ * @return GList of full paths
+ */
+typedef GList* (*apteryx_index_callback) (const char *path);
+
+/**
+ * Provide search results for a root path
+ * Supports *(wildcard) at the end of path for all children under this path
+ * Supports /(level) at the end of path for children only under this current path (one level down)
+ * Whenever a search occurs for the indexed path, cb is called with requested path
+ * example:
+ * - apteryx_index ("/counters/", search_counters)
+ * - apteryx_search ("/counters") = {"/counters/tx", "/counters/rx"}
+ * @param path path to the value to be indexed
+ * @param cb function to call when the path is searched
+ * @return true on successful registration
+ */
+bool apteryx_index (const char *path, apteryx_index_callback cb);
+/** No longer provide search results for a root path */
+bool apteryx_unindex (const char *path, apteryx_index_callback cb);
+
+/**
+ * Callback function to be called when a
  * watched value changes.
  * @param path path to the watched value
  * @param value new value of the watched path
@@ -193,17 +190,7 @@ typedef bool (*apteryx_watch_callback) (const char *path, const char *value);
  * @return true on successful registration
  */
 bool apteryx_watch (const char *path, apteryx_watch_callback cb);
-
-/**
- * UnWatch for changes in the path
- * Unregisters interest in a path that was previously registered with
- * apteryx_watch
- * examples: (using libentity usage example)
- * - apteryx_unwatch("/entity/zones/red/networks/*", network_updated)
- * @param path path to the value to be unwatched
- * @param cb function that was called when the value changes
- * @return true on successful deregistration
- */
+/** UnWatch for changes in the path */
 bool apteryx_unwatch (const char *path, apteryx_watch_callback cb);
 
 /**
@@ -227,17 +214,7 @@ typedef int (*apteryx_validate_callback) (const char *path, const char *value);
  * @return true on successful registration
  */
 bool apteryx_validate (const char *path, apteryx_validate_callback cb);
-
-/**
- * UnValidate changes in the path
- * Unregisters interest in a path that was previously registered with
- * apteryx_validate
- * examples: (using imaginary usage example)
- * - apteryx_unvalidate("/entity/zones/red/networks/*", network_validate);
- * @param path path to the value to be validated
- * @param cb function to call when the value changes
- * @return true on successful deregistration
- */
+/** UnValidate changes in the path */
 bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
 
 /**
@@ -259,18 +236,7 @@ typedef char* (*apteryx_provide_callback) (const char *path);
  * @return true on successful registration
  */
 bool apteryx_provide (const char *path, apteryx_provide_callback cb);
-
-/**
- * UnProvide a value that can be read on demand
- * Unregisters interest in a path that was previously registered with
- * apteryx_provide
- * No *(wildcard)s are supported
- * examples: (using contrived usage example)
- * - apteryx_unprovide ("/hw/interfaces/port1.0.1/counters/tx", port_tx_counters, "port1.0.1")
- * @param path path to the value that others will request
- * @param cb function to be called if others request the value
- * @return true on successful deregistration
- */
+/** UnProvide a value that can be read on demand */
 bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
 
 /**
@@ -279,4 +245,5 @@ bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
  * @return 0 if the path doesn't exist, last change timestamp otherwise
  */
 uint64_t apteryx_get_timestamp (const char *path);
+
 #endif /* _APTERYX_H_ */

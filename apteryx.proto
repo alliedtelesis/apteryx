@@ -36,6 +36,13 @@ message SearchResult
   repeated string paths = 1;
 };
 
+message Index
+{
+    required string path = 1;
+    required uint64 id = 2;
+    required uint64 cb = 3;
+};
+
 message Watch
 {
     required string path = 1;
@@ -80,6 +87,7 @@ service server
 
 service client
 {
+    rpc index (Index) returns (SearchResult);
     rpc watch (Watch) returns (OKResult);
     rpc provide (Provide) returns (GetResult);
     rpc validate (Validate) returns (ValidateResult);

@@ -42,6 +42,115 @@ counters_t counters = {};
 /* Synchronise validation */
 static pthread_mutex_t validating;
 
+/* Indexer */
+typedef struct _search_data_t
+{
+    GList *paths;
+    bool done;
+} search_data_t;
+
+static void
+handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
+{
+    search_data_t *data = (search_data_t *)closure_data;
+    int i;
+    data->paths = NULL;
+    if (result == NULL)
+    {
+        ERROR ("INDEX: Error processing request.\n");
+    }
+    else if (result->paths == NULL)
+    {
+        DEBUG ("    = (null)\n");
+    }
+    else if (result->n_paths != 0)
+    {
+        for (i = 0; i < result->n_paths; i++)
+        {
+            DEBUG ("    = %s\n", result->paths[i]);
+            data->paths = g_list_append (data->paths,
+                              (gpointer) strdup (result->paths[i]));
+        }
+    }
+    data->done = true;
+}
+
+static GList *
+index_get (const char *path)
+{
+    GList *indexers = NULL;
+    GList *results = NULL;
+    GList *iter = NULL;
+
+    /* Retrieve a list of providers for this path */
+    indexers = cb_match (&index_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!indexers)
+        return NULL;
+
+    /* Find the first good indexer */
+    for (iter = indexers; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *indexer = iter->data;
+        ProtobufCService *rpc_client;
+        Apteryx__Index index = APTERYX__INDEX__INIT;
+        search_data_t data = {0};
+        char service_name[64];
+
+        /* Check for local provider */
+        if (indexer->id == getpid ())
+        {
+            apteryx_index_callback cb = (apteryx_index_callback) (long) indexer->cb;
+            DEBUG ("INDEX LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                    indexer->path, indexer->id, indexer->cb);
+            results = cb (path);
+            break;
+        }
+
+        DEBUG ("INDEX CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                indexer->path, indexer->id, indexer->cb);
+
+        /* Setup IPC */
+        sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", indexer->id);
+        rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
+        if (!rpc_client)
+        {
+            /* Throw away the no good validator */
+            ERROR ("Invalid INDEX CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                    indexer->path, indexer->id, indexer->cb);
+            cb_destroy (indexer);
+            INC_COUNTER (counters.indexed_no_handler);
+            continue;
+        }
+
+        /* Do remote get */
+        index.path = (char *) path;
+        index.id = indexer->id;
+        index.cb = indexer->cb;
+        apteryx__client__index (rpc_client, &index, handle_search_response, &data);
+        if (!data.done)
+        {
+            INC_COUNTER (counters.indexed_timeout);
+            ERROR ("No response from indexer for path \"%s\"\n", (char *)path);
+        }
+
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
+
+        /* Result */
+        INC_COUNTER (counters.indexed);
+        INC_COUNTER (indexer->count);
+        if (data.paths)
+        {
+            results = data.paths;
+            break;
+        }
+    }
+    g_list_free_full (indexers, (GDestroyNotify) cb_release);
+
+    return results;
+}
+
 static void
 handle_validate_response (const Apteryx__ValidateResult *result, void *closure_data)
 {
@@ -128,7 +237,7 @@ validate_set (const char *path, const char *value)
 }
 
 static void
-handle_set_response (const Apteryx__OKResult *result, void *closure_data)
+handle_watch_response (const Apteryx__OKResult *result, void *closure_data)
 {
     *(protobuf_c_boolean *) closure_data = (result != NULL);
 }
@@ -192,7 +301,7 @@ notify_watchers (const char *path)
         watch.value = value;
         watch.id = watcher->id;
         watch.cb = watcher->cb;
-        apteryx__client__watch (rpc_client, &watch, handle_set_response, &is_done);
+        apteryx__client__watch (rpc_client, &watch, handle_watch_response, &is_done);
         if (!is_done)
         {
             INC_COUNTER (counters.watched_timeout);
@@ -202,6 +311,7 @@ notify_watchers (const char *path)
         /* Destroy the service */
         protobuf_c_service_destroy (rpc_client);
         INC_COUNTER (counters.watched);
+        INC_COUNTER (watcher->count);
     }
     g_list_free_full (watchers, (GDestroyNotify) cb_release);
 
@@ -295,6 +405,7 @@ provide_get (const char *path)
 
         /* Result */
         INC_COUNTER (counters.provided);
+        INC_COUNTER (provider->count);
         if (data.value)
         {
             value = data.value;
@@ -442,28 +553,33 @@ apteryx__search (Apteryx__Server_Service *service,
 
     DEBUG ("SEARCH: %s\n", search->path);
 
-    /* Search database */
+    /* Search database first */
     results = db_search (search->path);
-#if 0 //TODO search provided paths
-    /* Search providers */
-    for (iter = provide_list; iter; iter = g_list_next (iter))
+    if (!results)
     {
-        cb_info_t *provider = iter->data;
-        int len = strlen (search->path);
-        if (strncmp (provider->path, search->path, len) == 0 &&
-            provider->path[len] != '*' &&
-            strncmp (provider->path, APTERYX_PATH, strlen (APTERYX_PATH)) != 0)
+        /* Then indexers */
+        results = index_get (search->path);
+        if (!results)
         {
-            char *ptr, *path = strdup (provider->path);
-            if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
-                *ptr = '\0';
-            if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
-                results = g_list_append (results, path);
-            else
-                free (path);
+            /* Then provided paths */
+            GList *providers = NULL;
+            providers = cb_match (&provide_list, search->path, CB_MATCH_PART);
+            for (iter = providers; iter; iter = g_list_next (iter))
+            {
+                cb_info_t *provider = iter->data;
+                int len = strlen (search->path);
+                char *ptr, *path = strdup (provider->path);
+                if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
+                    *ptr = '\0';
+                if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
+                    results = g_list_append (results, path);
+                else
+                    free (path);
+            }
+            g_list_free_full (providers, (GDestroyNotify) cb_release);
         }
     }
-#endif
+
     /* Prepare the results */
     result.n_paths = g_list_length (results);
     if (result.n_paths > 0)
@@ -649,6 +765,11 @@ main (int argc, char **argv)
     if (background)
     {
         fp = fopen (pid_file, "w");
+        if (!fp)
+        {
+            ERROR ("Failed to create PID file %s\n", pid_file);
+            goto exit;
+        }
         fprintf (fp, "%d\n", getpid ());
         fclose (fp);
     }
