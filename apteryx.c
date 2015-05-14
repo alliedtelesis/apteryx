@@ -580,7 +580,7 @@ apteryx_set (const char *path, const char *value)
     protobuf_c_service_destroy (rpc_client);
     if (!is_done)
     {
-        ERROR ("SET: Failed %s\n", strerror(errno));
+        DEBUG ("SET: Failed %s\n", strerror(errno));
         return false;
     }
 

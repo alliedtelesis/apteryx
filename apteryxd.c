@@ -332,7 +332,7 @@ apteryx__set (Apteryx__Server_Service *service,
     validation_result = validate_set (set->path, set->value);
     if (validation_result < 0)
     {
-        DEBUG ("SET: %s = %s REFUSED\n", set->path, set->value);
+        DEBUG ("SET: %s = %s refused by validate\n", set->path, set->value);
         result.result = validation_result;
         goto exit;
     }

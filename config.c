@@ -66,12 +66,12 @@ update_callback (GList **list, const char *guid, const char *value)
     cb = cb_find (list, guid);
     if (!cb && !value)
     {
-        ERROR ("Non-existant Callback GUID(%s)\n", guid);
+        DEBUG ("Non-existant Callback GUID(%s)\n", guid);
         return true;
     }
     else if (cb && value)
     {
-        ERROR ("Callback GUID(%s) already exists - releasing old version\n", guid);
+        DEBUG ("Callback GUID(%s) already exists - releasing old version\n", guid);
         cb_destroy (cb);
         cb_release (cb);
     }
