@@ -39,16 +39,20 @@ static bool
 assert_apteryx_empty (void)
 {
     GList *paths = apteryx_search ("/");
-    if (paths != NULL)
+    GList *iter;
+    bool ret = true;
+    for (iter = paths; iter; iter = g_list_next (iter))
     {
-        GList *iter;
-        fprintf (stderr, "Error: DB still has %d nodes\n", g_list_length (paths));
-        for (iter = paths; iter; iter = g_list_next (iter))
-            fprintf (stderr, " %s\n", (char *) (iter->data));
-        g_list_free_full (paths, free);
-        return false;
+        char *path = (char *) (iter->data);
+        if (strncmp (APTERYX_PATH, path, strlen (path)) != 0)
+        {
+            if (ret) fprintf (stderr, "\n");
+            fprintf (stderr, "ERROR: Node still set: %s\n", path);
+            ret = false;
+        }
     }
-    return true;
+    g_list_free_full (paths, free);
+    return ret;
 }
 
 void
@@ -521,22 +525,154 @@ test_perf_search ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-void
-test_perf_search_null ()
+static GList*
+test_index_cb (const char *path)
 {
     GList *paths = NULL;
-    uint64_t start;
-    int i;
+    paths = g_list_append (paths, strdup ("/counters/rx"));
+    paths = g_list_append (paths, strdup ("/counters/tx"));
+    return paths;
+}
 
-    start = get_time_us ();
-    for (i = 0; i < 100; i++)
+static GList*
+test_index_cb2 (const char *path)
+{
+    GList *paths = NULL;
+    paths = g_list_append (paths, strdup ("/counters/up"));
+    paths = g_list_append (paths, strdup ("/counters/down"));
+    return paths;
+}
+
+static GList*
+test_index_cb_wild (const char *path)
+{
+    GList *paths = NULL;
+    if (strcmp (path, "/counters/") == 0)
     {
-        CU_ASSERT ((paths = apteryx_search ("/")) == NULL);
-        if (paths != NULL)
-            goto exit;
+        paths = g_list_append (paths, strdup ("/counters/rx"));
+        paths = g_list_append (paths, strdup ("/counters/tx"));
     }
-    printf ("%ldus ... ", (get_time_us () - start) / 100);
-  exit:
+    else if (strcmp (path, "/counters/rx/") == 0)
+    {
+        paths = g_list_append (paths, strdup ("/counters/rx/pkts"));
+        paths = g_list_append (paths, strdup ("/counters/rx/bytes"));
+    }
+    else
+    {
+        paths = g_list_append (paths, strdup ("/counters/tx/pkts"));
+        paths = g_list_append (paths, strdup ("/counters/tx/bytes"));
+    }
+    return paths;
+}
+
+void
+test_index ()
+{
+    char *path = "/counters/";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_index (path, test_index_cb));
+    CU_ASSERT ((paths = apteryx_search (path)) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/rx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/tx", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_unindex (path, test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_index_wildcard ()
+{
+    char *path = "/counters/*";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_index (path, test_index_cb_wild));
+    CU_ASSERT ((paths = apteryx_search ("/counters/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/rx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/tx", (GCompareFunc) strcmp) != NULL);
+    for (GList * _iter = paths; _iter; _iter = _iter->next)
+    {
+        char *_path = NULL;
+        GList *subpaths = NULL;
+
+        CU_ASSERT (asprintf (&_path, "%s/", (char *) _iter->data) > 0);
+        CU_ASSERT ((subpaths = apteryx_search (_path)) != NULL);
+        CU_ASSERT (g_list_length (paths) == 2);
+        if (strcmp (_path, "/counters/rx/") == 0)
+        {
+            CU_ASSERT (g_list_find_custom (subpaths, "/counters/rx/pkts", (GCompareFunc) strcmp) != NULL);
+            CU_ASSERT (g_list_find_custom (subpaths, "/counters/rx/bytes", (GCompareFunc) strcmp) != NULL);
+        }
+        else
+        {
+            CU_ASSERT (g_list_find_custom (subpaths, "/counters/tx/pkts", (GCompareFunc) strcmp) != NULL);
+            CU_ASSERT (g_list_find_custom (subpaths, "/counters/tx/bytes", (GCompareFunc) strcmp) != NULL);
+        }
+        g_list_free_full (subpaths, free);
+        free (_path);
+    }
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_unindex (path, test_index_cb_wild));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_index_after_db ()
+{
+    char *path = "/counters/";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_set ("/counters/up", "1"));
+    CU_ASSERT (apteryx_set ("/counters/down", "2"));
+    CU_ASSERT (apteryx_index (path, test_index_cb));
+    CU_ASSERT ((paths = apteryx_search (path)) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/up", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/down", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_unindex (path, test_index_cb));
+    CU_ASSERT (apteryx_set ("/counters/up", NULL));
+    CU_ASSERT (apteryx_set ("/counters/down", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_index_replace_handler ()
+{
+    char *path = "/counters/";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_index (path, test_index_cb));
+    CU_ASSERT (apteryx_index (path, test_index_cb2));
+    CU_ASSERT ((paths = apteryx_search (path)) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/up", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/down", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_unindex (path, test_index_cb2));
+    CU_ASSERT (apteryx_unindex (path, test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_index_no_handler ()
+{
+    char *path = "/counters/";
+
+    CU_ASSERT (apteryx_search (path) == NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_index_remove_handler ()
+{
+    char *path = "/counters/";
+
+    CU_ASSERT (apteryx_index (path, test_index_cb));
+    CU_ASSERT (apteryx_unindex (path, test_index_cb));
+    CU_ASSERT (apteryx_search (path) == NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -559,8 +695,6 @@ test_prune ()
     CU_ASSERT (g_list_length (paths) == 2);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_prune ("/entities"));
-    CU_ASSERT ((paths = apteryx_search ("/")) == NULL);
-
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1410,6 +1544,38 @@ test_provide_callback_get_null ()
 }
 
 void
+test_provide_search ()
+{
+    const char *path = "/interfaces/eth0/state";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
+    CU_ASSERT ((paths = apteryx_search ("/interfaces/eth0/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, path, (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    apteryx_unprovide (path, test_provide_callback_up);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_provide_after_db ()
+{
+    const char *path = "/interfaces/eth0/state";
+    const char *value = NULL;
+
+    CU_ASSERT (apteryx_set (path, "down"));
+    CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
+    CU_ASSERT (( value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "down") == 0);
+    if (value)
+        free ((void *) value);
+    apteryx_unprovide (path, test_provide_callback_up);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_perf_provide ()
 {
     const char *path = "/entity/zones/private/state";
@@ -1600,6 +1766,16 @@ static CU_TestInfo tests_api[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_api_index[] = {
+    { "index", test_index },
+    { "index wildcard", test_index_wildcard },
+    { "index after db", test_index_after_db },
+    { "index replace handler", test_index_replace_handler },
+    { "index no handler", test_index_no_handler },
+    { "index remove handler", test_index_remove_handler },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_api_watch[] = {
     { "watch", test_watch },
     { "watch set from different thread", test_watch_thread },
@@ -1641,6 +1817,8 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide from different process", test_provide_different_process },
     { "provide callback get", test_provide_callback_get },
     { "provide callback get null", test_provide_callback_get_null },
+    { "provide search", test_provide_search },
+    { "provide after db", test_provide_after_db },
     CU_TEST_INFO_NULL,
 };
 
@@ -1653,7 +1831,6 @@ static CU_TestInfo tests_performance[] = {
     { "get(tcp6)", test_perf_tcp6_get },
     { "get null", test_perf_get_null },
     { "search", test_perf_search },
-    { "search null", test_perf_search_null },
     { "watch", test_perf_watch },
     { "provide", test_perf_provide },
     CU_TEST_INFO_NULL,
@@ -1668,6 +1845,7 @@ static CU_SuiteInfo suites[] = {
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
     { "Apteryx API", suite_init, suite_clean, tests_api },
+    { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
     { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },

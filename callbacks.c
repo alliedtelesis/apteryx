@@ -26,6 +26,7 @@
 GList *watch_list = NULL;
 GList *validation_list = NULL;
 GList *provide_list = NULL;
+GList *index_list = NULL;
 static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
@@ -69,6 +70,8 @@ cb_destroy (cb_info_t *cb)
 void
 cb_release (cb_info_t *cb)
 {
+    if (!cb)
+        return;
     pthread_mutex_lock (&list_lock);
     cb->refcnt--;
     if ((!cb->active && cb->refcnt == 1) || cb->refcnt <= 0)
@@ -117,8 +120,14 @@ cb_match (GList **list, const char *path, int criteria)
         if (!cb->active)
             continue;
 
+        /* Part match */
+        if ((criteria & CB_MATCH_PART) &&
+            strncmp (cb->path, path, strlen (path)) == 0)
+        {
+            match = true;
+        }
         /* Exact match */
-        if ((criteria & CB_MATCH_EXACT) &&
+        else if ((criteria & CB_MATCH_EXACT) &&
             strcmp (cb->path, path) == 0)
         {
             match = true;

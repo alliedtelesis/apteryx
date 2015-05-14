@@ -48,7 +48,7 @@ handle_sockets_set (const char *path, const char *value)
     return res;
 }
 
-static bool
+static cb_info_t *
 update_callback (GList **list, const char *guid, const char *value)
 {
     cb_info_t *cb;
@@ -59,19 +59,19 @@ update_callback (GList **list, const char *guid, const char *value)
             &pid, &callback, &hash) != 3)
     {
         ERROR ("Invalid GUID (%s)\n", guid ?: "NULL");
-        return false;
+        return NULL;
     }
 
     /* Find an existing callback */
     cb = cb_find (list, guid);
     if (!cb && !value)
     {
-        ERROR ("Non-existant Callback GUID(%s)\n", guid);
-        return true;
+        DEBUG ("Non-existant Callback GUID(%s)\n", guid);
+        return NULL;
     }
     else if (cb && value)
     {
-        ERROR ("Callback GUID(%s) already exists - releasing old version\n", guid);
+        DEBUG ("Callback GUID(%s) already exists - releasing old version\n", guid);
         cb_destroy (cb);
         cb_release (cb);
     }
@@ -90,7 +90,19 @@ update_callback (GList **list, const char *guid, const char *value)
         cb_destroy (cb);
     }
 
-    /* Release the reference */
+    /* Return the reference */
+    return cb;
+}
+
+static bool
+handle_indexers_set (const char *path, const char *value)
+{
+    const char *guid = path + strlen (APTERYX_INDEXERS_PATH"/");
+    cb_info_t *cb;
+
+    DEBUG ("CFG-Index: %s = %s\n", guid, value);
+
+    cb = update_callback (&index_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -99,55 +111,63 @@ static bool
 handle_watchers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_WATCHERS_PATH"/");
+    cb_info_t *cb;
+
     DEBUG ("CFG-Watch: %s = %s\n", guid, value);
-    return update_callback (&watch_list, guid, value);
+
+    cb = update_callback (&watch_list, guid, value);
+    cb_release (cb);
+    return true;
 }
 
 static bool
 handle_providers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_PROVIDERS_PATH"/");
+    cb_info_t *cb;
+
     DEBUG ("CFG-Provide: %s = %s\n", guid, value);
-    return update_callback (&provide_list, guid, value);
+
+    cb = update_callback (&provide_list, guid, value);
+    cb_release (cb);
+    return true;
 }
 
 static bool
 handle_validators_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_VALIDATORS_PATH"/");
+    cb_info_t *cb;
+
     DEBUG ("CFG-Validate: %s = %s\n", guid, value);
-    return update_callback (&validation_list, guid, value);
+
+    cb = update_callback (&validation_list, guid, value);
+    cb_release (cb);
+    return true;
+}
+
+static GList*
+handle_counters_index (const char *path)
+{
+    GList *paths = NULL;
+#define X(type, name) \
+    paths = g_list_append (paths, strdup (APTERYX_COUNTERS"/"#name));
+X_FIELDS
+#undef X
+    return paths;
 }
 
 static char*
 handle_counters_get (const char *path)
 {
-    char *value;
-    char *buffer = NULL;
-
-    value = buffer = malloc (4096); /* Currently around 500 bytes */
-
-    buffer += sprintf (buffer, "\n");
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "set", counters.set);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "set_invalid", counters.set_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get", counters.get);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_invalid", counters.get_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search", counters.search);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "search_invalid", counters.search_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched", counters.watched);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_no_handler", counters.watched_no_handler);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "watched_timeout", counters.watched_timeout);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validated", counters.validated);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validated_no_handler", counters.validated_no_handler);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "validated_timeout", counters.validated_timeout);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided", counters.provided);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_no_handler", counters.provided_no_handler);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "provided_timeout", counters.provided_timeout);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune", counters.prune);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "prune_invalid", counters.prune_invalid);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_timestamp", counters.get_ts);
-    buffer += sprintf (buffer, "%-24s%"PRIu32"\n", "get_timestamp_invalid", counters.get_ts_invalid);
-
+    char *counter = strrchr (path, '/');
+    char *value = NULL;
+#define X(type, name) \
+    if (strcmp ("/"#name, counter) == 0 && \
+        asprintf (&value, "%d", counters.name) > 0) \
+        return value;
+    X_FIELDS
+#undef X
     return value;
 }
 
@@ -170,13 +190,21 @@ config_init (void)
     cb_release (cb);
 
     /* Counters */
-    cb = cb_create (&provide_list, "counters", APTERYX_COUNTERS,
+    cb = cb_create (&index_list, "counters", APTERYX_COUNTERS"/",
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_index);
+    cb_release (cb);
+    cb = cb_create (&provide_list, "counters", APTERYX_COUNTERS"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
     cb_release (cb);
 
     /* Sockets */
     cb = cb_create (&watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
+    cb_release (cb);
+
+    /* Indexers */
+    cb = cb_create (&watch_list, "indexers", APTERYX_INDEXERS_PATH"/",
+            (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set);
     cb_release (cb);
 
     /* Watchers */
@@ -196,7 +224,7 @@ config_init (void)
 
 #ifdef USE_SHM_CACHE
     /* Cache */
-    cb = cb_create (&watch_list, "cache", APTERYX_CACHE,
+    cb = cb_create (&provide_list, "cache", APTERYX_CACHE,
             (uint64_t) getpid (), (uint64_t) (size_t) handle_cache_get);
     cb_release (cb);
 #endif

@@ -104,6 +104,44 @@ validate_path (const char *path, const char **url)
     return NULL;
 }
 
+/* Callback for indexed items */
+static void
+apteryx__index (Apteryx__Client_Service *service,
+                  const Apteryx__Index *index,
+                  Apteryx__SearchResult_Closure closure, void *closure_data)
+{
+    Apteryx__SearchResult result = APTERYX__SEARCH_RESULT__INIT;
+    apteryx_index_callback cb = (apteryx_index_callback) (long) index->cb;
+    GList *results = NULL;
+    GList *iter = NULL;
+    int i;
+    (void) service;
+
+    DEBUG ("INDEX CB: \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+            index->path, index->id, index->cb);
+
+    /* Call the callback */
+    if (cb)
+        results = cb (index->path);
+
+    /* Return result */
+    result.n_paths = g_list_length (results);
+    if (result.n_paths > 0)
+    {
+        result.paths = (char **) malloc (result.n_paths * sizeof (char *));
+        for (i = 0, iter = results; iter; iter = g_list_next (iter), i++)
+        {
+            DEBUG ("         = %s\n", (char *) iter->data);
+            result.paths[i] = (char *) iter->data;
+        }
+    }
+    closure (&result, closure_data);
+    g_list_free_full (results, free);
+    if (result.paths)
+        free (result.paths);
+    return;
+}
+
 /* Callback for watched items */
 static void
 apteryx__watch (Apteryx__Client_Service *service,
@@ -528,7 +566,7 @@ apteryx_dump (const char *path, FILE *fp)
 
     if (strlen (path) > 0 && (value = apteryx_get (path)))
     {
-        fprintf (fp, "%-64s%-64s\n", path, value);
+        fprintf (fp, "%-64s%s\n", path, value);
         free (value);
     }
 
@@ -580,7 +618,7 @@ apteryx_set (const char *path, const char *value)
     protobuf_c_service_destroy (rpc_client);
     if (!is_done)
     {
-        ERROR ("SET: Failed %s\n", strerror(errno));
+        DEBUG ("SET: Failed %s\n", strerror(errno));
         return false;
     }
 
@@ -874,6 +912,19 @@ delete_callback (const char *type, const char *path,  void *cb)
     if (!apteryx_set (_path, NULL))
         return false;
     return true;
+}
+
+bool
+apteryx_index (const char *path, apteryx_index_callback cb)
+{
+    assert (cb != NULL); // use apteryx_unindex
+    return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb);
+}
+
+bool
+apteryx_unindex (const char *path, apteryx_index_callback cb)
+{
+    return delete_callback (APTERYX_INDEXERS_PATH, path, (void *)cb);
 }
 
 bool

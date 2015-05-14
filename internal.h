@@ -113,28 +113,36 @@ typedef struct _cb_info_t
     uint32_t count;
 } cb_info_t;
 
+#define X_FIELDS \
+    X(uint32_t, set) \
+    X(uint32_t, set_invalid) \
+    X(uint32_t, get) \
+    X(uint32_t, get_invalid) \
+    X(uint32_t, search) \
+    X(uint32_t, search_invalid) \
+    X(uint32_t, indexed) \
+    X(uint32_t, indexed_no_handler) \
+    X(uint32_t, indexed_timeout) \
+    X(uint32_t, watched) \
+    X(uint32_t, watched_no_handler) \
+    X(uint32_t, watched_timeout) \
+    X(uint32_t, validated) \
+    X(uint32_t, validated_no_handler) \
+    X(uint32_t, validated_timeout) \
+    X(uint32_t, provided) \
+    X(uint32_t, provided_no_handler) \
+    X(uint32_t, provided_timeout) \
+    X(uint32_t, prune) \
+    X(uint32_t, prune_invalid) \
+    X(uint32_t, get_ts) \
+    X(uint32_t, get_ts_invalid)
+
 /* Counters */
 typedef struct _counters_t
 {
-    uint32_t set;
-    uint32_t set_invalid;
-    uint32_t get;
-    uint32_t get_invalid;
-    uint32_t search;
-    uint32_t search_invalid;
-    uint32_t watched;
-    uint32_t watched_no_handler;
-    uint32_t watched_timeout;
-    uint32_t validated;
-    uint32_t validated_no_handler;
-    uint32_t validated_timeout;
-    uint32_t provided;
-    uint32_t provided_no_handler;
-    uint32_t provided_timeout;
-    uint32_t prune;
-    uint32_t prune_invalid;
-    uint32_t get_ts;
-    uint32_t get_ts_invalid;
+#define X(type, name) type name;
+    X_FIELDS
+#undef X
 } counters_t;
 #define INC_COUNTER(c) (void)g_atomic_int_inc(&c);
 
@@ -164,15 +172,17 @@ void config_init (void);
 extern GList *watch_list;
 extern GList *validation_list;
 extern GList *provide_list;
+extern GList *index_list;
 void cb_init (void);
 cb_info_t * cb_create (GList **list, const char *guid, const char *path, uint64_t id, uint64_t callback);
 void cb_destroy (cb_info_t *cb);
 void cb_release (cb_info_t *cb);
 cb_info_t * cb_find (GList **list, const char *guid);
-#define CB_MATCH_EXACT      1
-#define CB_MATCH_WILD       2
-#define CB_MATCH_CHILD      4
-#define CB_MATCH_WILD_PATH  8
+#define CB_MATCH_PART       (1<<0)
+#define CB_MATCH_EXACT      (1<<1)
+#define CB_MATCH_WILD       (1<<2)
+#define CB_MATCH_CHILD      (1<<3)
+#define CB_MATCH_WILD_PATH  (1<<4)
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
 
@@ -180,7 +190,7 @@ void cb_shutdown (void);
 #define APTERYX_SHM_KEY    0xda7aba5e
 void cache_init (void);
 void cache_shutdown (bool force);
-bool cache_set (const char *path, const char *value);
+void cache_set (const char *path, const char *value);
 char* cache_get (const char *path);
 char* cache_dump_table (void);
 
