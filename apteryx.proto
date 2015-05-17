@@ -71,7 +71,7 @@ message Prune
     required string path = 1;
 };
 
-message GetTimeStampResult
+message TimeStampResult
 {
     required uint64 value = 1;
 };
@@ -82,7 +82,7 @@ service server
     rpc get (Get) returns (GetResult);
     rpc search (Search) returns (SearchResult);
     rpc prune (Prune) returns (OKResult);
-    rpc get_timestamp (Get) returns (GetTimeStampResult);
+    rpc timestamp (Get) returns (TimeStampResult);
 }
 
 service client

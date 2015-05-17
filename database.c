@@ -265,7 +265,7 @@ db_update_parent_timestamp (const char *path, uint64_t timestamp)
 }
 
 uint64_t
-db_get_timestamp (const char *path)
+db_timestamp (const char *path)
 {
     struct database_node *new_value = db_path_to_node (path);
     if (new_value)
@@ -631,17 +631,17 @@ test_db_timestamping ()
     db_init ();
 
     CU_ASSERT (db_add (path, (const unsigned char *) "test", 5));
-    last_ts = db_get_timestamp (path);
+    last_ts = db_timestamp (path);
     sleep (1);
     CU_ASSERT (db_add (path2, (const unsigned char *) "test", 5));
-    CU_ASSERT (db_get_timestamp (path2) > last_ts);
-    last_ts = db_get_timestamp (path2);
-    CU_ASSERT (db_get_timestamp (path) < db_get_timestamp (path2));
-    CU_ASSERT (db_get_timestamp (ppath) == db_get_timestamp (path2));
-    CU_ASSERT (db_get_timestamp ("/") == db_get_timestamp (ppath));
+    CU_ASSERT (db_timestamp (path2) > last_ts);
+    last_ts = db_timestamp (path2);
+    CU_ASSERT (db_timestamp (path) < db_timestamp (path2));
+    CU_ASSERT (db_timestamp (ppath) == db_timestamp (path2));
+    CU_ASSERT (db_timestamp ("/") == db_timestamp (ppath));
 
     CU_ASSERT (db_delete (path2));
-    CU_ASSERT (db_get_timestamp (ppath) > last_ts);
+    CU_ASSERT (db_timestamp (ppath) > last_ts);
 
     CU_ASSERT (db_delete (path));
 

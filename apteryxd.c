@@ -57,7 +57,7 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
     data->paths = NULL;
     if (result == NULL)
     {
-        ERROR ("INDEX: Error processing request.\n");
+        ERROR ("SEARCH: Error processing request.\n");
     }
     else if (result->paths == NULL)
     {
@@ -67,7 +67,6 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
     {
         for (i = 0; i < result->n_paths; i++)
         {
-            DEBUG ("    = %s\n", result->paths[i]);
             data->paths = g_list_append (data->paths,
                               (gpointer) strdup (result->paths[i]));
         }
@@ -437,7 +436,7 @@ proxy_get (const char *path)
         int len = strlen (proxy->path);
         ProtobufCService *rpc_client;
         get_data_t data = {0};
-        Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
+        Apteryx__Get get = APTERYX__GET__INIT;
 
         /* Strip proxied path */
         if (proxy->path[len-1] == '*')
@@ -448,22 +447,18 @@ proxy_get (const char *path)
         DEBUG ("PROXY CB \"%s\" to \"%s\"\n", path, proxy->uri);
 
         /* Setup IPC */
-        rpc_client = rpc_connect_service (proxy->uri, &apteryx__client__descriptor);
+        rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor);
         if (!rpc_client)
         {
-            ERROR ("Invalid PROXY CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                    proxy->path, proxy->id, proxy->cb);
+            ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
             cb_destroy (proxy);
             INC_COUNTER (counters.proxied_no_handler);
             continue;
         }
 
         /* Do remote get */
-        provide.path = (char *) path;
-        provide.id = proxy->id;
-        provide.cb = proxy->cb;
-        apteryx__client__provide (rpc_client, &provide,
-                                  handle_get_response, &data);
+        get.path = (char *) path;
+        apteryx__server__get (rpc_client, &get, handle_get_response, &data);
         if (!data.done)
         {
             INC_COUNTER (counters.proxied_timeout);
@@ -479,6 +474,80 @@ proxy_get (const char *path)
         if (data.value)
         {
             value = data.value;
+            break;
+        }
+    }
+    g_list_free_full (proxies, (GDestroyNotify) cb_release);
+    return value;
+}
+
+static void
+handle_timestamp_response (const Apteryx__TimeStampResult *result, void *closure_data)
+{
+    uint64_t *data = (uint64_t *)closure_data;
+    if (result == NULL)
+    {
+        ERROR ("TIMESTAMP: Error processing request.\n");
+    }
+    *data = result->value;
+}
+
+static uint64_t
+proxy_timestamp (const char *path)
+{
+    GList *proxies = NULL;
+    uint64_t value = 0;
+    GList *iter = NULL;
+
+    /* Retrieve a list of proxies for this path */
+    proxies = cb_match (&proxy_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!proxies)
+        return 0;
+
+    /* Find the first good proxy */
+    for (iter = proxies; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *proxy = iter->data;
+        int len = strlen (proxy->path);
+        ProtobufCService *rpc_client;
+        Apteryx__Get get = APTERYX__GET__INIT;
+
+        /* Strip proxied path */
+        if (proxy->path[len-1] == '*')
+            len -= 1;
+        if (proxy->path[len-1] == '/')
+            len -= 1;
+        path = path + len;
+        DEBUG ("PROXY CB \"%s\" to \"%s\"\n", path, proxy->uri);
+
+        /* Setup IPC */
+        rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor);
+        if (!rpc_client)
+        {
+            ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
+            cb_destroy (proxy);
+            INC_COUNTER (counters.proxied_no_handler);
+            continue;
+        }
+
+        /* Do remote get */
+        get.path = (char *) path;
+        apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
+        if (!value)
+        {
+            INC_COUNTER (counters.proxied_timeout);
+            ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        }
+
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
+
+        /* Result */
+        INC_COUNTER (counters.proxied);
+        INC_COUNTER (proxy->count);
+        if (value)
+        {
             break;
         }
     }
@@ -532,8 +601,7 @@ proxy_set (const char *path, const char *value)
         rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor);
         if (!rpc_client)
         {
-            ERROR ("Invalid PROXY CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                    proxy->path, proxy->id, proxy->cb);
+            ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
             cb_destroy (proxy);
             INC_COUNTER (counters.proxied_no_handler);
             continue;
@@ -553,6 +621,71 @@ proxy_set (const char *path, const char *value)
     }
     g_list_free_full (proxies, (GDestroyNotify) cb_release);
     return result;
+}
+
+static GList *
+proxy_search (const char *path)
+{
+    GList *proxies = NULL;
+    GList *results = NULL;
+    GList *iter = NULL;
+
+    /* Retrieve a list of proxies for this path */
+    proxies = cb_match (&proxy_list, path,
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    if (!proxies)
+        return 0;
+
+    /* Find the first good proxy */
+    for (iter = proxies; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *proxy = iter->data;
+        int len = strlen (proxy->path);
+        ProtobufCService *rpc_client;
+        Apteryx__Search search = APTERYX__SEARCH__INIT;
+        search_data_t data = {0};
+
+        /* Strip proxied path */
+        if (proxy->path[len-1] == '*')
+            len -= 1;
+        if (proxy->path[len-1] == '/')
+            len -= 1;
+        path = path + len;
+        DEBUG ("PROXY CB \"%s\" to \"%s\"\n", path, proxy->uri);
+
+        /* Setup IPC */
+        rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor);
+        if (!rpc_client)
+        {
+            ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
+            cb_destroy (proxy);
+            INC_COUNTER (counters.proxied_no_handler);
+            continue;
+        }
+
+        /* Do remote search */
+        search.path = (char *) path;
+        apteryx__server__search (rpc_client, &search, handle_search_response, &data);
+        if (!data.done)
+        {
+            INC_COUNTER (counters.proxied_timeout);
+            ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        }
+
+        /* Destroy the service */
+        protobuf_c_service_destroy (rpc_client);
+
+        /* Result */
+        INC_COUNTER (counters.proxied);
+        INC_COUNTER (proxy->count);
+        if (data.paths)
+        {
+            results = data.paths;
+            break;
+        }
+    }
+    g_list_free_full (proxies, (GDestroyNotify) cb_release);
+    return results;
 }
 
 static void
@@ -708,30 +841,35 @@ apteryx__search (Apteryx__Server_Service *service,
 
     DEBUG ("SEARCH: %s\n", search->path);
 
-    /* Search database first */
-    results = db_search (search->path);
+    /* Proxy first */
+    results = proxy_search (search->path);
     if (!results)
     {
-        /* Then indexers */
-        results = index_get (search->path);
+        /* Search database second */
+        results = db_search (search->path);
         if (!results)
         {
-            /* Then provided paths */
-            GList *providers = NULL;
-            providers = cb_match (&provide_list, search->path, CB_MATCH_PART);
-            for (iter = providers; iter; iter = g_list_next (iter))
+            /* Then indexers */
+            results = index_get (search->path);
+            if (!results)
             {
-                cb_info_t *provider = iter->data;
-                int len = strlen (search->path);
-                char *ptr, *path = strdup (provider->path);
-                if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
-                    *ptr = '\0';
-                if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
-                    results = g_list_append (results, path);
-                else
-                    free (path);
+                /* Then provided paths */
+                GList *providers = NULL;
+                providers = cb_match (&provide_list, search->path, CB_MATCH_PART);
+                for (iter = providers; iter; iter = g_list_next (iter))
+                {
+                    cb_info_t *provider = iter->data;
+                    int len = strlen (search->path);
+                    char *ptr, *path = strdup (provider->path);
+                    if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
+                        *ptr = '\0';
+                    if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
+                        results = g_list_append (results, path);
+                    else
+                        free (path);
+                }
+                g_list_free_full (providers, (GDestroyNotify) cb_release);
             }
-            g_list_free_full (providers, (GDestroyNotify) cb_release);
         }
     }
 
@@ -817,27 +955,31 @@ apteryx__prune (Apteryx__Server_Service *service,
 }
 
 static void
-apteryx__get_timestamp (Apteryx__Server_Service *service,
+apteryx__timestamp (Apteryx__Server_Service *service,
                         const Apteryx__Get *get,
-                        Apteryx__GetTimeStampResult_Closure closure, void *closure_data)
+                        Apteryx__TimeStampResult_Closure closure, void *closure_data)
 {
-    Apteryx__GetTimeStampResult result = APTERYX__GET_TIME_STAMP_RESULT__INIT;
+    Apteryx__TimeStampResult result = APTERYX__TIME_STAMP_RESULT__INIT;
     uint64_t value = 0;
 
     /* Check parameters */
     if (get == NULL || get->path == NULL)
     {
-        ERROR ("GET: Invalid parameters.\n");
+        ERROR ("TIMESTAMP: Invalid parameters.\n");
         closure (NULL, closure_data);
-        INC_COUNTER (counters.get_ts_invalid);
+        INC_COUNTER (counters.timestamp_invalid);
         return;
     }
-    INC_COUNTER (counters.get_ts);
+    INC_COUNTER (counters.timestamp);
 
-    DEBUG ("GET: %s\n", get->path);
+    DEBUG ("TIMESTAMP: %s\n", get->path);
 
-    /* Lookup value */
-    value = db_get_timestamp (get->path);
+    /* Proxy first */
+    if ((value = proxy_timestamp (get->path)) == 0)
+    {
+        /* Lookup value */
+        value = db_timestamp (get->path);
+    }
 
     /* Send result */
     DEBUG ("     = %"PRIu64"\n", value);

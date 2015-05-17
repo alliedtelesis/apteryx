@@ -255,7 +255,7 @@ main (int argc, char **argv)
             return 0;
         }
         apteryx_init (debug);
-        value = apteryx_get_timestamp (path);
+        value = apteryx_timestamp (path);
         printf ("%"PRIu64"\n", value);
         apteryx_shutdown ();
         break;

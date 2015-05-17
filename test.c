@@ -1696,6 +1696,45 @@ test_proxy_set_validated ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_proxy_search ()
+{
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_set ("/test/local/cat", "felix"));
+    CU_ASSERT (apteryx_set ("/test/local/dog", "fido"));
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT ((paths = apteryx_search ("/test/remote/test/local/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, "/test/local/cat",
+            (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, "/test/local/dog",
+            (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/local/cat", NULL));
+    CU_ASSERT (apteryx_set ("/test/local/dog", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_timestamp ()
+{
+    uint64_t ts = 0;
+
+    CU_ASSERT (apteryx_set ("/test/local", "test"));
+    CU_ASSERT ((ts = apteryx_timestamp ("/test/local")) != 0);
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_timestamp ("/test/remote/test/local") == ts);
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
@@ -1927,6 +1966,8 @@ static CU_TestInfo tests_api_proxy[] = {
     { "proxy before db get", test_proxy_before_db_get },
     { "proxy before db set", test_proxy_before_db_set },
     { "proxy set validated", test_proxy_set_validated },
+    { "proxy search", test_proxy_search },
+    { "proxy timestamp", test_proxy_timestamp },
     CU_TEST_INFO_NULL,
 };
 
