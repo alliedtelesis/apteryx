@@ -262,6 +262,6 @@ bool apteryx_unproxy (const char *path, const char *url);
  * @param path path to get the timestamp for
  * @return 0 if the path doesn't exist, last change timestamp otherwise
  */
-uint64_t apteryx_get_timestamp (const char *path);
+uint64_t apteryx_timestamp (const char *path);
 
 #endif /* _APTERYX_H_ */

@@ -995,31 +995,31 @@ apteryx_unproxy (const char *path, const char *url)
 }
 
 static void
-handle_get_ts_response (const Apteryx__GetTimeStampResult *result, void *closure_data)
+handle_timestamp_response (const Apteryx__TimeStampResult *result, void *closure_data)
 {
     uint64_t *data = (uint64_t *)closure_data;
     if (result == NULL)
     {
-        ERROR ("GET: Error processing request.\n");
+        ERROR ("TIMESTAMP: Error processing request.\n");
     }
     *data = result->value;
 }
 
 uint64_t
-apteryx_get_timestamp (const char *path)
+apteryx_timestamp (const char *path)
 {
     const char *url = NULL;
     uint64_t value = 0;
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
 
-    DEBUG ("GET_TimeStamp: %s\n", path);
+    DEBUG ("TIMESTAMP: %s\n", path);
 
     /* Check path */
     path = validate_path (path, &url);
     if (!path || path[strlen(path)-1] == '/')
     {
-        ERROR ("GET_TimeStamp: invalid path (%s)!\n", path);
+        ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
         assert (!debug || path);
         return 0;
     }
@@ -1028,11 +1028,11 @@ apteryx_get_timestamp (const char *path)
     rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
     if (!rpc_client)
     {
-        ERROR ("GET: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("TIMESTAMP: Falied to connect to server: %s\n", strerror (errno));
         return 0;
     }
     get.path = (char *) path;
-    apteryx__server__get_timestamp (rpc_client, &get, handle_get_ts_response, &value);
+    apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
     protobuf_c_service_destroy (rpc_client);
 
     DEBUG ("    = %"PRIu64"\n", value);
