@@ -1720,6 +1720,33 @@ test_proxy_search ()
 }
 
 void
+test_proxy_prune ()
+{
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_set_string ("/interfaces", NULL, "-"));
+    CU_ASSERT (apteryx_set_string ("/interfaces/eth0", NULL, "-"));
+    CU_ASSERT (apteryx_set_string ("/interfaces/eth0/state", NULL, "up"));
+    CU_ASSERT (apteryx_set_string ("/entities", NULL, "-"));
+    CU_ASSERT (apteryx_set_string ("/entities/zones", NULL, "-"));
+    CU_ASSERT (apteryx_set_string ("/entities/zones/public", NULL, "-"));
+    CU_ASSERT (apteryx_set_string ("/entities/zones/private", NULL, "-"));
+
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_prune ("/test/remote/interfaces"));
+    CU_ASSERT ((paths = apteryx_search ("/interfaces/")) == NULL);
+    CU_ASSERT ((paths = apteryx_search ("/entities/zones/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+
+    CU_ASSERT (apteryx_prune ("/test/remote/entities"));
+    CU_ASSERT (assert_apteryx_empty ());
+    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+}
+
+void
 test_proxy_timestamp ()
 {
     uint64_t ts = 0;
@@ -1967,6 +1994,7 @@ static CU_TestInfo tests_api_proxy[] = {
     { "proxy before db set", test_proxy_before_db_set },
     { "proxy set validated", test_proxy_set_validated },
     { "proxy search", test_proxy_search },
+    { "proxy prune", test_proxy_prune },
     { "proxy timestamp", test_proxy_timestamp },
     CU_TEST_INFO_NULL,
 };
