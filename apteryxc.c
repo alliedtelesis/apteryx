@@ -99,7 +99,7 @@ main (int argc, char **argv)
     signal (SIGINT, (__sighandler_t) termination_handler);
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftwpx")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftwpxl")) != -1)
     {
         switch (c)
         {
@@ -249,10 +249,14 @@ main (int argc, char **argv)
         apteryx_shutdown ();
         break;
     case MODE_TIMESTAMP:
-        if (!path || param)
+        if (param)
         {
             usage ();
             return 0;
+        }
+        if (!path)
+        {
+            path = "";
         }
         apteryx_init (debug);
         value = apteryx_timestamp (path);

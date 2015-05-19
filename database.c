@@ -52,7 +52,7 @@ db_calculate_timestamp (void)
         return 0;
     }
 
-    micros = tms.tv_sec * 1000000;
+    micros = ((uint64_t)tms.tv_sec) * 1000000;
     micros += tms.tv_nsec/1000;
     return micros;
 }
