@@ -5,7 +5,7 @@
 	<xs:element name="VALUE">
 		<xs:complexType>
 			<xs:attribute name="name" type="xs:string" use="required" />
-			<xs:attribute name="value" type="xs:string" use="optional" />
+			<xs:attribute name="value" type="xs:string" use="required" />
 			<xs:attribute name="help" type="xs:string" use="optional" />
 		</xs:complexType>
 	</xs:element>
@@ -17,10 +17,15 @@
 			</xs:sequence>
 			<xs:attribute name="name" type="xs:string" use="required" />
 			<xs:attribute name="default" type="xs:string" use="optional" />
-			<xs:attribute name="value" type="xs:string" use="optional" />
+			<xs:attribute name="pattern" type="xs:string" use="optional" />
 			<xs:attribute name="help" type="xs:string" use="optional" />
-			<xs:attribute name="hidden" type="xs:boolean" use="optional" />
-			<xs:attribute name="ro" type="xs:boolean" use="optional" />
+			<xs:attribute name="mode" use="optional">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:pattern value="(h|x|r|w|rw)"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
 		</xs:complexType>
 	</xs:element>
 	<xs:element name="MODULE">
