@@ -2,34 +2,36 @@
 <MODULE xmlns="https://github.com/ATL-NZ/apteryx"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="https://github.com/ATL-NZ/apteryx
-	https://github.com/ATL-NZ/apteryx/releases/download/v1.17/apteryx.xsd">
+	https://github.com/ATL-NZ/apteryx/releases/download/v2.04/apteryx.xsd">
 	<!--=======================================================-->
 	<NODE name="apteryx">
-		<NODE name="debug" default="0" help="Apteryx debug" value="^(0|1)$">
+		<NODE name="debug" mode="rw" default="0" help="Apteryx debug" pattern="^(0|1)$">
 			<VALUE name="disable" value="0" help="Debugging is disabled" />
 			<VALUE name="enable" value="1" help="Debugging is enabled" />
 		</NODE>
 		<NODE name="sockets" help="List of sockets (urls) that apteryxd will accept connections on.">
-			<NODE name="*" help="Unique identifier based on HASH(url). Value is the url to listen on." />
+			<NODE name="*" mode="rw" help="Unique identifier based on HASH(url). Value is the url to listen on."
+				pattern="^(unix:\/\/\/(.*)[^:]:|tcp:\/\/(.*)[^:]:\d+)\/([^\/\0]+(\/)?)+$" />
 		</NODE>
 		<NODE name="watchers" help="List of watched paths and registered callbacks for those watches.">
-			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
+			<NODE name="*" mode="rw" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." pattern="^\/([^\/\0]+(\/)?)+$" />
 		</NODE>
 		<NODE name="providers" help="List of provided paths and registered callbacks for providing gets to that path.">
-			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
+			<NODE name="*" mode="rw" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." pattern="^\/([^\/\0]+(\/)?)+$" />
 		</NODE>
 		<NODE name="validators" help="List of validated paths and registered callbacks for validating sets to that path.">
-			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
+			<NODE name="*" mode="rw" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." pattern="^\/([^\/\0]+(\/)?)+$" />
 		</NODE>
 		<NODE name="indexers" help="List of indexed paths and registered callbacks for providing search results for that path.">
-			<NODE name="*" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." value="^(/)?([^/\0]+(/)?)+$" />
+			<NODE name="*" mode="rw" help="Unique identifier based on PID-CALLBACK-HASH(path). Value is the path." pattern="^\/([^\/\0]+(\/)?)+$" />
 		</NODE>
 		<NODE name="proxies" help="List of proxied paths and remote url to proxy gets and sets to.">
-			<NODE name="*" help="Unique identifier based on PID-HASH(path)-HASH(url). Value is the full url for the path." value="^(/)?([^/\0]+(/)?)+$" />
+			<NODE name="*" mode="rw" help="Unique identifier based on PID-HASH(path)-HASH(url). Value is the full url for the path."
+				pattern="^(unix:\/\/\/(.*)[^:]:|tcp:\/\/(.*)[^:]:\d+)\/([^\/\0]+(\/)?)+$" />
 		</NODE>
-		<NODE name="cache" help="Formatted dump of the Apteryx cache"/>
+		<NODE name="cache" mode="r" help="Formatted dump of the Apteryx cache"/>
 		<NODE name="counters" help="List of counters and values for Apteryx usage">
-			<NODE name="*" help="Counter and value" value="^\d+$" />
+			<NODE name="*" mode="r" help="Counter and value" pattern="^\d+$" />
 		</NODE>
 	</NODE>
 </MODULE>
