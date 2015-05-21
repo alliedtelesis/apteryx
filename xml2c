@@ -64,7 +64,8 @@ function generate_help(tbl, path, depth)
         depth = 0
     end
     if not path then path = "" end
-    if tbl["Name"] ~= "MODULE" and tbl["Attributes"] and tbl["Attributes"]["name"] then
+    if tbl["Name"] == "NODE" and
+       tbl["Attributes"] and tbl["Attributes"]["name"] then
         name = tbl["Attributes"]["name"]
         path = path .. "/" .. name
         path = path:gsub("*", "-")
@@ -73,6 +74,13 @@ function generate_help(tbl, path, depth)
             print(string.format("  %-40s %s", path, help))
         else
             print(string.format("  %s", path))
+        end
+    end
+    if tbl["Name"] == "VALUE" and
+       tbl["Attributes"] and tbl["Attributes"]["name"] then
+        if tbl["Attributes"]["help"] and tbl["Attributes"]["value"] then
+            help = "- " .. tbl["Attributes"]["value"] .. " = " .. tbl["Attributes"]["help"]
+            print(string.format("  %-40s %s", " ", help))
         end
     end
     if tbl["ChildNodes"] ~= nil then
@@ -112,10 +120,14 @@ function generate_defines(tbl, path, depth)
             _,wildcards = string.gsub(path, "*", "*")
             if tbl["Name"] == "VALUE" then
                 start = def
-                finish = string.rep("    ",depth-1-wildcards)..tbl["Attributes"]["value"]
+                if tonumber(tbl["Attributes"]["value"]) ~= nil then
+                    finish = string.rep("    ",1+wildcards)..tbl["Attributes"]["value"]
+                else
+                    finish = string.rep("    ",1+wildcards).."\""..tbl["Attributes"]["value"].."\""
+                end
             elseif wildcards > 0 then
                 start = def
-                finish = string.rep("    ",depth-1-wildcards).."\""..path:match("/[^\\*]*$"):sub(2).."\""
+                finish = string.rep("    ",wildcards).."\""..path:match("/[^\\*]*$"):sub(2).."\""
             elseif tbl["ChildNodes"] ~= nil then
                 start = def .. "_PATH"
                 finish = "\"" .. path .. "\""
@@ -123,7 +135,7 @@ function generate_defines(tbl, path, depth)
                 start = def
                 finish = "\"" .. path .. "\""
             end
-            print(string.format("#define %-40s %s", start, finish))
+            print(string.format("#define %-50s %s", start, finish))
         end
         if tbl["Attributes"]["help"] then
             start = def .. "_HELP"
@@ -137,9 +149,9 @@ function generate_defines(tbl, path, depth)
                 finish = "\"" .. tbl["Attributes"]["default"] .. "\""
             end
             if string.find(path, "*") then
-                print(string.format("#define %-40s         %s", start, finish))
+                print(string.format("#define %-50s         %s", start, finish))
             else
-                print(string.format("#define %-40s     %s", start, finish))
+                print(string.format("#define %-50s     %s", start, finish))
             end
         end
     end
