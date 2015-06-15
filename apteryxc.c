@@ -47,7 +47,7 @@ usage ()
     printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]\n"
             "  -h   show this help\n"
             "  -d   debug\n"
-            "  -s   set <path>=<value>\n"
+            "  -s   set <path> to <value>\n"
             "  -g   get <path>\n"
             "  -f   find <path>\n"
             "  -t   traverse database from <path>\n"
