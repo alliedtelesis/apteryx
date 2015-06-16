@@ -143,7 +143,7 @@ int32_t apteryx_get_int (const char *path, const char *key);
     "/entity/zones/private/description" = "lan"
     "/entity/zones/private/networks/description" = "engineers"
     "/entity/zones/public/description" = "wan"
- *  apteryx_search ("/entity/zones") = {"/entity/zones/private", "/entity/zones/public"}
+ *  apteryx_search ("/entity/zones/") = {"/entity/zones/private", "/entity/zones/public"}
  * @param root root path to search on
  * @return GList of full paths
  */
@@ -164,7 +164,7 @@ typedef GList* (*apteryx_index_callback) (const char *path);
  * Whenever a search occurs for the indexed path, cb is called with requested path
  * example:
  * - apteryx_index ("/counters/", search_counters)
- * - apteryx_search ("/counters") = {"/counters/tx", "/counters/rx"}
+ * - apteryx_search ("/counters/") = {"/counters/tx", "/counters/rx"}
  * @param path path to the value to be indexed
  * @param cb function to call when the path is searched
  * @return true on successful registration
