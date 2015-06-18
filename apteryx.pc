@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib
+
+Name: apteryx
+Description: The Apteryx client library
+Version: 2.0.0
+Requires: glib-2.0
+Cflags: -I${includedir}
+Libs: -L${libdir} -lapteryx

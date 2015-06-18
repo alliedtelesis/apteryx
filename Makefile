@@ -78,6 +78,8 @@ install: all
 	@install -D apteryx $(DESTDIR)/$(PREFIX)/bin/
 	@install -d $(DESTDIR)/etc/apteryx/schema
 	@install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
+	@install -d $(DESTDIR)/$(PREFIX)/lib/pkgconfig
+	@install -D apteryx.pc $(DESTDIR)/$(PREFIX)/lib/pkgconfig/
 
 clean:
 	@echo "Cleaning..."
