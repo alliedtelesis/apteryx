@@ -784,31 +784,29 @@ apteryx__search (Apteryx__Server_Service *service,
     results = proxy_search (search->path);
     if (!results)
     {
-        /* Search database second */
-        results = db_search (search->path);
+        /* Indexers second */
+        results = index_get (search->path);
         if (!results)
         {
-            /* Then indexers */
-            results = index_get (search->path);
-            if (!results)
+            /* Search database next */
+            results = db_search (search->path);
+
+            /* Append any provided paths */
+            GList *providers = NULL;
+            providers = cb_match (&provide_list, search->path, CB_MATCH_PART);
+            for (iter = providers; iter; iter = g_list_next (iter))
             {
-                /* Then provided paths */
-                GList *providers = NULL;
-                providers = cb_match (&provide_list, search->path, CB_MATCH_PART);
-                for (iter = providers; iter; iter = g_list_next (iter))
-                {
-                    cb_info_t *provider = iter->data;
-                    int len = strlen (search->path);
-                    char *ptr, *path = strdup (provider->path);
-                    if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
-                        *ptr = '\0';
-                    if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
-                        results = g_list_append (results, path);
-                    else
-                        free (path);
-                }
-                g_list_free_full (providers, (GDestroyNotify) cb_release);
+                cb_info_t *provider = iter->data;
+                int len = strlen (search->path);
+                char *ptr, *path = strdup (provider->path);
+                if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
+                    *ptr = '\0';
+                if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
+                    results = g_list_append (results, path);
+                else
+                    free (path);
             }
+            g_list_free_full (providers, (GDestroyNotify) cb_release);
         }
     }
 

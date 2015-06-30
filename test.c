@@ -485,7 +485,6 @@ test_search_paths_root ()
     CU_ASSERT ((paths = apteryx_search ("")) == NULL);
     CU_ASSERT ((paths = apteryx_search ("*")) == NULL);
     CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
-    CU_ASSERT (g_list_length (paths) == 2);
     CU_ASSERT (g_list_find_custom (paths, "/interfaces", (GCompareFunc) strcmp) != NULL);
     CU_ASSERT (g_list_find_custom (paths, "/entities", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
@@ -619,7 +618,7 @@ test_index_wildcard ()
 }
 
 void
-test_index_after_db ()
+test_index_before_db ()
 {
     char *path = "/counters/";
     GList *paths = NULL;
@@ -629,8 +628,8 @@ test_index_after_db ()
     CU_ASSERT (apteryx_index (path, test_index_cb));
     CU_ASSERT ((paths = apteryx_search (path)) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/up", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/down", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/rx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, "/counters/tx", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_unindex (path, test_index_cb));
     CU_ASSERT (apteryx_set ("/counters/up", NULL));
@@ -1559,6 +1558,25 @@ test_provide_search ()
 }
 
 void
+test_provide_search_db ()
+{
+    const char *path1 = "/interfaces/eth0/state";
+    const char *path2 = "/interfaces/eth0/speed";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_provide (path1, test_provide_callback_up));
+    CU_ASSERT (apteryx_set (path2, "100"));
+    CU_ASSERT ((paths = apteryx_search ("/interfaces/eth0/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, path1, (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, path2, (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    apteryx_unprovide (path1, test_provide_callback_up);
+    CU_ASSERT (apteryx_set (path2, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_provide_after_db ()
 {
     const char *path = "/interfaces/eth0/state";
@@ -1933,7 +1951,7 @@ static CU_TestInfo tests_api[] = {
 static CU_TestInfo tests_api_index[] = {
     { "index", test_index },
     { "index wildcard", test_index_wildcard },
-    { "index after db", test_index_after_db },
+    { "index before db", test_index_before_db },
     { "index replace handler", test_index_replace_handler },
     { "index no handler", test_index_no_handler },
     { "index remove handler", test_index_remove_handler },
@@ -1982,6 +2000,7 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide callback get", test_provide_callback_get },
     { "provide callback get null", test_provide_callback_get_null },
     { "provide search", test_provide_search },
+    { "provide and db search", test_provide_search_db },
     { "provide after db", test_provide_after_db },
     CU_TEST_INFO_NULL,
 };
@@ -2035,19 +2054,27 @@ int
 main (int argc, char **argv)
 {
     int c;
+    const char *filter = NULL;
 
-    while ((c = getopt (argc, argv, "d")) != -1)
+    while ((c = getopt (argc, argv, "dt::")) != -1)
     {
         switch (c)
         {
         case 'd':
             debug = true;
             break;
+        case 't':
+            if (optarg && optarg[0] == '=')
+                memmove(optarg, optarg+1, strlen(optarg));
+            filter = optarg;
+            break;
         case '?':
         case 'h':
         default:
-            printf ("Usage: test_apteryx [-d]\n"
-                    "  -h   show this help\n" "  -d   debug\n");
+            printf ("Usage: test_apteryx [-h|-d|-t<filter>]\n"
+                    "  -h         show this help\n"
+                    "  -d         enable debug\n"
+                    "  -t<filter> match only tests with <filter>\n");
             return 0;
         }
     }
@@ -2058,14 +2085,39 @@ main (int argc, char **argv)
     /* Initialize the CUnit test registry */
     if (CUE_SUCCESS != CU_initialize_registry ())
         return CU_get_error ();
-
-    /* Add tests */
     assert (NULL != CU_get_registry ());
     assert (!CU_is_test_running ());
-    if (CU_register_suites (suites) != CUE_SUCCESS)
+
+    /* Add tests */
+    CU_SuiteInfo *suite = &suites[0];
+    while (suite && suite->pName)
     {
-        fprintf (stderr, "suite registration failed - %s\n", CU_get_error_msg ());
-        exit (EXIT_FAILURE);
+        /* Default to running all tests of a suite */
+        bool all = true;
+        if (filter && strstr (suite->pName, filter) != NULL)
+            all = true;
+        else if (filter)
+            all = false;
+        CU_pSuite pSuite = CU_add_suite(suite->pName, suite->pInitFunc, suite->pCleanupFunc);
+        if (pSuite == NULL)
+        {
+            fprintf (stderr, "suite registration failed - %s\n", CU_get_error_msg ());
+            exit (EXIT_FAILURE);
+        }
+        CU_TestInfo *test = &suite->pTests[0];
+        while (test && test->pName)
+        {
+            if (all || (filter && strstr (test->pName, filter) != NULL))
+            {
+                if (CU_add_test(pSuite, test->pName, test->pTestFunc) == NULL)
+                {
+                    fprintf (stderr, "test registration failed - %s\n", CU_get_error_msg ());
+                    exit (EXIT_FAILURE);
+                }
+            }
+            test++;
+        }
+        suite++;
     }
 
     /* Run all tests using the CUnit Basic interface */
