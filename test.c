@@ -675,6 +675,31 @@ test_index_remove_handler ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static char *
+_dummy_provide(const char *d)
+{
+    return NULL;
+}
+
+static GList *
+_null_index(const char *d)
+{
+    return NULL;
+}
+
+void
+test_index_and_provide ()
+{
+    char *path = "/counters/*";
+
+    CU_ASSERT (apteryx_provide (path, _dummy_provide));
+    CU_ASSERT (apteryx_index (path, _null_index));
+    CU_ASSERT (apteryx_search ("/counters/") == NULL);
+    CU_ASSERT (apteryx_unprovide (path, _dummy_provide));
+    CU_ASSERT (apteryx_unindex (path, _null_index));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_prune ()
 {
@@ -1955,6 +1980,7 @@ static CU_TestInfo tests_api_index[] = {
     { "index replace handler", test_index_replace_handler },
     { "index no handler", test_index_no_handler },
     { "index remove handler", test_index_remove_handler },
+    { "index x/* with provide x/*", test_index_and_provide },
     CU_TEST_INFO_NULL,
 };
 
