@@ -148,8 +148,9 @@ handle_watch_response (const Apteryx__OKResult *result, void *closure_data)
     *(protobuf_c_boolean *) closure_data = (result != NULL);
 }
 
-static GList *
-index_get (const char *path)
+/* This function returns true if indexers were called (list may still be NULL) */
+static bool
+index_get (const char *path, GList **result)
 {
     GList *indexers = NULL;
     GList *results = NULL;
@@ -159,7 +160,10 @@ index_get (const char *path)
     indexers = cb_match (&index_list, path,
             CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
     if (!indexers)
-        return NULL;
+    {
+        *result = NULL;
+        return false;
+    }
 
     /* Find the first good indexer */
     for (iter = indexers; iter; iter = g_list_next (iter))
@@ -221,7 +225,8 @@ index_get (const char *path)
     }
     g_list_free_full (indexers, (GDestroyNotify) cb_release);
 
-    return results;
+    *result = results;
+    return true;
 }
 
 static int
@@ -785,8 +790,11 @@ apteryx__search (Apteryx__Server_Service *service,
     if (!results)
     {
         /* Indexers second */
-        results = index_get (search->path);
-        if (!results)
+        if (index_get (search->path, &results) == true)
+        {
+            DEBUG (" (index result:)\n");
+        }
+        else
         {
             /* Search database next */
             results = db_search (search->path);
