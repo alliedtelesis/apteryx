@@ -44,7 +44,7 @@ termination_handler (void)
 void
 usage ()
 {
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-u<filter>] [<path>] [<value>]\n"
             "  -h   show this help\n"
             "  -d   debug\n"
             "  -s   set <path> to <value>\n"
@@ -54,7 +54,8 @@ usage ()
             "  -w   watch changes to the path <path>\n"
             "  -p   provide <value> for <path>\n"
             "  -x   proxy <path> via url <value>\n"
-            "  -l   last change <path>\n");
+            "  -l   last change <path>\n"
+            "  -u   run unit tests (optionally match only tests with <filter>)\n");
     printf ("\n");
     printf ("  Internal settings\n");
     printf ("    %s\n", APTERYX_DEBUG_PATH);
@@ -87,6 +88,7 @@ provide_callback (const char *path)
 int
 main (int argc, char **argv)
 {
+    const char *filter = NULL;
     APTERYX_MODE mode = -1;
     char *path = NULL;
     char *param = NULL;
@@ -94,12 +96,8 @@ main (int argc, char **argv)
     int c;
     uint64_t value;
 
-    /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
-    signal (SIGTERM, (__sighandler_t) termination_handler);
-    signal (SIGINT, (__sighandler_t) termination_handler);
-
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftwpxl")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftwpxlu::")) != -1)
     {
         switch (c)
         {
@@ -130,6 +128,12 @@ main (int argc, char **argv)
         case 'l':
             mode = MODE_TIMESTAMP;
             break;
+        case 'u':
+            mode = MODE_TEST;
+            if (optarg && optarg[0] == '=')
+                memmove(optarg, optarg+1, strlen(optarg));
+            filter = optarg;
+            break;
         case '?':
         case 'h':
         default:
@@ -149,6 +153,13 @@ main (int argc, char **argv)
             usage ();
             return 0;
         }
+    }
+
+    /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
+    if (mode != MODE_TEST)
+    {
+        signal (SIGTERM, (__sighandler_t) termination_handler);
+        signal (SIGINT, (__sighandler_t) termination_handler);
     }
 
     switch (mode)
@@ -261,6 +272,17 @@ main (int argc, char **argv)
         apteryx_init (debug);
         value = apteryx_timestamp (path);
         printf ("%"PRIu64"\n", value);
+        apteryx_shutdown ();
+        break;
+    case MODE_TEST:
+        if (path || param)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (debug);
+        run_unit_tests (filter);
+        usleep (100000);
         apteryx_shutdown ();
         break;
     default:

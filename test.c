@@ -31,6 +31,7 @@
 #include "apteryx.h"
 #include "internal.h"
 
+#define TEST_PATH           "/test"
 #define TEST_SLEEP_TIMEOUT  100000
 #define TEST_TCP_URL        "tcp://127.0.0.1:9999"
 #define TEST_TCP6_URL       "tcp://[::1]:9999"
@@ -44,7 +45,7 @@ assert_apteryx_empty (void)
     for (iter = paths; iter; iter = g_list_next (iter))
     {
         char *path = (char *) (iter->data);
-        if (strncmp (APTERYX_PATH, path, strlen (path)) != 0)
+        if (strncmp (TEST_PATH, path, strlen (TEST_PATH)) == 0)
         {
             if (ret) fprintf (stderr, "\n");
             fprintf (stderr, "ERROR: Node still set: %s\n", path);
@@ -58,7 +59,7 @@ assert_apteryx_empty (void)
 void
 test_set_get ()
 {
-    const char *path = "/entity/zones/private/name";
+    const char *path = TEST_PATH"/entity/zones/private/name";
     char *value = NULL;
 
     CU_ASSERT (apteryx_set (path, "private"));
@@ -72,7 +73,7 @@ test_set_get ()
 void
 test_set_get_raw ()
 {
-    const char *path = "/entity/zones/private/raw";
+    const char *path = TEST_PATH"/entity/zones/private/raw";
     char bytes[] = { 0x1, 0x2, 0x3, 0x4, 0x0, 0x6, 0x7, 0x8 };
     char *value;
 
@@ -88,8 +89,8 @@ test_set_get_raw ()
 void
 test_multiple_leaves ()
 {
-    const char *path1 = "/entity/zones/private/name";
-    const char *path2 = "/entity/zones/private/active";
+    const char *path1 = TEST_PATH"/entity/zones/private/name";
+    const char *path2 = TEST_PATH"/entity/zones/private/active";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_set (path1, "private"));
@@ -113,7 +114,7 @@ test_multiple_leaves ()
 void
 test_overwrite ()
 {
-    const char *path = "/entity/zones/private/name";
+    const char *path = TEST_PATH"/entity/zones/private/name";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_set (path, "private"));
@@ -130,7 +131,7 @@ test_overwrite ()
 void
 test_delete ()
 {
-    const char *path = "/entity/zones/private/name";
+    const char *path = TEST_PATH"/entity/zones/private/name";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_set (path, "private"));
@@ -151,7 +152,7 @@ _multi_write_thread (void *data)
     int id = (long int) data;
     char *path = NULL;
 
-    if (asprintf (&path, "/counters/thread%d", id) < 0)
+    if (asprintf (&path, TEST_PATH"/counters/thread%d", id) < 0)
         return 0;
     _multi_write_thread_data[id] = 0;
     apteryx_set_int (path, NULL, _multi_write_thread_data[id]);
@@ -181,11 +182,11 @@ test_thread_multi_write ()
     {
         char *path = NULL;
         CU_ASSERT (_multi_write_thread_data[i] == thread_count - 1);
-        CU_ASSERT (asprintf (&path, "/counters/thread%ld", i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH"/counters/thread%ld", i) > 0);
         apteryx_set (path, NULL);
         free (path);
     }
-    apteryx_prune ("/counters");
+    apteryx_prune (TEST_PATH"/counters");
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -215,18 +216,18 @@ test_process_multi_write ()
     for (i = 0; i < thread_count; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf (&path, "/counters/thread%d", (int) i) > 0)
+        CU_ASSERT (asprintf (&path, TEST_PATH"/counters/thread%d", (int) i) > 0)
             CU_ASSERT (apteryx_get_int (path, NULL) == thread_count);
         free (path);
     }
-    apteryx_prune ("/counters");
+    apteryx_prune (TEST_PATH"/counters");
     CU_ASSERT (assert_apteryx_empty ());
 }
 
 void
 test_perf_set ()
 {
-    const char *path = "/entity/zones/private/name";
+    const char *path = TEST_PATH"/entity/zones/private/name";
     uint64_t start;
     int i;
     bool res;
@@ -247,7 +248,7 @@ test_perf_set ()
 void
 test_perf_tcp_set ()
 {
-    const char *path = TEST_TCP_URL":/entity/zones/private/name";
+    const char *path = TEST_TCP_URL":"TEST_PATH"/entity/zones/private/name";
     uint64_t start;
     int i;
     bool res;
@@ -271,7 +272,7 @@ exit:
 void
 test_perf_tcp6_set ()
 {
-    const char *path = TEST_TCP6_URL":/entity/zones/private/name";
+    const char *path = TEST_TCP6_URL":"TEST_PATH"/entity/zones/private/name";
     uint64_t start;
     int i;
     bool res;
@@ -295,7 +296,7 @@ exit:
 void
 test_get_no_value ()
 {
-    const char *path = "/entity/zones/private/name";
+    const char *path = TEST_PATH"/entity/zones/private/name";
     const char *value = NULL;
 
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
@@ -305,7 +306,7 @@ test_get_no_value ()
 void
 test_perf_get ()
 {
-    const char *path = "/entity/zones/private/name";
+    const char *path = TEST_PATH"/entity/zones/private/name";
     const char *value = NULL;
     uint64_t start;
     int i;
@@ -328,7 +329,7 @@ test_perf_get ()
 void
 test_perf_tcp_get ()
 {
-    const char *path = TEST_TCP_URL":/entity/zones/private/name";
+    const char *path = TEST_TCP_URL":"TEST_PATH"/entity/zones/private/name";
     const char *value = NULL;
     uint64_t start;
     int i;
@@ -354,7 +355,7 @@ exit:
 void
 test_perf_tcp6_get ()
 {
-    const char *path = TEST_TCP6_URL":/entity/zones/private/name";
+    const char *path = TEST_TCP6_URL":"TEST_PATH"/entity/zones/private/name";
     const char *value = NULL;
     uint64_t start;
     int i;
@@ -380,7 +381,7 @@ exit:
 void
 test_perf_get_null ()
 {
-    const char *path = "/entity/zones/private/name";
+    const char *path = TEST_PATH"/entity/zones/private/name";
     const char *value = NULL;
     uint64_t start;
     int i;
@@ -400,7 +401,7 @@ test_perf_get_null ()
 void
 test_set_get_int ()
 {
-    const char *path = "/entity/zones";
+    const char *path = TEST_PATH"/entity/zones";
     int value = 123456;
 
     CU_ASSERT (apteryx_set_int (path, "count", value));
@@ -416,7 +417,7 @@ test_set_get_int ()
 void
 test_set_get_string ()
 {
-    const char *path = "/entity/zones";
+    const char *path = TEST_PATH"/entity/zones";
     const char *value = "123456";
 
     CU_ASSERT (apteryx_set_string (path, "count", value));
@@ -436,35 +437,35 @@ test_search_paths ()
 {
     GList *paths = NULL;
 
-    CU_ASSERT (apteryx_set_string ("/entity/zones", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/private", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/private/description", NULL, "lan"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private/description", NULL, "lan"));
     CU_ASSERT (apteryx_set_string
-               ("/entity/zones/private/networks/description", NULL, "engineers"));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/public", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/public/description", NULL, "wan"));
+               (TEST_PATH"/entity/zones/private/networks/description", NULL, "engineers"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public/description", NULL, "wan"));
 
-    CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/")) != NULL);
     g_list_free_full (paths, free);
-    CU_ASSERT ((paths = apteryx_search ("/entity/")) != NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entity/")) != NULL);
     g_list_free_full (paths, free);
-    CU_ASSERT (apteryx_search ("/nothere/") == NULL);
+    CU_ASSERT (apteryx_search (TEST_PATH"/nothere/") == NULL);
 
-    CU_ASSERT ((paths = apteryx_search ("/entity/zones/")) != NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entity/zones/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/entity/zones/private", (GCompareFunc) strcmp) !=
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/entity/zones/private", (GCompareFunc) strcmp) !=
                NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/entity/zones/public", (GCompareFunc) strcmp) !=
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/entity/zones/public", (GCompareFunc) strcmp) !=
                NULL);
     g_list_free_full (paths, free);
 
-    CU_ASSERT (apteryx_set_string ("/entity/zones", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/private", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/private/description", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private/description", NULL, NULL));
     CU_ASSERT (apteryx_set_string
-               ("/entity/zones/private/networks/description", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/public", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/public/description", NULL, NULL));
+               (TEST_PATH"/entity/zones/private/networks/description", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public/description", NULL, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -473,30 +474,16 @@ test_search_paths_root ()
 {
     GList *paths = NULL;
 
-    CU_ASSERT (apteryx_set_string ("/interfaces", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0/state", NULL, "up"));
-    CU_ASSERT (apteryx_set_string ("/entities", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/public", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/public/active", NULL, "true"));
-
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
     CU_ASSERT ((paths = apteryx_search (NULL)) == NULL);
     CU_ASSERT ((paths = apteryx_search ("")) == NULL);
     CU_ASSERT ((paths = apteryx_search ("*")) == NULL);
     CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/interfaces", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/entities", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH, (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
     paths = NULL;
 
-    CU_ASSERT (apteryx_set_string ("/interfaces", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0/state", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entities", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entities/zones", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/public", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/public/active", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -507,8 +494,8 @@ test_perf_search ()
     uint64_t start;
     int i;
 
-    CU_ASSERT (apteryx_set_string ("/interfaces", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
     start = get_time_us ();
     for (i = 0; i < 1000; i++)
     {
@@ -519,8 +506,8 @@ test_perf_search ()
     }
     printf ("%ldus ... ", (get_time_us () - start) / 1000);
   exit:
-    CU_ASSERT (apteryx_set_string ("/interfaces", NULL, NULL));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, NULL));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -528,8 +515,8 @@ static GList*
 test_index_cb (const char *path)
 {
     GList *paths = NULL;
-    paths = g_list_append (paths, strdup ("/counters/rx"));
-    paths = g_list_append (paths, strdup ("/counters/tx"));
+    paths = g_list_append (paths, strdup (TEST_PATH"/counters/rx"));
+    paths = g_list_append (paths, strdup (TEST_PATH"/counters/tx"));
     return paths;
 }
 
@@ -537,8 +524,8 @@ static GList*
 test_index_cb2 (const char *path)
 {
     GList *paths = NULL;
-    paths = g_list_append (paths, strdup ("/counters/up"));
-    paths = g_list_append (paths, strdup ("/counters/down"));
+    paths = g_list_append (paths, strdup (TEST_PATH"/counters/up"));
+    paths = g_list_append (paths, strdup (TEST_PATH"/counters/down"));
     return paths;
 }
 
@@ -546,20 +533,20 @@ static GList*
 test_index_cb_wild (const char *path)
 {
     GList *paths = NULL;
-    if (strcmp (path, "/counters/") == 0)
+    if (strcmp (path, TEST_PATH"/counters/") == 0)
     {
-        paths = g_list_append (paths, strdup ("/counters/rx"));
-        paths = g_list_append (paths, strdup ("/counters/tx"));
+        paths = g_list_append (paths, strdup (TEST_PATH"/counters/rx"));
+        paths = g_list_append (paths, strdup (TEST_PATH"/counters/tx"));
     }
-    else if (strcmp (path, "/counters/rx/") == 0)
+    else if (strcmp (path, TEST_PATH"/counters/rx/") == 0)
     {
-        paths = g_list_append (paths, strdup ("/counters/rx/pkts"));
-        paths = g_list_append (paths, strdup ("/counters/rx/bytes"));
+        paths = g_list_append (paths, strdup (TEST_PATH"/counters/rx/pkts"));
+        paths = g_list_append (paths, strdup (TEST_PATH"/counters/rx/bytes"));
     }
     else
     {
-        paths = g_list_append (paths, strdup ("/counters/tx/pkts"));
-        paths = g_list_append (paths, strdup ("/counters/tx/bytes"));
+        paths = g_list_append (paths, strdup (TEST_PATH"/counters/tx/pkts"));
+        paths = g_list_append (paths, strdup (TEST_PATH"/counters/tx/bytes"));
     }
     return paths;
 }
@@ -567,14 +554,14 @@ test_index_cb_wild (const char *path)
 void
 test_index ()
 {
-    char *path = "/counters/";
+    char *path = TEST_PATH"/counters/";
     GList *paths = NULL;
 
     CU_ASSERT (apteryx_index (path, test_index_cb));
     CU_ASSERT ((paths = apteryx_search (path)) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/rx", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/tx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/rx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/tx", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_unindex (path, test_index_cb));
     CU_ASSERT (assert_apteryx_empty ());
@@ -583,14 +570,14 @@ test_index ()
 void
 test_index_wildcard ()
 {
-    char *path = "/counters/*";
+    char *path = TEST_PATH"/counters/*";
     GList *paths = NULL;
 
     CU_ASSERT (apteryx_index (path, test_index_cb_wild));
-    CU_ASSERT ((paths = apteryx_search ("/counters/")) != NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/counters/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/rx", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/tx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/rx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/tx", (GCompareFunc) strcmp) != NULL);
     for (GList * _iter = paths; _iter; _iter = _iter->next)
     {
         char *_path = NULL;
@@ -599,15 +586,15 @@ test_index_wildcard ()
         CU_ASSERT (asprintf (&_path, "%s/", (char *) _iter->data) > 0);
         CU_ASSERT ((subpaths = apteryx_search (_path)) != NULL);
         CU_ASSERT (g_list_length (paths) == 2);
-        if (strcmp (_path, "/counters/rx/") == 0)
+        if (strcmp (_path, TEST_PATH"/counters/rx/") == 0)
         {
-            CU_ASSERT (g_list_find_custom (subpaths, "/counters/rx/pkts", (GCompareFunc) strcmp) != NULL);
-            CU_ASSERT (g_list_find_custom (subpaths, "/counters/rx/bytes", (GCompareFunc) strcmp) != NULL);
+            CU_ASSERT (g_list_find_custom (subpaths, TEST_PATH"/counters/rx/pkts", (GCompareFunc) strcmp) != NULL);
+            CU_ASSERT (g_list_find_custom (subpaths, TEST_PATH"/counters/rx/bytes", (GCompareFunc) strcmp) != NULL);
         }
         else
         {
-            CU_ASSERT (g_list_find_custom (subpaths, "/counters/tx/pkts", (GCompareFunc) strcmp) != NULL);
-            CU_ASSERT (g_list_find_custom (subpaths, "/counters/tx/bytes", (GCompareFunc) strcmp) != NULL);
+            CU_ASSERT (g_list_find_custom (subpaths, TEST_PATH"/counters/tx/pkts", (GCompareFunc) strcmp) != NULL);
+            CU_ASSERT (g_list_find_custom (subpaths, TEST_PATH"/counters/tx/bytes", (GCompareFunc) strcmp) != NULL);
         }
         g_list_free_full (subpaths, free);
         free (_path);
@@ -620,35 +607,35 @@ test_index_wildcard ()
 void
 test_index_before_db ()
 {
-    char *path = "/counters/";
+    char *path = TEST_PATH"/counters/";
     GList *paths = NULL;
 
-    CU_ASSERT (apteryx_set ("/counters/up", "1"));
-    CU_ASSERT (apteryx_set ("/counters/down", "2"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/counters/up", "1"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/counters/down", "2"));
     CU_ASSERT (apteryx_index (path, test_index_cb));
     CU_ASSERT ((paths = apteryx_search (path)) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/rx", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/tx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/rx", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/tx", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_unindex (path, test_index_cb));
-    CU_ASSERT (apteryx_set ("/counters/up", NULL));
-    CU_ASSERT (apteryx_set ("/counters/down", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/counters/up", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/counters/down", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
 void
 test_index_replace_handler ()
 {
-    char *path = "/counters/";
+    char *path = TEST_PATH"/counters/";
     GList *paths = NULL;
 
     CU_ASSERT (apteryx_index (path, test_index_cb));
     CU_ASSERT (apteryx_index (path, test_index_cb2));
     CU_ASSERT ((paths = apteryx_search (path)) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/up", (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/counters/down", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/up", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/counters/down", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_unindex (path, test_index_cb2));
     CU_ASSERT (apteryx_unindex (path, test_index_cb));
@@ -658,7 +645,7 @@ test_index_replace_handler ()
 void
 test_index_no_handler ()
 {
-    char *path = "/counters/";
+    char *path = TEST_PATH"/counters/";
 
     CU_ASSERT (apteryx_search (path) == NULL);
     CU_ASSERT (assert_apteryx_empty ());
@@ -667,7 +654,7 @@ test_index_no_handler ()
 void
 test_index_remove_handler ()
 {
-    char *path = "/counters/";
+    char *path = TEST_PATH"/counters/";
 
     CU_ASSERT (apteryx_index (path, test_index_cb));
     CU_ASSERT (apteryx_unindex (path, test_index_cb));
@@ -690,11 +677,11 @@ _null_index(const char *d)
 void
 test_index_and_provide ()
 {
-    char *path = "/counters/*";
+    char *path = TEST_PATH"/counters/*";
 
     CU_ASSERT (apteryx_provide (path, _dummy_provide));
     CU_ASSERT (apteryx_index (path, _null_index));
-    CU_ASSERT (apteryx_search ("/counters/") == NULL);
+    CU_ASSERT (apteryx_search (TEST_PATH"/counters/") == NULL);
     CU_ASSERT (apteryx_unprovide (path, _dummy_provide));
     CU_ASSERT (apteryx_unindex (path, _null_index));
     CU_ASSERT (assert_apteryx_empty ());
@@ -705,20 +692,20 @@ test_prune ()
 {
     GList *paths = NULL;
 
-    CU_ASSERT (apteryx_set_string ("/interfaces", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0/state", NULL, "up"));
-    CU_ASSERT (apteryx_set_string ("/entities", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/public", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/private", NULL, "-"));
-    CU_ASSERT (apteryx_prune ("/interfaces"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0/state", NULL, "up"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/public", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/private", NULL, "-"));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
 
-    CU_ASSERT ((paths = apteryx_search ("/interfaces/")) == NULL);
-    CU_ASSERT ((paths = apteryx_search ("/entities/zones/")) != NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) == NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entities/zones/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
     g_list_free_full (paths, free);
-    CU_ASSERT (apteryx_prune ("/entities"));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entities"));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -755,7 +742,7 @@ void
 test_watch ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     CU_ASSERT (apteryx_watch (path, test_watch_callback));
@@ -771,7 +758,7 @@ test_watch ()
 static int
 test_watch_thread_client (void *data)
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     apteryx_set_string (path, NULL, "down");
 
@@ -782,7 +769,7 @@ void
 test_watch_thread ()
 {
     pthread_t client;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     _path = _value = NULL;
 
@@ -803,7 +790,7 @@ test_watch_thread ()
 void
 test_watch_fork ()
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     int pid;
     int status;
 
@@ -843,8 +830,8 @@ void
 test_watch_no_match ()
 {
     _path = _value = NULL;
-    const char *path1 = "/entity/zones/private/state";
-    const char *path2 = "/entity/zones/private/active";
+    const char *path1 = TEST_PATH"/entity/zones/private/state";
+    const char *path2 = TEST_PATH"/entity/zones/private/active";
 
     CU_ASSERT (apteryx_set_string (path1, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
@@ -862,7 +849,7 @@ void
 test_watch_remove ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
@@ -881,18 +868,18 @@ void
 test_watch_unset_wildcard_path ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (apteryx_watch ("/entity/zones/private/*", test_watch_callback));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_watch_callback));
     CU_ASSERT (apteryx_set (path, NULL));
     usleep (TEST_SLEEP_TIMEOUT);
 
     CU_ASSERT (_path && strcmp (path, _path) == 0);
     CU_ASSERT (_value == NULL);
 
-    CU_ASSERT (apteryx_unwatch ("/entity/zones/private/*", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_watch_callback));
     _watch_cleanup ();
 }
 
@@ -900,17 +887,17 @@ void
 test_watch_one_level_path ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     CU_ASSERT (apteryx_watch
-               ("/entity/zones/private/", test_watch_callback));
+               (TEST_PATH"/entity/zones/private/", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, "down"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_path && strcmp (_path, path) == 0);
     CU_ASSERT (_value && strcmp (_value, "down") == 0);
 
-    CU_ASSERT (apteryx_unwatch ("/entity/zones/private/", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     _watch_cleanup ();
 }
@@ -920,16 +907,16 @@ void
 test_watch_one_level_path_prune ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private";
+    const char *path = TEST_PATH"/entity/zones/private";
 
     CU_ASSERT (apteryx_set_string (path, "state", "up"));
     CU_ASSERT (apteryx_watch
-               ("/entity/zones/private/", test_watch_callback));
-    CU_ASSERT (apteryx_prune ("/entity/zones/private/state"));
+               (TEST_PATH"/entity/zones/private/", test_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones/private/state"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_path && strstr (_path, path));
 
-    CU_ASSERT (apteryx_unwatch ("/entity/zones/private/", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, "state", NULL));
     _watch_cleanup ();
 }
@@ -938,16 +925,16 @@ void
 test_watch_wildcard ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
-    CU_ASSERT (apteryx_watch ("/entity/zones/*", test_watch_callback));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/*", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, "down"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_path && strcmp (_path, path) == 0);
     CU_ASSERT (_value && strcmp (_value, "down") == 0);
 
-    CU_ASSERT (apteryx_unwatch ("/entity/zones/*", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/*", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     _watch_cleanup ();
 }
@@ -958,15 +945,15 @@ void
 test_watch_wildcard_not_last ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/public/state";
+    const char *path = TEST_PATH"/entity/zones/public/state";
 
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_watch
-               ("/entity/zones/*/state", test_watch_callback));
+               (TEST_PATH"/entity/zones/*/state", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_path == NULL);
-    CU_ASSERT (apteryx_unwatch ("/entity/zones/*/state", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/*/state", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     _watch_cleanup ();
 }
@@ -977,21 +964,21 @@ test_watch_wildcard_miss ()
     _path = _value = NULL;
 
     CU_ASSERT (apteryx_watch
-               ("/entity/zones/private/*", test_watch_callback));
+               (TEST_PATH"/entity/zones/private/*", test_watch_callback));
     CU_ASSERT (apteryx_watch
-               ("/entity/zones/private/active", test_watch_callback));
-    CU_ASSERT (apteryx_watch ("/entity/other/*", test_watch_callback));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/public/state", NULL, "up"));
+               (TEST_PATH"/entity/zones/private/active", test_watch_callback));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/other/*", test_watch_callback));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
 
     CU_ASSERT (_path == NULL);
     CU_ASSERT (_value == NULL);
 
-    CU_ASSERT (apteryx_unwatch ("/entity/zones/private/*", test_watch_callback));
-    CU_ASSERT (apteryx_unwatch ("/entity/zones/private/active", test_watch_callback));
-    CU_ASSERT (apteryx_unwatch ("/entity/other/*", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/active", test_watch_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/other/*", test_watch_callback));
 
-    apteryx_set_string ("/entity/zones/public/state", NULL, NULL);
+    apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, NULL);
     _watch_cleanup ();
 }
 
@@ -1008,7 +995,7 @@ test_watch_set_callback_get_cb (const char *path, const char *value)
 void
 test_watch_set_callback_get ()
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     CU_ASSERT (apteryx_watch (path, test_watch_set_callback_get_cb));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
@@ -1028,7 +1015,7 @@ test_watch_set_callback_set_cb (const char *path, const char *value)
 void
 test_watch_set_callback_set ()
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     CU_ASSERT (apteryx_watch (path, test_watch_set_callback_set_cb));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
@@ -1049,7 +1036,7 @@ test_watch_set_callback_unwatch_cb (const char *path, const char *value)
 void
 test_watch_set_callback_unwatch ()
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     CU_ASSERT (apteryx_watch (path, test_watch_set_callback_unwatch_cb));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
@@ -1070,7 +1057,7 @@ test_watch_set_thread_cb (const char *path, const char *value)
 static int
 test_watch_set_thread_client (void *data)
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     apteryx_watch (path, test_watch_set_thread_cb);
     while (!test_watch_set_thread_done)
         usleep (10);
@@ -1081,7 +1068,7 @@ void
 test_watch_set_thread ()
 {
     pthread_t client;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     char *value;
 
     _path = _value = NULL;
@@ -1100,11 +1087,11 @@ static int _cb_count = 0;
 static bool
 test_watch_adds_watch_cb (const char *path, const char *value)
 {
-    if (strcmp (path, "/entity/zones/public/state") == 0)
+    if (strcmp (path, TEST_PATH"/entity/zones/public/state") == 0)
     {
         _cb_count++;
         apteryx_watch (path, test_watch_callback);
-        apteryx_unwatch ("/entity/zones/public/*", test_watch_adds_watch_cb);
+        apteryx_unwatch (TEST_PATH"/entity/zones/public/*", test_watch_adds_watch_cb);
     }
     return true;
 }
@@ -1114,30 +1101,30 @@ test_watch_adds_watch ()
 {
     _path = _value = NULL;
 
-    apteryx_watch ("/entity/zones/public/*", test_watch_adds_watch_cb);
-    apteryx_set_string ("/entity/zones/public/state", NULL, "new_cb");
+    apteryx_watch (TEST_PATH"/entity/zones/public/*", test_watch_adds_watch_cb);
+    apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, "new_cb");
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_cb_count == 1);
-    apteryx_set_string ("/entity/zones/public/state", NULL, "new_cb_two");
+    apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, "new_cb_two");
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_cb_count == 1);
-    CU_ASSERT (_path && strcmp ("/entity/zones/public/state", _path) == 0);
+    CU_ASSERT (_path && strcmp (TEST_PATH"/entity/zones/public/state", _path) == 0);
     CU_ASSERT (_value && strcmp ("new_cb_two", _value) == 0);
-    apteryx_unwatch ("/entity/zones/public/state", test_watch_callback);
-    apteryx_set_string ("/entity/zones/public/state", NULL, NULL);
+    apteryx_unwatch (TEST_PATH"/entity/zones/public/state", test_watch_callback);
+    apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, NULL);
     _watch_cleanup ();
 }
 
 static bool
 test_watch_removes_all_watchs_cb (const char *path, const char *value)
 {
-    if (path && strcmp (path, "/entity/zones/public/state") == 0)
+    if (path && strcmp (path, TEST_PATH"/entity/zones/public/state") == 0)
     {
         _cb_count++;
-        apteryx_unwatch ("/entity/zones/public/state",test_watch_removes_all_watchs_cb);
-        apteryx_unwatch ("/entity/zones/public/*", test_watch_removes_all_watchs_cb);
-        apteryx_unwatch ("/*", test_watch_removes_all_watchs_cb);
-        apteryx_unwatch ("/entity/zones/public/active", test_watch_removes_all_watchs_cb);
+        apteryx_unwatch (TEST_PATH"/entity/zones/public/state",test_watch_removes_all_watchs_cb);
+        apteryx_unwatch (TEST_PATH"/entity/zones/public/*", test_watch_removes_all_watchs_cb);
+        apteryx_unwatch (TEST_PATH"/*", test_watch_removes_all_watchs_cb);
+        apteryx_unwatch (TEST_PATH"/entity/zones/public/active", test_watch_removes_all_watchs_cb);
     }
     return true;
 }
@@ -1145,16 +1132,16 @@ test_watch_removes_all_watchs_cb (const char *path, const char *value)
 void
 test_watch_removes_all_watches ()
 {
-    const char *path = "/entity/zones/public/state";
+    const char *path = TEST_PATH"/entity/zones/public/state";
     _cb_count = 0;
     _path = _value = NULL;
 
     apteryx_set_string (path, NULL, "new_cb_two");
     usleep (TEST_SLEEP_TIMEOUT);
-    apteryx_watch ("/*", test_watch_removes_all_watchs_cb);
-    apteryx_watch ("/entity/zones/public/*", test_watch_removes_all_watchs_cb);
-    apteryx_watch ("/entity/zones/public/active", test_watch_removes_all_watchs_cb);
-    apteryx_watch ("/entity/zones/public/state", test_watch_removes_all_watchs_cb);
+    apteryx_watch (TEST_PATH"/*", test_watch_removes_all_watchs_cb);
+    apteryx_watch (TEST_PATH"/entity/zones/public/*", test_watch_removes_all_watchs_cb);
+    apteryx_watch (TEST_PATH"/entity/zones/public/active", test_watch_removes_all_watchs_cb);
+    apteryx_watch (TEST_PATH"/entity/zones/public/state", test_watch_removes_all_watchs_cb);
     apteryx_set (path, NULL);
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_cb_count == 3);
@@ -1182,7 +1169,7 @@ test_watch_busy_callback (const char *path, const char *value)
     int i;
     for (i=0;i<100;i++)
     {
-        CU_ASSERT (apteryx_set_int ("/interfaces/eth0/packets", NULL, i));
+        CU_ASSERT (apteryx_set_int (TEST_PATH"/interfaces/eth0/packets", NULL, i));
     }
     usleep (RPC_TIMEOUT_US);
     return true;
@@ -1192,17 +1179,17 @@ void
 test_watch_when_busy ()
 {
     _cb_count = 0;
-    CU_ASSERT (apteryx_set_int ("/interfaces/eth0/packets", NULL, 0));
-    CU_ASSERT (apteryx_watch ("/interfaces/eth0/packets", test_watch_count_callback));
-    CU_ASSERT (apteryx_watch ("/busy/watch", test_watch_busy_callback));
-    CU_ASSERT (apteryx_set_string ("/busy/watch", NULL, "go"));
+    CU_ASSERT (apteryx_set_int (TEST_PATH"/interfaces/eth0/packets", NULL, 0));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/interfaces/eth0/packets", test_watch_count_callback));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/busy/watch", test_watch_busy_callback));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/busy/watch", NULL, "go"));
     usleep (2*RPC_TIMEOUT_US);
     CU_ASSERT (_cb_count == 100);
-    CU_ASSERT (apteryx_get_int ("/interfaces/eth0/packets", NULL) == 99);
-    CU_ASSERT (apteryx_unwatch ("/interfaces/eth0/packets", test_watch_count_callback));
-    CU_ASSERT (apteryx_unwatch ("/busy/watch", test_watch_busy_callback));
-    apteryx_set ("/interfaces/eth0/packets", NULL);
-    apteryx_set ("/busy/watch", NULL);
+    CU_ASSERT (apteryx_get_int (TEST_PATH"/interfaces/eth0/packets", NULL) == 99);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/interfaces/eth0/packets", test_watch_count_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/busy/watch", test_watch_busy_callback));
+    apteryx_set (TEST_PATH"/interfaces/eth0/packets", NULL);
+    apteryx_set (TEST_PATH"/busy/watch", NULL);
     _watch_cleanup ();
 }
 
@@ -1218,7 +1205,7 @@ void
 test_perf_watch ()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     uint64_t start;
     int i;
 
@@ -1254,7 +1241,7 @@ void
 test_validate()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     CU_ASSERT (apteryx_validate (path, test_validate_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, "down"));
@@ -1271,11 +1258,11 @@ void
 test_validate_one_level()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/private/";
+    const char *path = TEST_PATH"/entity/zones/private/";
 
     CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (!apteryx_set_string ("/entity/zones/private", "state", "up"));
+    CU_ASSERT (!apteryx_set_string (TEST_PATH"/entity/zones/private", "state", "up"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
     apteryx_set_string (path, "state", NULL);
@@ -1285,11 +1272,11 @@ void
 test_validate_wildcard()
 {
     _path = _value = NULL;
-    const char *path = "/entity/zones/*";
+    const char *path = TEST_PATH"/entity/zones/*";
 
     CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (!apteryx_set_string ("/entity/zones/one/two", "state", "up"));
+    CU_ASSERT (!apteryx_set_string (TEST_PATH"/entity/zones/one/two", "state", "up"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
     apteryx_set_string (path, NULL, NULL);
@@ -1299,16 +1286,16 @@ void
 test_validate_wildcard_internal()
 {
     _path = _value = NULL;
-    const char *path = "/entity/*/private/state";
+    const char *path = TEST_PATH"/entity/*/private/state";
 
     CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (!apteryx_set_string ("/entity/zones/private", "state", "up"));
-    CU_ASSERT (apteryx_set_string ("/entity/zones/private", "link", "up"));
+    CU_ASSERT (!apteryx_set_string (TEST_PATH"/entity/zones/private", "state", "up"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", "link", "up"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
-    apteryx_set_string ("/entity/zones/private", "state", NULL);
-    apteryx_set_string ("/entity/zones/private", "link", NULL);
+    apteryx_set_string (TEST_PATH"/entity/zones/private", "state", NULL);
+    apteryx_set_string (TEST_PATH"/entity/zones/private", "link", NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1318,7 +1305,7 @@ static int failed = 0;
 static int
 test_validate_thread_client (void *data)
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     if(!apteryx_set_string (path, NULL, (char*)data))
         failed = errno;
@@ -1343,7 +1330,7 @@ void
 test_validate_conflicting ()
 {
     pthread_t client1, client2;
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
 
     failed = 0;
     already_set = 0;
@@ -1381,7 +1368,7 @@ test_provide_callback_down (const char *path)
 void
 test_provide ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
@@ -1396,7 +1383,7 @@ test_provide ()
 void
 test_provide_replace_handler ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
@@ -1413,7 +1400,7 @@ test_provide_replace_handler ()
 void
 test_provide_no_handler ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
 
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
@@ -1423,7 +1410,7 @@ test_provide_no_handler ()
 void
 test_provide_remove_handler ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
@@ -1442,7 +1429,7 @@ test_provide_timeout_cb (const char *path)
 void
 test_provide_timeout ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_timeout_cb));
@@ -1459,7 +1446,7 @@ bool test_provide_thread_running = false;
 static int
 test_provide_thread_client (void *data)
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
 
     apteryx_provide (path, test_provide_callback_up);
 
@@ -1474,7 +1461,7 @@ test_provide_thread_client (void *data)
 void
 test_provide_different_thread ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
     pthread_t client;
 
@@ -1497,7 +1484,7 @@ test_provide_different_thread ()
 void
 test_provide_different_process ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
     int pid;
     int status;
@@ -1532,14 +1519,14 @@ test_provide_different_process ()
 static char*
 test_provide_callback_get_cb (const char *path)
 {
-    return apteryx_get ("/interfaces/eth0/state");
+    return apteryx_get (TEST_PATH"/interfaces/eth0/state");
 }
 
 void
 test_provide_callback_get ()
 {
-    const char *path1 = "/interfaces/eth0/state";
-    const char *path2 = "/interfaces/eth0/status";
+    const char *path1 = TEST_PATH"/interfaces/eth0/state";
+    const char *path2 = TEST_PATH"/interfaces/eth0/status";
     const char *value = NULL;
 
     apteryx_set (path1, "up");
@@ -1556,7 +1543,7 @@ test_provide_callback_get ()
 void
 test_provide_callback_get_null ()
 {
-    const char *path = "/interfaces/eth0/status";
+    const char *path = TEST_PATH"/interfaces/eth0/status";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_get_cb));
@@ -1570,11 +1557,11 @@ test_provide_callback_get_null ()
 void
 test_provide_search ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     GList *paths = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
-    CU_ASSERT ((paths = apteryx_search ("/interfaces/eth0/")) != NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 1);
     CU_ASSERT (g_list_find_custom (paths, path, (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
@@ -1585,13 +1572,13 @@ test_provide_search ()
 void
 test_provide_search_db ()
 {
-    const char *path1 = "/interfaces/eth0/state";
-    const char *path2 = "/interfaces/eth0/speed";
+    const char *path1 = TEST_PATH"/interfaces/eth0/state";
+    const char *path2 = TEST_PATH"/interfaces/eth0/speed";
     GList *paths = NULL;
 
     CU_ASSERT (apteryx_provide (path1, test_provide_callback_up));
     CU_ASSERT (apteryx_set (path2, "100"));
-    CU_ASSERT ((paths = apteryx_search ("/interfaces/eth0/")) != NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
     CU_ASSERT (g_list_find_custom (paths, path1, (GCompareFunc) strcmp) != NULL);
     CU_ASSERT (g_list_find_custom (paths, path2, (GCompareFunc) strcmp) != NULL);
@@ -1604,7 +1591,7 @@ test_provide_search_db ()
 void
 test_provide_after_db ()
 {
-    const char *path = "/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_set (path, "down"));
@@ -1621,7 +1608,7 @@ test_provide_after_db ()
 void
 test_perf_provide ()
 {
-    const char *path = "/entity/zones/private/state";
+    const char *path = TEST_PATH"/entity/zones/private/state";
     const char *value = NULL;
     uint64_t start;
     int i;
@@ -1646,16 +1633,16 @@ test_proxy_get ()
 {
     const char *value = NULL;
 
-    CU_ASSERT (apteryx_set ("/test/local", "test"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", "test"));
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT ((value = apteryx_get ("/test/remote/test/local")) != NULL);
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote"TEST_PATH"/local")) != NULL);
     CU_ASSERT (value && strcmp (value, "test") == 0);
     if (value)
         free ((void *) value);
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1665,27 +1652,27 @@ test_proxy_set ()
     const char *value = NULL;
 
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/remote/test/local", "test"));
-    CU_ASSERT ((value = apteryx_get ("/test/local")) != NULL);
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "test"));
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/local")) != NULL);
     CU_ASSERT (value && strcmp (value, "test") == 0);
     if (value)
         free ((void *) value);
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/local", NULL));
-    CU_ASSERT (apteryx_set ("/test/remote/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
 void
 test_proxy_not_listening ()
 {
-    CU_ASSERT (apteryx_set ("/test/local", "test"));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_get ("/test/remote/test/local") == NULL);
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", "test"));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_get (TEST_PATH"/remote/test/local") == NULL);
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1694,19 +1681,19 @@ test_proxy_before_db_get ()
 {
     const char *value = NULL;
 
-    CU_ASSERT (apteryx_set ("/test/local", "dog"));
-    CU_ASSERT (apteryx_set ("/test/remote/test/local", "cat"));
-    cache_set ("/test/remote/test/local", NULL);
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", "dog"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "cat"));
+    cache_set (TEST_PATH"/remote/test/local", NULL);
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT ((value = apteryx_get ("/test/remote/test/local")) != NULL);
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote/test/local")) != NULL);
     CU_ASSERT (value && strcmp (value, "dog") == 0);
     if (value)
         free ((void *) value);
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/remote/test/local", NULL));
-    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1714,28 +1701,28 @@ void
 test_proxy_before_db_set ()
 {
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/remote/test/local", "test"));
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "test"));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_get ("/test/remote/test/local") == NULL);
-    CU_ASSERT (apteryx_set ("/test/remote/test/local", NULL));
-    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (apteryx_get (TEST_PATH"/remote/test/local") == NULL);
+    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
 void
 test_proxy_set_validated ()
 {
-    CU_ASSERT (apteryx_validate ("/test/local", test_validate_refuse_callback));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/local", test_validate_refuse_callback));
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT (!apteryx_set ("/test/remote/test/local", "test"));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (!apteryx_set (TEST_PATH"/remote/test/local", "test"));
     CU_ASSERT (errno == -EPERM);
-    CU_ASSERT (apteryx_unvalidate ("/test/local", test_validate_refuse_callback));
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/local", test_validate_refuse_callback));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1744,21 +1731,21 @@ test_proxy_search ()
 {
     GList *paths = NULL;
 
-    CU_ASSERT (apteryx_set ("/test/local/cat", "felix"));
-    CU_ASSERT (apteryx_set ("/test/local/dog", "fido"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/cat", "felix"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/dog", "fido"));
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT ((paths = apteryx_search ("/test/remote/test/local/")) != NULL);
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/remote/test/local/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, "/test/local/cat",
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/local/cat",
             (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, "/test/local/dog",
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/local/dog",
             (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/local/cat", NULL));
-    CU_ASSERT (apteryx_set ("/test/local/dog", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/cat", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/dog", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1767,25 +1754,25 @@ test_proxy_prune ()
 {
     GList *paths = NULL;
 
-    CU_ASSERT (apteryx_set_string ("/interfaces", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/interfaces/eth0/state", NULL, "up"));
-    CU_ASSERT (apteryx_set_string ("/entities", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/public", NULL, "-"));
-    CU_ASSERT (apteryx_set_string ("/entities/zones/private", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0/state", NULL, "up"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/public", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/private", NULL, "-"));
 
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_prune ("/test/remote/interfaces"));
-    CU_ASSERT ((paths = apteryx_search ("/interfaces/")) == NULL);
-    CU_ASSERT ((paths = apteryx_search ("/entities/zones/")) != NULL);
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/remote"TEST_PATH"/interfaces"));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) == NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entities/zones/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
     g_list_free_full (paths, free);
 
-    CU_ASSERT (apteryx_prune ("/test/remote/entities"));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entities"));
     CU_ASSERT (assert_apteryx_empty ());
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
 }
 
@@ -1794,21 +1781,21 @@ test_proxy_timestamp ()
 {
     uint64_t ts = 0;
 
-    CU_ASSERT (apteryx_set ("/test/local", "test"));
-    CU_ASSERT ((ts = apteryx_timestamp ("/test/local")) != 0);
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", "test"));
+    CU_ASSERT ((ts = apteryx_timestamp (TEST_PATH"/local")) != 0);
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy ("/test/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_timestamp ("/test/remote/test/local") == ts);
-    CU_ASSERT (apteryx_unproxy ("/test/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_timestamp (TEST_PATH"/remote/test/local") == ts);
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set ("/test/local", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
-    apteryx_set("/test/goes/here", "changed");
+    apteryx_set(TEST_PATH"/goes/here", "changed");
     return true;
 }
 
@@ -1820,12 +1807,12 @@ test_deadlock ()
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, "/test/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_set (path, "set"));
         CU_ASSERT (apteryx_watch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune("/test"));
+    CU_ASSERT (apteryx_prune(TEST_PATH));
     usleep(1000);
     apteryx_shutdown();
     apteryx_init(false);
@@ -1833,11 +1820,11 @@ test_deadlock ()
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, "/test/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune("/test"));
+    CU_ASSERT (apteryx_prune(TEST_PATH));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1857,12 +1844,12 @@ test_deadlock2 ()
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, "/test/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_set (path, "set"));
         CU_ASSERT (apteryx_watch (path, test_deadlock2_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune ("/test"));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     usleep (200);
     apteryx_shutdown ();
     apteryx_init (false);
@@ -1870,12 +1857,12 @@ test_deadlock2 ()
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf (&path, "/test/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH"/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_unwatch (path, test_deadlock2_callback));
         CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune ("/test"));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1909,15 +1896,15 @@ _dump_config (FILE *fd, char *root, int tab)
 void
 test_docs ()
 {
-    apteryx_set_string ("/interfaces/eth0", "description", "our lan");
-    apteryx_set_string ("/interfaces/eth0", "state", "up");
-    apteryx_set_int ("/interfaces/eth0/counters", "in_pkts", 10);
-    apteryx_set_int ("/interfaces/eth0/counters/out_pkts", NULL, 20);
-    apteryx_set_string ("/interfaces/eth1/description", NULL, "our wan");
-    apteryx_set_string ("/interfaces/eth1/state", NULL, "down");
+    apteryx_set_string (TEST_PATH"/interfaces/eth0", "description", "our lan");
+    apteryx_set_string (TEST_PATH"/interfaces/eth0", "state", "up");
+    apteryx_set_int (TEST_PATH"/interfaces/eth0/counters", "in_pkts", 10);
+    apteryx_set_int (TEST_PATH"/interfaces/eth0/counters/out_pkts", NULL, 20);
+    apteryx_set_string (TEST_PATH"/interfaces/eth1/description", NULL, "our wan");
+    apteryx_set_string (TEST_PATH"/interfaces/eth1/state", NULL, "down");
 
     printf ("\nInterfaces:\n");
-    GList *paths = apteryx_search ("/interfaces/");
+    GList *paths = apteryx_search (TEST_PATH"/interfaces/");
     for (GList * _iter = paths; _iter; _iter = _iter->next)
     {
         char *path, *value;
@@ -1932,12 +1919,12 @@ test_docs ()
     }
     g_list_free_full (paths, free);
 
-    apteryx_set_string ("/interfaces/eth0", "description", NULL);
-    apteryx_set_string ("/interfaces/eth0", "state", NULL);
-    apteryx_set_string ("/interfaces/eth0/counters", "in_pkts", NULL);
-    apteryx_set_string ("/interfaces/eth0/counters/out_pkts", NULL, NULL);
-    apteryx_set_string ("/interfaces/eth1/description", NULL, NULL);
-    apteryx_set_string ("/interfaces/eth1/state", NULL, NULL);
+    apteryx_set_string (TEST_PATH"/interfaces/eth0", "description", NULL);
+    apteryx_set_string (TEST_PATH"/interfaces/eth0", "state", NULL);
+    apteryx_set_string (TEST_PATH"/interfaces/eth0/counters", "in_pkts", NULL);
+    apteryx_set_string (TEST_PATH"/interfaces/eth0/counters/out_pkts", NULL, NULL);
+    apteryx_set_string (TEST_PATH"/interfaces/eth1/description", NULL, NULL);
+    apteryx_set_string (TEST_PATH"/interfaces/eth1/state", NULL, NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -2076,41 +2063,12 @@ static CU_SuiteInfo suites[] = {
     CU_SUITE_INFO_NULL,
 };
 
-int
-main (int argc, char **argv)
+void
+run_unit_tests (const char *filter)
 {
-    int c;
-    const char *filter = NULL;
-
-    while ((c = getopt (argc, argv, "dt::")) != -1)
-    {
-        switch (c)
-        {
-        case 'd':
-            debug = true;
-            break;
-        case 't':
-            if (optarg && optarg[0] == '=')
-                memmove(optarg, optarg+1, strlen(optarg));
-            filter = optarg;
-            break;
-        case '?':
-        case 'h':
-        default:
-            printf ("Usage: test_apteryx [-h|-d|-t<filter>]\n"
-                    "  -h         show this help\n"
-                    "  -d         enable debug\n"
-                    "  -t<filter> match only tests with <filter>\n");
-            return 0;
-        }
-    }
-
-    /* Initialise Apteryx */
-    apteryx_init (debug);
-
     /* Initialize the CUnit test registry */
     if (CUE_SUCCESS != CU_initialize_registry ())
-        return CU_get_error ();
+        return;
     assert (NULL != CU_get_registry ());
     assert (!CU_is_test_running ());
 
@@ -2151,8 +2109,5 @@ main (int argc, char **argv)
     CU_set_error_action (CUEA_IGNORE);
     CU_basic_run_tests ();
     CU_cleanup_registry ();
-
-    /* Shutdown Apteryx */
-    apteryx_shutdown ();
-    return CU_get_error ();
+    return;
 }

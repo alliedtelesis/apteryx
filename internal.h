@@ -51,6 +51,7 @@ typedef enum
     MODE_PROXY,
     MODE_PRUNE,
     MODE_TIMESTAMP,
+    MODE_TEST,
 } APTERYX_MODE;
 
 /* Debug */
@@ -199,5 +200,8 @@ void cache_shutdown (bool force);
 void cache_set (const char *path, const char *value);
 char* cache_get (const char *path);
 char* cache_dump_table (void);
+
+/* Tests */
+void run_unit_tests (const char *filter);
 
 #endif /* _INTERNAL_H_ */
