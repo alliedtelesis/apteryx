@@ -44,9 +44,9 @@ apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o config.o callbacks.
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
-apteryx: apteryxc.c libapteryx.so
+apteryx: apteryxc.c database.c callbacks.c test.c libapteryx.so
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
+	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
@@ -57,16 +57,9 @@ apteryxd = \
 	LD_LIBRARY_PATH=./ $(TEST_WRAPPER) ./$(1); \
 	kill -TERM `cat /tmp/apteryxd.pid`;
 
-test_apteryx: all test.c database.c callbacks.c
-	@echo "Building Unit tests"
-	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ test.c database.c callbacks.c -lcunit -L. -lapteryx $(EXTRA_LDFLAGS)
-
-test: test_apteryx
+test: apteryxd apteryx
 	@echo "Running unit test: $<"
-	@$(call apteryxd,$<)
-
-install-test: test_apteryx
-	@install -D $< $(DESTDIR)/$(PREFIX)/bin/$<
+	@$(call apteryxd,apteryx -u)
 
 install: all
 	@install -d $(DESTDIR)/$(PREFIX)/lib
@@ -83,6 +76,6 @@ install: all
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx.so apteryx apteryxd test_apteryx *.o *.pb-c.c *.pb-c.h
+	@rm -f libapteryx.so apteryx apteryxd *.o *.pb-c.c *.pb-c.h
 
 .PHONY: all clean
