@@ -175,6 +175,7 @@ server_connection_response_closure (const ProtobufCMessage *message,
         }
         DEBUG ("RPC[%d]: Wrote %d of %zd bytes\n", conn->fd, rv, buffer->len);
         buffer->len -= rv;
+        data += rv;
     }
     return;
 }
@@ -699,7 +700,8 @@ invoke_client_service (ProtobufCService *service,
     rpc_client_t *client = (rpc_client_t *)service;
     rpc_message_t msg = {};
     uint8_t buffer_slab[512];
-    ProtobufCBufferSimple buffer = PROTOBUF_C_BUFFER_SIMPLE_INIT (buffer_slab);
+    ProtobufCBufferSimple tx_buffer = PROTOBUF_C_BUFFER_SIMPLE_INIT (buffer_slab);
+    ProtobufCBufferSimple rx_buffer = PROTOBUF_C_BUFFER_SIMPLE_INIT (buffer_slab);
 
     /* One at a time please */
     pthread_mutex_lock (&client->lock);
@@ -709,13 +711,14 @@ invoke_client_service (ProtobufCService *service,
     msg.request_id = ++client->request_id;
     msg.message_length = protobuf_c_message_get_packed_size (input);
     pack_header (&msg, buffer_slab);
-    buffer.len = RPC_HEADER_LENGTH;
-    if (protobuf_c_message_pack_to_buffer (input, (ProtobufCBuffer *)&buffer)
+    tx_buffer.len = RPC_HEADER_LENGTH;
+    if (protobuf_c_message_pack_to_buffer (input, (ProtobufCBuffer *)&tx_buffer)
             != msg.message_length)
     {
         ERROR ("RPC[%d]: error serializing the response\n", client->fd);
         pthread_mutex_unlock (&client->lock);
         closure (NULL, closure_data);
+        PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&tx_buffer);
         return;
     }
 
@@ -723,15 +726,15 @@ invoke_client_service (ProtobufCService *service,
             msg.request_id, msg.method_index, msg.message_length);
 
     /* Send the message */
-    uint8_t *data = buffer.data;
-    while (buffer.len > 0)
+    uint8_t *data = tx_buffer.data;
+    while (tx_buffer.len > 0)
     {
-        //int rv = write (client->fd, data, buffer.len);
-        int rv = send (client->fd, data, buffer.len, MSG_NOSIGNAL);
+        int rv = send (client->fd, data, tx_buffer.len, MSG_NOSIGNAL);
         if (rv == 0)
         {
             DEBUG ("RPC[%d]: connection closed\n", client->fd);
             pthread_mutex_unlock (&client->lock);
+            PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&tx_buffer);
             return;
         }
         else if (rv < 0)
@@ -740,12 +743,14 @@ invoke_client_service (ProtobufCService *service,
                 continue;
             ERROR ("RPC[%d]: write() failed: %s\n", client->fd, strerror (errno));
             pthread_mutex_unlock (&client->lock);
+            PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&tx_buffer);
             return;
         }
         DEBUG ("RPC[%d]: Wrote %d of %zd bytes\n", client->fd, rv, buffer.len);
-        buffer.len -= rv;
+        tx_buffer.len -= rv;
+        data += rv;
     }
-    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
+    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&tx_buffer);
 
     /* Wait for response */
     DEBUG ("RPC[%d]: waiting for response\n", client->fd);
@@ -775,10 +780,10 @@ invoke_client_service (ProtobufCService *service,
 
         DEBUG ("RPC[%d]: read %d bytes (%zu total)\n", client->fd, rv, buffer.len + rv);
 
-        buffer.base.append ((ProtobufCBuffer*)&buffer, rv, buf);
-        unpack_header (&buffer.data[4], &msg);
-        if (buffer.len >= (RPC_HEADER_LENGTH +sizeof (uint32_t)) &&
-            buffer.len >= ((RPC_HEADER_LENGTH +sizeof (uint32_t)) + msg.message_length))
+        rx_buffer.base.append ((ProtobufCBuffer*)&rx_buffer, rv, buf);
+        unpack_header (&rx_buffer.data[4], &msg);
+        if (rx_buffer.len >= (RPC_HEADER_LENGTH +sizeof (uint32_t)) &&
+            rx_buffer.len >= ((RPC_HEADER_LENGTH +sizeof (uint32_t)) + msg.message_length))
         {
             break;
         }
@@ -792,7 +797,7 @@ invoke_client_service (ProtobufCService *service,
     {
         DEBUG ("RPC[%d]: unpacking response\n", client->fd);
         message = protobuf_c_message_unpack (desc, NULL,
-                msg.message_length, buffer.data+RPC_HEADER_LENGTH+sizeof (uint32_t));
+                msg.message_length, rx_buffer.data+RPC_HEADER_LENGTH+sizeof (uint32_t));
     }
     else
     {
@@ -805,12 +810,13 @@ invoke_client_service (ProtobufCService *service,
     closure (message, closure_data);
     if (message)
         protobuf_c_message_free_unpacked (message, NULL);
-    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
+    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&rx_buffer);
     return;
 
 error:
     pthread_mutex_unlock (&client->lock);
     closure (NULL, closure_data);
+    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&rx_buffer);
     return;
 }
 
