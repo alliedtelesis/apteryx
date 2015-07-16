@@ -638,6 +638,8 @@ apteryx__set (Apteryx__Server_Service *service,
               Apteryx__OKResult_Closure closure, void *closure_data)
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+    const char *path = NULL;
+    const char *value = NULL;
     result.result = 0;
     int validation_result = 0;
     int proxy_result = 0;
@@ -651,40 +653,44 @@ apteryx__set (Apteryx__Server_Service *service,
         INC_COUNTER (counters.set_invalid);
         return;
     }
+    path = set->path;
+    value = set->value;
+    if (value && value[0] == '\0')
+        value = NULL;
     INC_COUNTER (counters.set);
 
-    DEBUG ("SET: %s = %s\n", set->path, set->value);
+    DEBUG ("SET: %s = %s\n", path, value);
 
     /* Check proxy first */
-    proxy_result = proxy_set (set->path, set->value);
+    proxy_result = proxy_set (path, value);
     if (proxy_result <= 0)
     {
         DEBUG ("SET: %s = %s proxied (result=%d)\n",
-                set->path, set->value, proxy_result);
+                path, value, proxy_result);
         result.result = proxy_result;
         goto exit;
     }
 
     /* Validate new data */
-    validation_result = validate_set (set->path, set->value);
+    validation_result = validate_set (path, value);
     if (validation_result < 0)
     {
-        DEBUG ("SET: %s = %s refused by validate\n", set->path, set->value);
+        DEBUG ("SET: %s = %s refused by validate\n", path, value);
         result.result = validation_result;
         goto exit;
     }
 
     /* Add/Delete to/from database */
-    if (set->value && set->value[0] != '\0')
-        db_add (set->path, (unsigned char*)set->value, strlen (set->value) + 1);
+    if (value)
+        db_add (path, (unsigned char*)value, strlen (value) + 1);
     else
-        db_delete (set->path);
+        db_delete (path);
 
 #ifdef USE_SHM_CACHE
-    if (set->value && set->value[0] != '\0')
-        cache_set (set->path, set->value);
+    if (value)
+        cache_set (path, value);
     else
-        cache_set (set->path, NULL);
+        cache_set (path, NULL);
 #endif
 
     /* Set succeeded */
@@ -697,7 +703,7 @@ exit:
     if (validation_result >= 0)
     {
         /* Notify watchers */
-        notify_watchers (set->path);
+        notify_watchers (path);
     }
 
     /* Release validation lock - this is a sensitive value */

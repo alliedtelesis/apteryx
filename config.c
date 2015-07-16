@@ -228,32 +228,32 @@ config_init (void)
     cb_release (cb);
 
     /* Sockets */
-    cb = cb_create (&watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
+    cb = cb_create (&validation_list, "sockets", APTERYX_SOCKETS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
     cb_release (cb);
 
     /* Indexers */
-    cb = cb_create (&watch_list, "indexers", APTERYX_INDEXERS_PATH"/",
+    cb = cb_create (&validation_list, "indexers", APTERYX_INDEXERS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set);
     cb_release (cb);
 
     /* Watchers */
-    cb = cb_create (&watch_list, "watchers", APTERYX_WATCHERS_PATH"/",
+    cb = cb_create (&validation_list, "watchers", APTERYX_WATCHERS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set);
     cb_release (cb);
 
     /* Providers */
-    cb = cb_create (&watch_list, "providers", APTERYX_PROVIDERS_PATH"/",
+    cb = cb_create (&validation_list, "providers", APTERYX_PROVIDERS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_providers_set);
     cb_release (cb);
 
     /* Validators */
-    cb = cb_create (&watch_list, "validators", APTERYX_VALIDATORS_PATH"/",
+    cb = cb_create (&validation_list, "validators", APTERYX_VALIDATORS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set);
     cb_release (cb);
 
     /* Proxies */
-    cb = cb_create (&watch_list, "proxies", APTERYX_PROXIES_PATH"/",
+    cb = cb_create (&validation_list, "proxies", APTERYX_PROXIES_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set);
     cb_release (cb);
 
