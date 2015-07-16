@@ -706,6 +706,15 @@ apteryx_get (const char *path)
 
     DEBUG ("GET: %s\n", path);
 
+#ifdef USE_SHM_CACHE
+    /* Check cache first */
+    if (path && path[0] == '/' && (value = cache_get (path)))
+    {
+        DEBUG ("    = (c)%s\n", value);
+        return value;
+    }
+#endif
+
     /* Check path */
     path = validate_path (path, &url);
     if (!path || path[strlen(path)-1] == '/')
@@ -714,14 +723,6 @@ apteryx_get (const char *path)
         assert (!debug || path);
         return NULL;
     }
-
-#ifdef USE_SHM_CACHE
-    if ((value = cache_get (path)))
-    {
-        DEBUG ("    = (c)%s\n", value);
-        return value;
-    }
-#endif
 
     /* IPC */
     rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
