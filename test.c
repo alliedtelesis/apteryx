@@ -40,6 +40,7 @@ static bool
 assert_apteryx_empty (void)
 {
     GList *paths = apteryx_search ("/");
+    char *value = NULL;
     GList *iter;
     bool ret = true;
     for (iter = paths; iter; iter = g_list_next (iter))
@@ -53,6 +54,18 @@ assert_apteryx_empty (void)
         }
     }
     g_list_free_full (paths, free);
+#ifdef USE_SHM_CACHE
+    if ((value = apteryx_get (APTERYX_CACHE)) != NULL)
+    {
+        if (strstr (value, TEST_PATH) != NULL)
+        {
+            if (ret) fprintf (stderr, "\n");
+            fprintf (stderr, "ERROR: Node still set in cache: %s\n", value);
+            ret = false;
+        }
+        free (value);
+    }
+#endif
     return ret;
 }
 
@@ -1821,9 +1834,9 @@ test_proxy_prune ()
     g_list_free_full (paths, free);
 
     CU_ASSERT (apteryx_prune (TEST_PATH"/entities"));
-    CU_ASSERT (assert_apteryx_empty ());
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (assert_apteryx_empty ());
 }
 
 void
