@@ -23,7 +23,6 @@
 #include <netinet/in.h>
 #include <sys/stat.h>
 #include <sys/un.h>
-#include <semaphore.h>
 #include <pthread.h>
 #include <poll.h>
 #include "internal.h"
@@ -52,14 +51,10 @@ typedef struct rpc_server_t
     ProtobufCService *service;
     pthread_mutex_t lock;
     GList *pending;
-    GList *working;
     int wake_server[2];
-    sem_t wake_workers;
-    int num_workers;
-    pthread_t *workers;
     GList *sockets;
 } rpc_server_t;
-__thread rpc_server_t *tl_server = NULL;
+rpc_server_t *sys_server = NULL;
 
 typedef struct rpc_client_t
 {
@@ -301,73 +296,32 @@ static void
 wake_server (rpc_server_t *server)
 {
     uint8_t dummy = 0;
+    pthread_mutex_lock (&server->lock);
     if (write (server->wake_server[1], &dummy, 1) !=1)
         ERROR ("Failed to write to wake server\n");
+    pthread_mutex_unlock (&server->lock);
 }
 
 static int
 stop_callback (int fd, void *data)
 {
     rpc_server_t *server = (rpc_server_t *)data;
+    pthread_mutex_lock (&server->lock);
     server->running = false;
+    pthread_mutex_unlock (&server->lock);
     wake_server (server);
     return -1;
 }
 
-static int
-worker (void *data)
-{
-    rpc_server_t *server = (rpc_server_t *) data;
-    pthread_t self = pthread_self();
-    GList *event;
-    int ret;
-    int i;
-
-    DEBUG ("RPC: New Worker (%p:%lu)\n", server, (unsigned long)self);
-    tl_server = server;
-    while (server->running)
-    {
-        sem_wait (&server->wake_workers);
-        pthread_mutex_lock (&server->lock);
-        event = g_list_first (server->working);
-        server->working = g_list_remove_link (server->working, event);
-        pthread_mutex_unlock (&server->lock);
-        if (event)
-        {
-            callback_t *cb = (callback_t *)event->data;
-            DEBUG ("[%lu]RPC: Callback for fd %d\n", (unsigned long)self, cb->fd);
-            ret = cb->func (cb->fd, cb->data);
-            if (ret == 0)
-            {
-                pthread_mutex_lock (&server->lock);
-                server->pending = g_list_append (server->pending, cb);
-                pthread_mutex_unlock (&server->lock);
-                wake_server (server);
-            }
-            else
-            {
-                free (cb);
-            }
-            g_list_free (event);
-        }
-    }
-
-    for (i=0; i < server->num_workers; i++)
-        if (server->workers[i] == self)
-            server->workers[i] = -1;
-    DEBUG ("RPC: End Worker (%p:%lu)\n", server, (unsigned long)self);
-    return 0;
-}
-
 static rpc_socket_t *
-find_socket (const char *id, const char *url)
+find_socket (rpc_server_t *server, const char *id, const char *url)
 {
     rpc_socket_t *sock = NULL;
     GList *iter;
 
     /* Look through the list */
-    pthread_mutex_lock (&tl_server->lock);
-    for (iter = tl_server->sockets; iter; iter = iter->next)
+    pthread_mutex_lock (&server->lock);
+    for (iter = server->sockets; iter; iter = iter->next)
     {
         sock = (rpc_socket_t *)iter->data;
         if ((id && strcmp (id, sock->id) == 0) ||
@@ -377,7 +331,7 @@ find_socket (const char *id, const char *url)
         }
         sock = NULL;
     }
-    pthread_mutex_unlock (&tl_server->lock);
+    pthread_mutex_unlock (&server->lock);
     return sock;
 }
 
@@ -455,7 +409,7 @@ rpc_bind_url (const char *id, const char *url)
     int on = 1;
 
     /* Check the socket does not already exist */
-    sock = find_socket (id, url);
+    sock = find_socket (sys_server, id, url);
     if (sock)
     {
         ERROR ("RPC: Socket(%s:%s) already bound.\n", id, url);
@@ -499,10 +453,10 @@ rpc_bind_url (const char *id, const char *url)
     DEBUG ("RPC: New Socket (%d:%s:%s)\n", sock->fd, id, url);
     sock->id = strdup (id);
     sock->url = strdup (url);
-    pthread_mutex_lock (&tl_server->lock);
-    tl_server->sockets = g_list_append (tl_server->sockets, sock);
-    add_cb (&tl_server->pending, sock->fd, server_callback, (void*)tl_server);
-    pthread_mutex_unlock (&tl_server->lock);
+    pthread_mutex_lock (&sys_server->lock);
+    sys_server->sockets = g_list_append (sys_server->sockets, sock);
+    add_cb (&sys_server->pending, sock->fd, server_callback, (void*)sys_server);
+    pthread_mutex_unlock (&sys_server->lock);
 
     return true;
 }
@@ -513,7 +467,7 @@ rpc_unbind_url (const char *id, const char *url)
     rpc_socket_t *sock;
 
     /* Check the socket does not already exist */
-    sock = find_socket (id, url);
+    sock = find_socket (sys_server, id, url);
     if (!sock)
     {
         ERROR ("RPC: Socket(%s:%s) not bound.\n", id, url);
@@ -521,10 +475,10 @@ rpc_unbind_url (const char *id, const char *url)
     }
 
     /* Close and free */
-    pthread_mutex_lock (&tl_server->lock);
-    delete_cb (&tl_server->pending, sock->fd);
-    tl_server->sockets = g_list_remove (tl_server->sockets, sock);
-    pthread_mutex_unlock (&tl_server->lock);
+    pthread_mutex_lock (&sys_server->lock);
+    delete_cb (&sys_server->pending, sock->fd);
+    sys_server->sockets = g_list_remove (sys_server->sockets, sock);
+    pthread_mutex_unlock (&sys_server->lock);
     if (sock->fd >= 0)
         close (sock->fd);
     if (sock->family == PF_UNIX)
@@ -535,22 +489,48 @@ rpc_unbind_url (const char *id, const char *url)
     return false;
 }
 
+static void
+rpc_provide_thread (gpointer callback, gpointer data)
+{
+    rpc_server_t *server = (rpc_server_t *) data;
+    int ret;
+
+    if (callback)
+    {
+        callback_t *cb = (callback_t *)callback;
+        ret = cb->func (cb->fd, cb->data);
+        if (ret == 0)
+        {
+            pthread_mutex_lock (&server->lock);
+            server->pending = g_list_append (server->pending, cb);
+            pthread_mutex_unlock (&server->lock);
+            wake_server (server);
+        }
+        else
+        {
+            free (cb);
+        }
+    }
+}
+
 bool
 rpc_provide_service (const char *url, ProtobufCService *service, int num_threads, int stopfd)
 {
-    rpc_server_t server = {};
+    rpc_server_t *server = calloc (1, sizeof (rpc_server_t));
     struct pollfd *fds = NULL;
     GList *iter;
+    GThreadPool *pool = NULL;
     bool rc = true;
     int i;
 
     /* Setup the thread local server structure */
-    server.running = true;
-    server.service = service;
-    pthread_mutex_init (&server.lock, NULL);
-    tl_server = &server;
+    server->running = true;
+    server->service = service;
+    pthread_mutex_init (&server->lock, NULL);
+    assert (sys_server == NULL);
+    sys_server = server;
 
-    DEBUG ("RPC: New server (%p)\n", &server);
+    DEBUG ("RPC: New server (%p)\n", server);
 
     /* Bind the default listen socket */
     if (!rpc_bind_url ("default", url))
@@ -559,41 +539,40 @@ rpc_provide_service (const char *url, ProtobufCService *service, int num_threads
         goto exit;
     }
 
-    /* Start any worker threads */
-    if (num_threads > 0)
+    if (num_threads == 0)
     {
-        if (pipe (server.wake_server) != 0)
-            ERROR ("Failed to create pipe to wake server\n");
-        add_cb (&server.pending, server.wake_server[0], NULL, (void*)&server);
-        sem_init (&server.wake_workers, 1, 0);
-        server.num_workers = num_threads;
-        server.workers = calloc (num_threads, sizeof (pthread_t));
-        for (i=0; i < num_threads; i++)
-            pthread_create (&server.workers[i], NULL,
-                    (void *) &worker, (void *) &server);
+        num_threads = 1;
     }
+
+    /* Start worker thread pool */
+    pool = g_thread_pool_new ((GFunc)rpc_provide_thread, server, num_threads, false, NULL);
+
+    if (pipe (server->wake_server) != 0)
+        ERROR ("Failed to create pipe to wake server\n");
+
+    add_cb (&server->pending, server->wake_server[0], NULL, (void*)server);
 
     /* Add callbacks for stopping and new connections */
     if (stopfd > 0)
-        add_cb (&server.pending, stopfd, stop_callback, (void*)&server);
+        add_cb (&server->pending, stopfd, stop_callback, (void*)server);
 
     /* Loop while not asked to stop */
-    while (server.running)
+    pthread_mutex_lock (&server->lock);
+    while (server->running)
     {
         int num_fds;
 
         /* Create the event list */
-        pthread_mutex_lock (&server.lock);
-        num_fds = g_list_length (server.pending);
+        num_fds = g_list_length (server->pending);
         fds = realloc (fds, num_fds * sizeof (struct pollfd));
-        for (i=0, iter = server.pending; iter; iter = iter->next, i++)
+        for (i=0, iter = server->pending; iter; iter = iter->next, i++)
         {
             callback_t *cb = (callback_t *)iter->data;
             fds[i].fd = cb->fd;
             fds[i].events = POLLIN;
             fds[i].revents = 0;
         }
-        pthread_mutex_unlock (&server.lock);
+        pthread_mutex_unlock (&server->lock);
 
         DEBUG ("RPC: Waiting for %d events\n", num_fds);
         if (poll (fds, num_fds, -1) <= 0)
@@ -601,92 +580,69 @@ rpc_provide_service (const char *url, ProtobufCService *service, int num_threads
             DEBUG ("RPC: polling error: %s\n", strerror (errno));
         }
 
-        if (server.workers)
+        pthread_mutex_lock (&server->lock);
+        /* The list may be invalid  */
+        if (fds[0].revents && fds[0].fd == server->wake_server[0])
         {
-            /* The list may be invalid  */
-            if (fds[0].revents && fds[0].fd == server.wake_server[0])
-            {
-                /* We have been woken because of a list change */
-                uint8_t dummy = read (fds[0].fd, &dummy, 1);
-                continue;
-            }
-            else if (num_fds != g_list_length (server.pending))
-            {
-                /* List has been changed due to callback */
-                continue;
-            }
-
-            /* Process any valid callbacks */
-            pthread_mutex_lock (&server.lock);
-            iter = server.pending;
-            i = 0;
-            while (iter != NULL)
-            {
-                GList *next = iter->next;
-                callback_t *cb = (callback_t *)iter->data;
-                if (fds[i].revents && cb->func)
-                {
-                    DEBUG ("RPC: Event for fd %d\n", cb->fd);
-                    server.pending = g_list_remove (server.pending, cb);
-                    server.working = g_list_append (server.working, cb);
-                    sem_post (&server.wake_workers);
-                }
-                iter = next;
-                i++;
-            }
-            pthread_mutex_unlock (&server.lock);
+            /* We have been woken because of a list change */
+            uint8_t dummy = read (fds[0].fd, &dummy, 1);
+            continue;
         }
-        else
+        else if (num_fds != g_list_length (server->pending))
         {
-            server.working = g_list_copy (server.pending);
-            for (i=0, iter = server.working; iter; iter = iter->next, i++)
+            /* List has been changed due to callback */
+            continue;
+        }
+
+        /* Process any valid callbacks */
+        iter = server->pending;
+        i = 0;
+        while (iter != NULL)
+        {
+            GList *next = iter->next;
+            callback_t *cb = (callback_t *)iter->data;
+            if (fds[i].revents && cb->func)
             {
-                if (fds[i].revents)
-                {
-                    callback_t *cb = (callback_t *)iter->data;
-                    DEBUG ("RPC: Callback for fd %d\n", fds[i].fd);
-                    if (cb->func (cb->fd, cb->data) < 0)
-                        delete_cb (&server.pending, fds[i].fd);
-                }
+                DEBUG ("RPC: Event for fd %d\n", cb->fd);
+                server->pending = g_list_remove (server->pending, cb);
+                g_thread_pool_push (pool, cb, NULL);
             }
-            g_list_free (server.working);
-            server.working = NULL;
+            iter = next;
+            i++;
         }
     }
+    pthread_mutex_unlock (&server->lock);
 
 exit:
-    DEBUG ("RPC: Shutdown server (%p)\n", &server);
-    if (server.workers)
+    ERROR ("RPC: Shutdown server (%p)\n", server);
+    if (pool)
     {
-        for (i=0; i < num_threads; i++)
+        g_thread_pool_free (pool, FALSE, TRUE);
+    }
+    if (server)
+    {
+        pthread_mutex_lock (&server->lock);
+        sys_server = NULL;
+        for (i=0, iter = server->sockets; iter; iter = iter->next, i++)
         {
-            sem_post (&server.wake_workers);
-            usleep (1000);
-            if (server.workers[i] != -1)
-            {
-                pthread_cancel (server.workers[i]);
-                pthread_join (server.workers[i], NULL);
-            }
+            rpc_socket_t *sock = (rpc_socket_t *)iter->data;
+            DEBUG ("RPC: Close socket (%s:%s)\n", sock->id, sock->url);
+            if (sock->fd >= 0)
+                close (sock->fd);
+            if (sock->family == PF_UNIX)
+                unlink (sock->address.addr_un.sun_path);
+            free ((void*) sock->id);
+            free ((void*) sock->url);
         }
-        free (server.workers);
+        g_list_free_full (server->sockets, free);
+        g_list_free_full (server->pending, free);
+        if (fds)
+            free (fds);
+        pthread_mutex_unlock (&server->lock);
+        pthread_mutex_destroy (&server->lock);
+        server->running = false;
+        free (server);
     }
-    for (i=0, iter = server.sockets; iter; iter = iter->next, i++)
-    {
-        rpc_socket_t *sock = (rpc_socket_t *)iter->data;
-        DEBUG ("RPC: Close socket (%s:%s)\n", sock->id, sock->url);
-        if (sock->fd >= 0)
-            close (sock->fd);
-        if (sock->family == PF_UNIX)
-            unlink (sock->address.addr_un.sun_path);
-        free ((void*) sock->id);
-        free ((void*) sock->url);
-    }
-    g_list_free_full (server.sockets, free);
-    g_list_free_full (server.pending, free);
-    if (fds)
-        free (fds);
-    pthread_mutex_destroy (&server.lock);
-    server.running = false;
     return rc;
 }
 
