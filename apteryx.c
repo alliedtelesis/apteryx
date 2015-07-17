@@ -951,7 +951,7 @@ _get_traverse (GNode* node, const char *path, int depth)
     /* Value or children */
     if (children == NULL && value)
     {
-        APTERYX_LEAF (node, strdup (key), strdup ((char*)value));
+        APTERYX_LEAF (node, strdup (key), value);
     }
     else if (children)
     {
