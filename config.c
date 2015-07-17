@@ -32,7 +32,7 @@ handle_debug_set (const char *path, const char *value)
     return true;
 }
 
-static bool
+static int
 handle_sockets_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_SOCKETS_PATH"/");
@@ -45,7 +45,7 @@ handle_sockets_set (const char *path, const char *value)
     else
         res = rpc_unbind_url (guid, value);
 
-    return res;
+    return res ? 0 : -1;
 }
 
 static cb_info_t *
@@ -94,7 +94,7 @@ update_callback (GList **list, const char *guid, const char *value)
     return cb;
 }
 
-static bool
+static int
 handle_indexers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_INDEXERS_PATH"/");
@@ -104,10 +104,10 @@ handle_indexers_set (const char *path, const char *value)
 
     cb = update_callback (&index_list, guid, value);
     cb_release (cb);
-    return true;
+    return 0;
 }
 
-static bool
+static int
 handle_watchers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_WATCHERS_PATH"/");
@@ -117,10 +117,10 @@ handle_watchers_set (const char *path, const char *value)
 
     cb = update_callback (&watch_list, guid, value);
     cb_release (cb);
-    return true;
+    return 0;
 }
 
-static bool
+static int
 handle_providers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_PROVIDERS_PATH"/");
@@ -130,10 +130,10 @@ handle_providers_set (const char *path, const char *value)
 
     cb = update_callback (&provide_list, guid, value);
     cb_release (cb);
-    return true;
+    return 0;
 }
 
-static bool
+static int
 handle_validators_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_VALIDATORS_PATH"/");
@@ -143,10 +143,10 @@ handle_validators_set (const char *path, const char *value)
 
     cb = update_callback (&validation_list, guid, value);
     cb_release (cb);
-    return true;
+    return 0;
 }
 
-static bool
+static int
 handle_proxies_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_PROXIES_PATH"/");
@@ -162,7 +162,7 @@ handle_proxies_set (const char *path, const char *value)
         {
             ERROR ("Invalid Callback URL (%s)\n", value);
             cb_release (cb);
-            return false;
+            return -1;
         }
         path = strrchr (value, ':') + 1;
         if (cb->uri)
@@ -172,7 +172,7 @@ handle_proxies_set (const char *path, const char *value)
         DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
     }
     cb_release (cb);
-    return true;
+    return 0;
 }
 
 
