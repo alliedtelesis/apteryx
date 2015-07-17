@@ -1843,7 +1843,7 @@ test_perf_set_tree ()
             goto exit;
     }
     time = ((get_time_us () - start) / 1000);
-    printf ("%ldus(%ldus) ... ", time, time/count);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
 exit:
     apteryx_free_tree (root);
     CU_ASSERT (apteryx_prune (path));
@@ -1872,7 +1872,7 @@ test_perf_set_tree_5000 ()
     if (!res)
         goto exit;
     time = (get_time_us () - start);
-    printf ("%ldus(%ldus) ... ", time, time/count);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
 exit:
     apteryx_free_tree (root);
     CU_ASSERT (apteryx_prune (path));
@@ -1903,7 +1903,7 @@ test_perf_get_tree ()
         apteryx_free_tree (root);
     }
     time = ((get_time_us () - start) / 1000);
-    printf ("%ldus(%ldus) ... ", time, time/count);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
 exit:
     CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
@@ -1929,7 +1929,7 @@ test_perf_get_tree_5000 ()
     if (!root)
         goto exit;
     time = (get_time_us () - start);
-    printf ("%ldus(%ldus) ... ", time, time/count);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
     apteryx_free_tree (root);
 exit:
     CU_ASSERT (apteryx_prune (path));
@@ -2377,12 +2377,12 @@ static CU_TestInfo tests_performance[] = {
     { "set(tcp)", test_perf_tcp_set },
     { "set(tcp6)", test_perf_tcp6_set },
     { "set tree", test_perf_set_tree },
-    { "set tree 5000",test_perf_set_tree_5000 },
+    { "set tree 5000", test_perf_set_tree_5000 },
     { "get", test_perf_get },
     { "get(tcp)", test_perf_tcp_get },
     { "get(tcp6)", test_perf_tcp6_get },
     { "get tree", test_perf_get_tree },
-    { "get tree 5000",test_perf_get_tree_5000 },
+    { "get tree 5000", test_perf_get_tree_5000 },
     { "get null", test_perf_get_null },
     { "search", test_perf_search },
     { "watch", test_perf_watch },
