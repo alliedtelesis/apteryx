@@ -241,7 +241,7 @@ conn_callback (int fd, void *data)
 
         buffer->len -= RPC_HEADER_LENGTH + msg.message_length;
         if (buffer->len)
-            memcpy (buffer->data, buffer->data + RPC_HEADER_LENGTH +
+            memmove (buffer->data, buffer->data + RPC_HEADER_LENGTH +
                     msg.message_length, buffer->len);
 
         /* Invoke service (note that it may call back immediately) */
