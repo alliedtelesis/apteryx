@@ -187,6 +187,18 @@ db_node_add (struct database_node *parent, const char *key)
         }
         g_hash_table_insert (parent->children, new_node->key, new_node);
     }
+    else if (strcmp(key, "") == 0) /* This is a candidate "root" node */
+    {
+        if (root)
+        {
+            db_node_delete(new_node);
+            new_node = root;
+        }
+        else
+        {
+            root = new_node;
+        }
+    }
     pthread_rwlock_unlock (&db_lock);
     return new_node;
 }
