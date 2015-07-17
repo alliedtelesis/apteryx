@@ -592,6 +592,8 @@ apteryx_set (const char *path, const char *value)
     const char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
+    Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
+    Apteryx__PathValue *pv[1] = {&_pv};
     protobuf_c_boolean is_done = 0;
 
     DEBUG ("SET: %s = %s\n", path, value);
@@ -612,8 +614,10 @@ apteryx_set (const char *path, const char *value)
         ERROR ("SET: Falied to connect to server: %s\n", strerror (errno));
         return false;
     }
-    set.path = (char *) path;
-    set.value = (char *) value;
+    pv[0]->path = (char *) path;
+    pv[0]->value = (char *) value;
+    set.n_sets = 1;
+    set.sets = pv;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
     protobuf_c_service_destroy (rpc_client);
     if (!is_done)
@@ -795,6 +799,206 @@ apteryx_get_int (const char *path, const char *key)
         free (full_path);
     }
     return value;
+}
+
+static inline gboolean
+_node_free (GNode *node, gpointer data)
+{
+    free ((void *)node->data);
+    return FALSE;
+}
+
+void
+apteryx_free_tree (GNode* root)
+{
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_ALL, -1, _node_free, NULL);
+    g_node_destroy (root);
+}
+
+static char *
+_node_to_path (GNode *node, char **buf)
+{
+    /* don't put a trailing / on */
+    char end = 0;
+    if (!*buf)
+    {
+        *buf = strdup ("");
+        end = 1;
+    }
+
+    if (node && node->parent)
+        _node_to_path (node->parent, buf);
+
+    char *tmp = NULL;
+    if (asprintf (&tmp, "%s%s%s", *buf ? : "",
+            node ? (char*)node->data : "/",
+            end ? "" : "/") > 0)
+    {
+        free (*buf);
+        *buf = tmp;
+    }
+    return tmp;
+}
+
+char *
+apteryx_node_path (GNode* node)
+{
+    char *path = NULL;
+    _node_to_path (node, &path);
+    return path;
+}
+
+static gboolean
+_set_multi (GNode *node, gpointer data)
+{
+    Apteryx__Set *set = (Apteryx__Set *)data;
+
+    if (APTERYX_HAS_VALUE(node))
+    {
+        char *path = apteryx_node_path (node);
+        Apteryx__PathValue *pv = calloc (1, sizeof (Apteryx__PathValue));
+        DEBUG ("SET_TREE: %s = %s\n", path, APTERYX_VALUE (node));
+        pv->base.descriptor = &apteryx__path_value__descriptor;
+        pv->path = (char *) path;
+        pv->value = (char *) APTERYX_VALUE (node);
+        set->sets[set->n_sets++] = pv;
+    }
+    return FALSE;
+}
+
+bool
+apteryx_set_tree (GNode* root)
+{
+    const char *path = NULL;
+    const char *url = NULL;
+    ProtobufCService *rpc_client;
+    Apteryx__Set set = APTERYX__SET__INIT;
+    protobuf_c_boolean is_done = 0;
+    bool rc = true;
+    int i;
+
+    /* Check initialised */
+    if (ref_count <= 0)
+    {
+        ERROR ("SET_TREE: not initialised!\n");
+        assert(ref_count > 0);
+        return false;
+    }
+
+    /* Check path */
+    path = validate_path (APTERYX_NAME (root), &url);
+    if (!path || path[strlen(path) - 1] == '/')
+    {
+        ERROR ("SET_TREE: invalid path (%s)!\n", path);
+        assert (!debug || path);
+        return false;
+    }
+
+    /* IPC */
+    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
+    if (!rpc_client)
+    {
+        ERROR ("SET_TREE: Falied to connect to server: %s\n", strerror (errno));
+        return false;
+    }
+
+    /* Create the list of Paths/Value's */
+    set.n_sets = g_node_n_nodes (root, G_TRAVERSE_LEAVES);
+    set.sets = malloc (set.n_sets * sizeof (Apteryx__PathValue *));
+    set.n_sets = 0;
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &set);
+    apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
+    protobuf_c_service_destroy (rpc_client);
+    if (!is_done)
+    {
+        DEBUG ("SET_TREE: Failed %s\n", strerror(errno));
+        rc = false;
+    }
+
+    /* Cleanup message */
+    for (i=0; i<set.n_sets; i++)
+    {
+        Apteryx__PathValue *pv = set.sets[i];
+        free (pv->path);
+        free (pv);
+    }
+    free (set.sets);
+
+    /* Return result */
+    return rc;
+}
+
+static bool
+_get_traverse (GNode* node, const char *path, int depth)
+{
+    char *_path;
+    char *key = "";
+    GList *children = NULL, *iter;
+    char *value = NULL;
+
+    /* Get the key */
+    if (strrchr(path, '/'))
+        key = strrchr(path, '/') + 1;
+
+    /* Get value and/or children */
+    if (!asprintf (&_path, "%s/", path))
+        return false;
+    children = apteryx_search (_path);
+    free (_path);
+    if (children == NULL)
+        value = apteryx_get (path);
+
+    /* Value or children */
+    if (children == NULL && value)
+    {
+        APTERYX_LEAF (node, strdup (key), strdup ((char*)value));
+    }
+    else if (children)
+    {
+        if (node->data == NULL)
+            node->data = (gpointer)strdup (path);
+        else
+            node = APTERYX_NODE (node, strdup (key));
+        for (iter = children; iter; iter = g_list_next (iter))
+        {
+            _get_traverse (node, (const char *) iter->data, depth);
+        }
+        g_list_free_full(children, free);
+    }
+    return true;
+}
+
+GNode*
+apteryx_get_tree (const char *path, int depth)
+{
+    GNode* root = NULL;
+
+    DEBUG ("GET_TREE: %s\n", path);
+
+    /* Check initialised */
+    if (ref_count <= 0)
+    {
+        ERROR ("GET_TREE: not initialised!\n");
+        assert(ref_count > 0);
+        return false;
+    }
+
+    /* Check path */
+    if (path[0] != '/' || path[strlen(path)-1] == '/')
+    {
+        ERROR ("GET_TREE: invalid path (%s)!\n", path);
+        assert(!debug || path[0] == '/');
+        return false;
+    }
+
+    /* Traverse */
+    root = g_node_new (NULL);
+    if (!_get_traverse (root, path, depth))
+    {
+        g_node_destroy (root);
+        root = NULL;
+    }
+    return root;
 }
 
 typedef struct _search_data_t

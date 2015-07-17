@@ -508,6 +508,8 @@ proxy_set (const char *path, const char *value)
 {
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
+    Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
+    Apteryx__PathValue *pv[1] = {&_pv};
     int result = 1;
 
     /* Find and connect to a proxied instance */
@@ -516,8 +518,10 @@ proxy_set (const char *path, const char *value)
         return 1;
 
     /* Do remote set */
-    set.path = (char *) path;
-    set.value = (char *) value;
+    pv[0]->path = (char *) path;
+    pv[0]->value = (char *) value;
+    set.n_sets = 1;
+    set.sets = pv;
     apteryx__server__set (rpc_client, &set, handle_set_response, &result);
 
     /* Destroy the service */
@@ -643,9 +647,10 @@ apteryx__set (Apteryx__Server_Service *service,
     result.result = 0;
     int validation_result = 0;
     int proxy_result = 0;
+    int i;
 
     /* Check parameters */
-    if (set == NULL || set->path == NULL)
+    if (set == NULL || set->n_sets == 0 || set->sets == NULL)
     {
         ERROR ("SET: Invalid parameters.\n");
         result.result = -EINVAL;
@@ -653,45 +658,50 @@ apteryx__set (Apteryx__Server_Service *service,
         INC_COUNTER (counters.set_invalid);
         return;
     }
-    path = set->path;
-    value = set->value;
-    if (value && value[0] == '\0')
-        value = NULL;
     INC_COUNTER (counters.set);
 
-    DEBUG ("SET: %s = %s\n", path, value);
-
-    /* Check proxy first */
-    proxy_result = proxy_set (path, value);
-    if (proxy_result <= 0)
+    /* For each Path Value in the set */
+    for (i=0; i<set->n_sets; i++)
     {
-        DEBUG ("SET: %s = %s proxied (result=%d)\n",
-                path, value, proxy_result);
-        result.result = proxy_result;
-        goto exit;
-    }
+        path = set->sets[i]->path;
+        value = set->sets[i]->value;
+        if (value && value[0] == '\0')
+            value = NULL;
 
-    /* Validate new data */
-    validation_result = validate_set (path, value);
-    if (validation_result < 0)
-    {
-        DEBUG ("SET: %s = %s refused by validate\n", path, value);
-        result.result = validation_result;
-        goto exit;
-    }
+        DEBUG ("SET: %s = %s\n", path, value);
 
-    /* Add/Delete to/from database */
-    if (value)
-        db_add (path, (unsigned char*)value, strlen (value) + 1);
-    else
-        db_delete (path);
+        /* Check proxy first */
+        proxy_result = proxy_set (path, value);
+        if (proxy_result <= 0)
+        {
+            DEBUG ("SET: %s = %s proxied (result=%d)\n",
+                    path, value, proxy_result);
+            result.result = proxy_result;
+            goto exit;
+        }
+
+        /* Validate new data */
+        validation_result = validate_set (path, value);
+        if (validation_result < 0)
+        {
+            DEBUG ("SET: %s = %s refused by validate\n", path, value);
+            result.result = validation_result;
+            goto exit;
+        }
+
+        /* Add/Delete to/from database */
+        if (value)
+            db_add (path, (unsigned char*)value, strlen (value) + 1);
+        else
+            db_delete (path);
 
 #ifdef USE_SHM_CACHE
-    if (value)
-        cache_set (path, value);
-    else
-        cache_set (path, NULL);
+        if (value)
+            cache_set (path, value);
+        else
+            cache_set (path, NULL);
 #endif
+    }
 
     /* Set succeeded */
     result.result = 0;
@@ -702,8 +712,11 @@ exit:
 
     if (validation_result >= 0)
     {
-        /* Notify watchers */
-        notify_watchers (path);
+        /* Notify watchers for each Path Value in the set*/
+        for (i=0; i<set->n_sets; i++)
+        {
+            notify_watchers (set->sets[i]->path);
+        }
     }
 
     /* Release validation lock - this is a sensitive value */

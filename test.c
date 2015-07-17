@@ -1669,6 +1669,274 @@ test_provide_after_db ()
 }
 
 void
+test_tree_nodes ()
+{
+    GNode* root;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
+    APTERYX_LEAF (root, "state", "up");
+    APTERYX_LEAF (root, "speed", "1000");
+    APTERYX_LEAF (root, "duplex", "full");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 3);
+    CU_ASSERT (g_node_n_children (root) == 3);
+    CU_ASSERT (!APTERYX_HAS_VALUE(root));
+    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 0)), "state") == 0);
+    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 0)));
+    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 0)), "up") == 0);
+    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 1)), "speed") == 0);
+    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 1)));
+    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 1)), "1000") == 0);
+    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 2)), "duplex") == 0);
+    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 2)));
+    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 2)), "full") == 0);
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_tree_nodes_deep ()
+{
+    GNode *root, *node;
+    char *name, *path;
+    int i;
+
+    CU_ASSERT ((name = strdup (TEST_PATH"/root")) != NULL);
+    CU_ASSERT ((root = APTERYX_NODE (NULL, name)) != NULL);
+    node = root;
+    for (i=0; i<1024; i++)
+    {
+        name = NULL;
+        CU_ASSERT (asprintf (&name, "%d", i));
+        CU_ASSERT ((node = APTERYX_NODE (node, name)) != NULL);
+    }
+    path = apteryx_node_path (node);
+    CU_ASSERT (strlen (path) == 4020);
+    free (path);
+    CU_ASSERT (g_node_n_children (node) == 0);
+    CU_ASSERT (APTERYX_NUM_NODES (root) == 1024);
+    CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_ALL) == 1025);
+    CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (g_node_n_children (root) == 1);
+    CU_ASSERT (!APTERYX_HAS_VALUE(root));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_tree_nodes_wide ()
+{
+    GNode *root, *node;
+    char *name, *value, *path;
+    int i;
+
+    CU_ASSERT ((name = strdup (TEST_PATH"/root")) != NULL);
+    CU_ASSERT ((root = APTERYX_NODE (NULL, name)) != NULL);
+    for (i=0; i<1024; i++)
+    {
+        name = value = NULL;
+        CU_ASSERT (asprintf (&name, "%d", i));
+        CU_ASSERT (asprintf (&value, "%d", i));
+        APTERYX_LEAF (root, name, value);
+    }
+    CU_ASSERT ((node = g_node_first_child (root)) != NULL);
+    path = apteryx_node_path (node);
+    CU_ASSERT (strlen (path) == 12);
+    free (path);
+    CU_ASSERT ((node = g_node_last_child (root)) != NULL);
+    path = apteryx_node_path (node);
+    CU_ASSERT (strlen (path) == 15);
+    free (path);
+    CU_ASSERT (APTERYX_NUM_NODES (root) == 1025);
+    CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_ALL) == 2049);
+    CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAVES) == 1024);
+    CU_ASSERT (g_node_n_children (root) == 1024);
+    CU_ASSERT (!APTERYX_HAS_VALUE(root));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_set_tree ()
+{
+    GNode* root;
+    const char *value = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
+    APTERYX_LEAF (root, "state", "up");
+    APTERYX_LEAF (root, "speed", "1000");
+    APTERYX_LEAF (root, "duplex", "full");
+    CU_ASSERT (apteryx_set_tree (root));
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/interfaces/eth0/speed")) != NULL);
+    CU_ASSERT (value && strcmp (value, "1000") == 0);
+    free ((void *) value);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces/eth0"));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_get_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_set_string (path, "state", "up"));
+    CU_ASSERT (apteryx_set_string (path, "speed", "1000"));
+    CU_ASSERT (apteryx_set_string (path, "duplex", "full"));
+    root = apteryx_get_tree (TEST_PATH"/interfaces", -1);
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/interfaces") == 0);
+    CU_ASSERT (g_node_n_children (root) == 1);
+    node = g_node_first_child (root);
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT (g_node_n_children (node) == 3);
+    node = g_node_first_child (node);
+    while (node)
+    {
+        if (strcmp (APTERYX_NAME (node), "state") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "up") == 0);
+        }
+        else if (strcmp (APTERYX_NAME (node), "speed") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "1000") == 0);
+        }
+        else if (strcmp (APTERYX_NAME (node), "duplex") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "full") == 0);
+        }
+        else
+        {
+            CU_ASSERT (node == NULL);
+        }
+        node = node->next;
+    }
+    CU_ASSERT (apteryx_prune (path));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_set_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode* root;
+    uint64_t start, time;
+    int count = 50;
+    int i;
+    bool res;
+
+    root = APTERYX_NODE (NULL, strdup (path));
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        APTERYX_LEAF (root, strdup (value), strdup (value));
+    }
+    start = get_time_us ();
+    for (i = 0; i < 1000; i++)
+    {
+        CU_ASSERT ((res = apteryx_set_tree (root)));
+        if (!res)
+            goto exit;
+    }
+    time = ((get_time_us () - start) / 1000);
+    printf ("%ldus(%ldus) ... ", time, time/count);
+exit:
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_set_tree_5000 ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode* root;
+    uint64_t start, time;
+    int count = 5000;
+    int i;
+    bool res;
+
+    root = APTERYX_NODE (NULL, strdup (path));
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        APTERYX_LEAF (root, strdup (value), strdup (value));
+    }
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("%ldus(%ldus) ... ", time, time/count);
+exit:
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_get_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode* root;
+    uint64_t start, time;
+    int count = 50;
+    int i;
+
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        CU_ASSERT (apteryx_set_string (path, value, value));
+    }
+    start = get_time_us ();
+    for (i = 0; i < 1000; i++)
+    {
+        root = apteryx_get_tree (path, -1);
+        if (!root)
+            goto exit;
+        apteryx_free_tree (root);
+    }
+    time = ((get_time_us () - start) / 1000);
+    printf ("%ldus(%ldus) ... ", time, time/count);
+exit:
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_get_tree_5000 ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode* root;
+    uint64_t start, time;
+    int count = 1000;
+    int i;
+
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        CU_ASSERT (apteryx_set_string (path, value, value));
+    }
+    start = get_time_us ();
+    root = apteryx_get_tree (path, -1);
+    if (!root)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("%ldus(%ldus) ... ", time, time/count);
+    apteryx_free_tree (root);
+exit:
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_perf_provide ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
@@ -2094,14 +2362,27 @@ static CU_TestInfo tests_api_proxy[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_api_tree[] = {
+    { "tree nodes", test_tree_nodes },
+    { "tree nodes deep", test_tree_nodes_deep },
+    { "tree nodes wide", test_tree_nodes_wide },
+    { "set tree", test_set_tree },
+    { "get tree", test_get_tree },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_performance[] = {
     { "dummy", test_perf_dummy },
     { "set", test_perf_set },
     { "set(tcp)", test_perf_tcp_set },
     { "set(tcp6)", test_perf_tcp6_set },
+    { "set tree", test_perf_set_tree },
+    { "set tree 5000",test_perf_set_tree_5000 },
     { "get", test_perf_get },
     { "get(tcp)", test_perf_tcp_get },
     { "get(tcp6)", test_perf_tcp6_get },
+    { "get tree", test_perf_get_tree },
+    { "get tree 5000",test_perf_get_tree_5000 },
     { "get null", test_perf_get_null },
     { "search", test_perf_search },
     { "watch", test_perf_watch },
@@ -2119,6 +2400,7 @@ static CU_SuiteInfo suites[] = {
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
+    { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },
     { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },

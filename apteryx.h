@@ -137,6 +137,59 @@ char *apteryx_get_string (const char *path, const char *key);
 int32_t apteryx_get_int (const char *path, const char *key);
 
 /**
+ * Helpers for generating and parsing an Apteryx tree.
+ * Can be used to set/get multiple values at once.
+ * Uses GLIB's GNode based N-ary trees.
+ * - Long paths can be concatenated in a single node.
+ * - Leaf nodes are values for the leaves parent
+ *   e.g. a->b->c->d == /a/b/c = d.
+ * - Creator owns the GNode data (names and values).
+ * Example:
+    GNode* root = APTERYX_NODE (NULL, "/interfaces/eth0");
+    APTERYX_LEAF (root, "state", "up");
+    APTERYX_LEAF (root, "speed", "1000");
+    APTERYX_LEAF (root, "duplex", "full");
+    printf (Number of nodes = %d\n, APTERYX_NUM_NODES (root));
+    printf (Number of paths = %d\n, g_node_n_nodes (root, G_TRAVERSE_LEAVES));
+    for (GNode *node = g_node_first_child (root); node; node = g_node_next_sibling (node)) {
+        printf ("%s = %s", APTERYX_NAME (node), APTERYX_VALUE (node));
+    }
+    g_node_destroy (root);
+ */
+#define APTERYX_NODE(p,n) \
+    (p ? (g_node_append_data (p, (gpointer)n)) : (g_node_new (n)))
+#define APTERYX_LEAF(p,n,v) \
+    (g_node_append_data (g_node_append_data (p, (gpointer)n), (gpointer)v))
+#define APTERYX_NUM_NODES(p) \
+    (g_node_n_nodes (p, G_TRAVERSE_ALL) - g_node_n_nodes (p, G_TRAVERSE_LEAVES))
+#define APTERYX_NAME(n) \
+    ((char*)(n)->data)
+#define APTERYX_HAS_VALUE(n) \
+    (g_node_first_child (n) && G_NODE_IS_LEAF (g_node_first_child (n)))
+#define APTERYX_VALUE(n) \
+    ((char*)g_node_first_child (n)->data)
+/** Free an N-ary tree of nodes when the data need freeing (e.g. from apteryx_get_tree) */
+void apteryx_free_tree (GNode* root);
+/** Get the full path of an Apteryx node in an N-ary tree */
+char* apteryx_node_path (GNode* node);
+
+/**
+ * Set a tree of multiple values in Apteryx.
+ * @param root pointer to the N-ary tree of nodes.
+ * @return true on a successful set.
+ * @return false on failure.
+ */
+bool apteryx_set_tree (GNode* root);
+
+/**
+ * Get a tree of multiple values from Apteryx.
+ * @param path path to the root of the tree to return.
+ * @param depth depth of the tree to traverse (-1 means keep going).
+ * @return N-ary tree of nodes.
+ */
+GNode* apteryx_get_tree (const char *path, int depth);
+
+/**
  * Search for all children that start with the root path.
  * Does not go further than one level down.
  * example:
