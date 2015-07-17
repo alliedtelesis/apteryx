@@ -195,7 +195,7 @@ test_thread_multi_write ()
     {
         char *path = NULL;
         CU_ASSERT (_multi_write_thread_data[i] == thread_count - 1);
-        CU_ASSERT (asprintf (&path, TEST_PATH"/counters/thread%"PRIu64, i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH"/counters/thread%li", i) > 0);
         apteryx_set (path, NULL);
         free (path);
     }

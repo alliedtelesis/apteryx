@@ -471,7 +471,7 @@ test_db_add_delete_perf ()
         CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
         CU_ASSERT (db_delete (path));
     }
-    printf ("%ldus ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
 
     free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
@@ -531,7 +531,7 @@ test_db_get_perf ()
             goto exit;
         free ((void *) value);
     }
-    printf ("%ldus ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
   exit:
     free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
@@ -607,7 +607,7 @@ test_db_search_perf ()
             goto exit;
         g_list_free_full (paths, free);
     }
-    printf ("%ldus ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
   exit:
     free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)

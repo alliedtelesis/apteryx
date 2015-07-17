@@ -270,7 +270,7 @@ match_perf_test (PERF_TEST_INDEX index)
             goto exit;
         g_list_free_full (matches, (GDestroyNotify) cb_release);
     }
-    printf ("%ldus ... ", (get_time_us () - start) / TEST_CB_MAX_ITERATIONS);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_CB_MAX_ITERATIONS);
     ret = true;
 exit:
     g_list_foreach (watch_list, cb_free, NULL);
