@@ -893,17 +893,17 @@ apteryx__prune (Apteryx__Server_Service *service,
 
     /* Prune from database */
     db_delete (prune->path);
-
-    /* Return result */
-    closure (&result, closure_data);
-
-    /* Call watchers for each pruned path */
 #ifdef USE_SHM_CACHE
     for (iter = paths; iter; iter = g_list_next (iter))
     {
         cache_set ((const char *) iter->data, NULL);
     }
 #endif
+
+    /* Return result */
+    closure (&result, closure_data);
+
+    /* Call watchers for each pruned path */
     for (iter = paths; iter; iter = g_list_next (iter))
     {
         notify_watchers ((const char *) iter->data);
