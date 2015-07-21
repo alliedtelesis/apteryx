@@ -668,7 +668,7 @@ apteryx__set (Apteryx__Server_Service *service,
         if (value && value[0] == '\0')
             value = NULL;
 
-        DEBUG ("SET: %s = %s\n", path, value);
+        DEBUG ("SET%s: %s = %s\n", service ? "" : "(f)", path, value);
 
         /* Check proxy first */
         proxy_result = proxy_set (path, value);
@@ -728,6 +728,30 @@ exit:
     return;
 }
 
+#ifdef USE_SHM_FASTPATH
+static void
+__OKResult_Closure(const Apteryx__OKResult *result, void *closure_data)
+{
+    int *rc = (int*)closure_data;
+    *rc = result->result;
+}
+
+static int
+do_set (const char *path, const char *value)
+{
+    int rc = 0;
+    Apteryx__Set set = APTERYX__SET__INIT;
+    Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
+    Apteryx__PathValue *pv[1] = {&_pv};
+    pv[0]->path = (char *) path;
+    pv[0]->value = (char *) value;
+    set.n_sets = 1;
+    set.sets = pv;
+    apteryx__set (NULL, &set, __OKResult_Closure, (void *)&rc);
+    return rc;
+}
+#endif
+
 static void
 apteryx__get (Apteryx__Server_Service *service,
               const Apteryx__Get *get,
@@ -747,7 +771,7 @@ apteryx__get (Apteryx__Server_Service *service,
     }
     INC_COUNTER (counters.get);
 
-    DEBUG ("GET: %s\n", get->path);
+    DEBUG ("GET%s: %s\n", service ? "" : "(f)", get->path);
 
     /* Lookup value */
     value = NULL;
@@ -780,6 +804,26 @@ apteryx__get (Apteryx__Server_Service *service,
         free (value);
     return;
 }
+
+#ifdef USE_SHM_FASTPATH
+static void
+__GetResult_Closure(const Apteryx__GetResult *result, void *closure_data)
+{
+    char **value = (char **)closure_data;
+    if (result->value)
+        *value = strdup (result->value);
+}
+
+static char*
+do_get (const char *path)
+{
+    char *value = NULL;
+    Apteryx__Get get = APTERYX__GET__INIT;
+    get.path = (char *) path;
+    apteryx__get (NULL, &get, __GetResult_Closure, (void *)&value);
+    return value;
+}
+#endif
 
 static void
 apteryx__search (Apteryx__Server_Service *service,
@@ -1054,6 +1098,11 @@ main (int argc, char **argv)
     /* Init cache */
     cache_init ();
 #endif
+#ifdef USE_SHM_FASTPATH
+    /* Init fastpath */
+    fastpath_init ();
+    fastpath_start (do_set, do_get);
+#endif
 
     /* Create a lock for currently-validating */
     pthread_mutex_init (&validating, NULL);
@@ -1082,6 +1131,10 @@ exit:
 #ifdef USE_SHM_CACHE
     /* Shut cache */
     cache_shutdown (true);
+#endif
+#ifdef USE_SHM_FASTPATH
+    /* Shut fastpath */
+    fastpath_shutdown (true);
 #endif
     /* Cleanup callbacks */
     cb_shutdown ();

@@ -445,6 +445,11 @@ apteryx_init (bool debug_enabled)
     if (ref_count == 1)
         cache_init ();
 #endif
+#ifdef USE_SHM_FASTPATH
+    /* Init fastpath */
+    if (ref_count == 1)
+        fastpath_init ();
+#endif
 
     /* Ready to go */
     if (ref_count > 1)
@@ -477,6 +482,10 @@ apteryx_shutdown (void)
 #ifdef USE_SHM_CACHE
     /* Shut cache */
     cache_shutdown (false);
+#endif
+#ifdef USE_SHM_FASTPATH
+    /* Shut fastpath */
+    fastpath_shutdown (false);
 #endif
 
     /* Shutdown */
@@ -595,6 +604,15 @@ apteryx_set (const char *path, const char *value)
     Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
     Apteryx__PathValue *pv[1] = {&_pv};
     protobuf_c_boolean is_done = 0;
+#ifdef USE_SHM_FASTPATH
+    bool rc = false;
+
+    /* Check fastpath first */
+    if (path && path[0] == '/' && fastpath_set (path, value, &rc))
+    {
+        return rc;
+    }
+#endif
 
     DEBUG ("SET: %s = %s\n", path, value);
 
@@ -715,6 +733,14 @@ apteryx_get (const char *path)
     if (path && path[0] == '/' && (value = cache_get (path)))
     {
         DEBUG ("    = (c)%s\n", value);
+        return value;
+    }
+#endif
+#ifdef USE_SHM_FASTPATH
+    /* Check fastpath second */
+    if (path && path[0] == '/' && fastpath_get (path, &value))
+    {
+        DEBUG ("    = (f)%s\n", value);
         return value;
     }
 #endif

@@ -59,7 +59,7 @@ typedef struct rpc_server_t
     pthread_t *workers;
     GList *sockets;
 } rpc_server_t;
-__thread rpc_server_t *tl_server = NULL;
+rpc_server_t *tl_server = NULL;
 
 typedef struct rpc_client_t
 {
@@ -301,6 +301,8 @@ static void
 wake_server (rpc_server_t *server)
 {
     uint8_t dummy = 0;
+    if (server->wake_server[0] < 0)
+        return;
     if (write (server->wake_server[1], &dummy, 1) !=1)
         ERROR ("Failed to write to wake server\n");
 }
@@ -503,6 +505,7 @@ rpc_bind_url (const char *id, const char *url)
     tl_server->sockets = g_list_append (tl_server->sockets, sock);
     add_cb (&tl_server->pending, sock->fd, server_callback, (void*)tl_server);
     pthread_mutex_unlock (&tl_server->lock);
+    wake_server (tl_server);
 
     return true;
 }
@@ -547,6 +550,7 @@ rpc_provide_service (const char *url, ProtobufCService *service, int num_threads
     /* Setup the thread local server structure */
     server.running = true;
     server.service = service;
+    server.wake_server[0] = -1;
     pthread_mutex_init (&server.lock, NULL);
     tl_server = &server;
 
@@ -604,13 +608,7 @@ rpc_provide_service (const char *url, ProtobufCService *service, int num_threads
         if (server.workers)
         {
             /* The list may be invalid  */
-            if (fds[0].revents && fds[0].fd == server.wake_server[0])
-            {
-                /* We have been woken because of a list change */
-                uint8_t dummy = read (fds[0].fd, &dummy, 1);
-                continue;
-            }
-            else if (num_fds != g_list_length (server.pending))
+            if (num_fds != g_list_length (server.pending))
             {
                 /* List has been changed due to callback */
                 continue;
@@ -624,12 +622,20 @@ rpc_provide_service (const char *url, ProtobufCService *service, int num_threads
             {
                 GList *next = iter->next;
                 callback_t *cb = (callback_t *)iter->data;
-                if (fds[i].revents && cb->func)
+                if (fds[i].revents && fds[i].fd == cb->fd)
                 {
-                    DEBUG ("RPC: Event for fd %d\n", cb->fd);
-                    server.pending = g_list_remove (server.pending, cb);
-                    server.working = g_list_append (server.working, cb);
-                    sem_post (&server.wake_workers);
+                    if (fds[i].fd == server.wake_server[0])
+                    {
+                        uint8_t dummy = read (fds[i].fd, &dummy, 1);
+                        DEBUG ("RPC: Wake up event\n");
+                    }
+                    else if (cb->func)
+                    {
+                        DEBUG ("RPC: Event for fd %d\n", cb->fd);
+                        server.pending = g_list_remove (server.pending, cb);
+                        server.working = g_list_append (server.working, cb);
+                        sem_post (&server.wake_workers);
+                    }
                 }
                 iter = next;
                 i++;
@@ -746,7 +752,7 @@ invoke_client_service (ProtobufCService *service,
             PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&tx_buffer);
             return;
         }
-        DEBUG ("RPC[%d]: Wrote %d of %zd bytes\n", client->fd, rv, buffer.len);
+        DEBUG ("RPC[%d]: Wrote %d of %zd bytes\n", client->fd, rv, tx_buffer.len);
         tx_buffer.len -= rv;
         data += rv;
     }
@@ -778,7 +784,7 @@ invoke_client_service (ProtobufCService *service,
             goto error;
         }
 
-        DEBUG ("RPC[%d]: read %d bytes (%zu total)\n", client->fd, rv, buffer.len + rv);
+        DEBUG ("RPC[%d]: read %d bytes (%zu total)\n", client->fd, rv, rx_buffer.len + rv);
 
         rx_buffer.base.append ((ProtobufCBuffer*)&rx_buffer, rv, buf);
         unpack_header (&rx_buffer.data[4], &msg);
@@ -841,7 +847,8 @@ rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descript
     {
         return NULL;
     }
-    DEBUG ("RPC: New Client\n");
+    DEBUG ("RPC: New %s Client\n", sock->family == PF_UNIX ? "UNIX" :
+            (sock->family == AF_INET6 ? "TCP6" : "TCP"));
 
     /* Create socket */
     sock->fd = socket (sock->family, SOCK_STREAM, 0);

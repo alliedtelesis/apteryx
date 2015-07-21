@@ -26,10 +26,13 @@ endif
 ifneq ($(USE_SHM_CACHE),no)
 EXTRA_CFLAGS += -DUSE_SHM_CACHE
 endif
+ifneq ($(USE_SHM_FASTPATH),no)
+EXTRA_CFLAGS += -DUSE_SHM_FASTPATH
+endif
 
 all: libapteryx.so apteryx apteryxd
 
-libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o lua.o
+libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o fastpath.o lua.o
 	@echo "Creating library "$@""
 	@$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
@@ -40,11 +43,11 @@ libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o cache.o lua.o
 %.pb-c.c : %.proto
 	@$(PROTOC_C) --c_out=. $<
 
-apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o config.o callbacks.o
+apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c cache.o fastpath.o config.o callbacks.o
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
-apteryx: apteryxc.c database.c callbacks.c test.c libapteryx.so
+apteryx: apteryxc.c database.c callbacks.c fastpath.c test.c libapteryx.so
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
 

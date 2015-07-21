@@ -42,6 +42,7 @@
 /* Mode */
 typedef enum
 {
+    MODE_NONE,
     MODE_SET,
     MODE_GET,
     MODE_FIND,
@@ -201,7 +202,20 @@ void cache_set (const char *path, const char *value);
 char* cache_get (const char *path);
 char* cache_dump_table (void);
 
+/* SHM fastpath */
+#define APTERYX_FASTPATH_KEY    0xfa579a74
+void fastpath_init (void);
+void fastpath_shutdown (bool force);
+bool fastpath_get (const char *path, char **value);
+bool fastpath_set (const char *path, const char *value, bool *rc);
+void fastpath_start (int (*set)(const char *path, const char *value), char* (*get)(const char *path));
+void fastpath_stop (void);
+
 /* Tests */
+#define TEST_PATH           "/test"
+#define TEST_SLEEP_TIMEOUT  100000
+#define TEST_TCP_URL        "tcp://127.0.0.1:9999"
+#define TEST_TCP6_URL       "tcp://[::1]:9999"
 void run_unit_tests (const char *filter);
 
 #endif /* _INTERNAL_H_ */

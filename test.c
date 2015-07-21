@@ -31,16 +31,13 @@
 #include "apteryx.h"
 #include "internal.h"
 
-#define TEST_PATH           "/test"
-#define TEST_SLEEP_TIMEOUT  100000
-#define TEST_TCP_URL        "tcp://127.0.0.1:9999"
-#define TEST_TCP6_URL       "tcp://[::1]:9999"
-
 static bool
 assert_apteryx_empty (void)
 {
     GList *paths = apteryx_search ("/");
+#ifdef USE_SHM_CACHE
     char *value = NULL;
+#endif
     GList *iter;
     bool ret = true;
     for (iter = paths; iter; iter = g_list_next (iter))
@@ -2014,7 +2011,9 @@ test_proxy_before_db_get ()
 
     CU_ASSERT (apteryx_set (TEST_PATH"/local", "dog"));
     CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "cat"));
+#ifdef USE_SHM_CACHE
     cache_set (TEST_PATH"/remote/test/local", NULL);
+#endif
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote/test/local")) != NULL);
@@ -2393,11 +2392,17 @@ static CU_TestInfo tests_performance[] = {
 extern CU_TestInfo tests_database_internal[];
 extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
+#ifdef USE_SHM_FASTPATH
+extern CU_TestInfo tests_fastpath[];
+#endif
 
 static CU_SuiteInfo suites[] = {
     { "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
+#ifdef USE_SHM_FASTPATH
+    { "Fast Path", suite_init, suite_clean, tests_fastpath },
+#endif
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
     { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },
