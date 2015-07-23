@@ -179,6 +179,7 @@ apteryx__validate (Apteryx__Client_Service *service,
 {
     Apteryx__ValidateResult result = APTERYX__VALIDATE_RESULT__INIT;
     (void) service;
+    char *value = NULL;
 
     DEBUG ("VALIDATE CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
            validate->path, validate->value,
@@ -200,7 +201,11 @@ apteryx__validate (Apteryx__Client_Service *service,
     else
         pthread_mutex_unlock (&pending_watches_lock);
 
-    result.result = ((apteryx_validate_callback)(size_t)validate->cb) (validate->path, validate->value);
+    if (validate->value && (validate->value[0] != '\0'))
+    {
+        value = validate->value;
+    }
+    result.result = ((apteryx_validate_callback)(size_t)validate->cb) (validate->path, value);
 
 exit:
     /* Return result */
