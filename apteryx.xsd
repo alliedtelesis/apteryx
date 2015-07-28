@@ -1,6 +1,6 @@
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-	targetNamespace="https://github.com/ATL-NZ/apteryx"
-	xmlns="https://github.com/ATL-NZ/apteryx"
+	targetNamespace="https://github.com/alliedtelesis/apteryx"
+	xmlns="https://github.com/alliedtelesis/apteryx"
 	elementFormDefault="qualified">
 	<xs:element name="VALUE">
 		<xs:complexType>
