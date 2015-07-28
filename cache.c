@@ -23,6 +23,7 @@
 #include <string.h>
 #include <semaphore.h>
 #include <sys/shm.h>
+#include <errno.h>
 #define MAX_PATH                256
 #define MAX_VALUE               128
 #define NUM_BUCKETS             1024
@@ -65,9 +66,11 @@ cache_init (void)
         shmid = shmget (APTERYX_SHM_KEY, length, 0644);
         already_init = 1;
     }
-    if ((cache = (cache_t *) shmat (shmid, NULL, 0)) == NULL)
+    /* shmat has the quite bizzare failure mode of returning -1 */
+    if ((cache = (cache_t *) shmat (shmid, NULL, 0)) == (void*)-1)
     {
-        ERROR ("Failed to attach to SHM cache.\n");
+        cache = NULL;
+        ERROR ("Failed to attach to SHM cache (%s).\n", strerror(errno));
         return;
     }
 
