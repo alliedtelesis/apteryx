@@ -1,6 +1,6 @@
 # Makefile for Apteryx
 #
-# Unit Tests (make test):
+# Unit Tests (make test FILTER): e.g make test Performance
 # Requires GLib and CUnit for Unit Testing.
 # sudo apt-get install libglib2.0-dev libcunit1-dev libprotobuf-c0-dev protobuf-c-compiler liblua5.2-dev
 #
@@ -57,9 +57,13 @@ apteryxd = \
 	LD_LIBRARY_PATH=./ $(TEST_WRAPPER) ./$(1); \
 	kill -TERM `cat /tmp/apteryxd.pid`;
 
+ifeq (test,$(firstword $(MAKECMDGOALS)))
+TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+$(eval $(TEST_ARGS):;@:)
+endif
 test: apteryxd apteryx
 	@echo "Running unit test: $<"
-	@$(call apteryxd,apteryx -u)
+	@$(call apteryxd,apteryx -u$(TEST_ARGS))
 
 install: all
 	@install -d $(DESTDIR)/$(PREFIX)/lib

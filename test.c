@@ -32,6 +32,7 @@
 #include "internal.h"
 
 #define TEST_PATH           "/test"
+#define TEST_ITERATIONS     1000
 #define TEST_SLEEP_TIMEOUT  100000
 #define TEST_TCP_URL        "tcp://127.0.0.1:9999"
 #define TEST_TCP6_URL       "tcp://[::1]:9999"
@@ -40,7 +41,9 @@ static bool
 assert_apteryx_empty (void)
 {
     GList *paths = apteryx_search ("/");
+#ifdef USE_SHM_CACHE
     char *value = NULL;
+#endif
     GList *iter;
     bool ret = true;
     for (iter = paths; iter; iter = g_list_next (iter))
@@ -244,7 +247,7 @@ test_perf_dummy ()
     int i;
     bool res;
 
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         CU_ASSERT ((res = apteryx_set (path, "private")));
         if (!res)
@@ -263,7 +266,7 @@ test_perf_set ()
     bool res;
 
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
         CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
@@ -272,9 +275,9 @@ test_perf_set ()
         if (!res)
             goto exit;
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
         CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
@@ -283,6 +286,39 @@ exit:
     }
     CU_ASSERT (assert_apteryx_empty ());
 }
+
+#ifdef USE_SHM_CACHE
+void
+test_perf_set_no_cache ()
+{
+    uint64_t start;
+    int i;
+    bool res;
+
+    cache_disable ();
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
+        CU_ASSERT ((res = apteryx_set (path, "private")));
+        free (path);
+        if (!res)
+            goto exit;
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
+        CU_ASSERT (apteryx_set (path, NULL));
+        free (path);
+    }
+    CU_ASSERT (assert_apteryx_empty ());
+    cache_enable ();
+}
+#endif
 
 void
 test_perf_tcp_set ()
@@ -295,13 +331,13 @@ test_perf_tcp_set ()
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
     usleep (TEST_SLEEP_TIMEOUT);
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         CU_ASSERT ((res = apteryx_set (path, "private")));
         if (!res)
             goto exit;
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
@@ -319,13 +355,13 @@ test_perf_tcp6_set ()
     CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
     usleep (TEST_SLEEP_TIMEOUT);
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         CU_ASSERT ((res = apteryx_set (path, "private")));
         if (!res)
             goto exit;
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (apteryx_unbind (TEST_TCP6_URL));
@@ -366,9 +402,9 @@ test_perf_get ()
     uint64_t start;
     int i;
 
-    _perf_setup (1000, FALSE);
+    _perf_setup (TEST_ITERATIONS, FALSE);
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
         CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
@@ -378,11 +414,40 @@ test_perf_get ()
             goto exit;
         free ((void *) value);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
-    _perf_setup (1000, TRUE);
+    _perf_setup (TEST_ITERATIONS, TRUE);
     CU_ASSERT (assert_apteryx_empty ());
 }
+
+#ifdef USE_SHM_CACHE
+void
+test_perf_get_no_cache ()
+{
+    const char *value = NULL;
+    uint64_t start;
+    int i;
+
+    cache_disable ();
+    _perf_setup (TEST_ITERATIONS, FALSE);
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
+        CU_ASSERT ((value = apteryx_get (path)) != NULL);
+        free (path);
+        if (!value)
+            goto exit;
+        free ((void *) value);
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    _perf_setup (TEST_ITERATIONS, TRUE);
+    CU_ASSERT (assert_apteryx_empty ());
+    cache_enable ();
+}
+#endif
 
 void
 test_perf_tcp_get ()
@@ -392,9 +457,9 @@ test_perf_tcp_get ()
     int i;
 
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    _perf_setup (1000, FALSE);
+    _perf_setup (TEST_ITERATIONS, FALSE);
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
         CU_ASSERT (asprintf(&path, TEST_TCP_URL":"TEST_PATH"/zones/%d/state", i) > 0);
@@ -404,9 +469,9 @@ test_perf_tcp_get ()
             goto exit;
         free ((void *) value);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
-    _perf_setup (1000, TRUE);
+    _perf_setup (TEST_ITERATIONS, TRUE);
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL))
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -420,9 +485,9 @@ test_perf_tcp6_get ()
 
     CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
     usleep (TEST_SLEEP_TIMEOUT);
-    _perf_setup (1000, FALSE);
+    _perf_setup (TEST_ITERATIONS, FALSE);
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
         CU_ASSERT (asprintf(&path, TEST_TCP6_URL":"TEST_PATH"/zones/%d/state", i) > 0);
@@ -432,9 +497,9 @@ test_perf_tcp6_get ()
             goto exit;
         free ((void *) value);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
-    _perf_setup (1000, TRUE);
+    _perf_setup (TEST_ITERATIONS, TRUE);
     CU_ASSERT (apteryx_unbind (TEST_TCP6_URL))
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -447,7 +512,7 @@ test_perf_get_null ()
     int i;
 
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         char *path = NULL;
         CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
@@ -456,7 +521,7 @@ test_perf_get_null ()
         if (value != NULL)
             goto exit;
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -560,14 +625,14 @@ test_perf_search ()
     CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
     CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
         if (paths == NULL)
             goto exit;
         g_list_free_full (paths, free);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
     CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, NULL));
     CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, NULL));
@@ -1275,13 +1340,13 @@ test_perf_watch ()
     pthread_mutex_init (&watch_lock, NULL);
     CU_ASSERT (apteryx_watch (path, test_perf_watch_callback));
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         pthread_mutex_lock (&watch_lock);
         CU_ASSERT (apteryx_set (path, "down"));
     }
     pthread_mutex_destroy (&watch_lock);
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 
     CU_ASSERT (apteryx_unwatch (path, test_perf_watch_callback));
     apteryx_set_string (path, NULL, NULL);
@@ -1836,13 +1901,13 @@ test_perf_set_tree ()
         APTERYX_LEAF (root, strdup (value), strdup (value));
     }
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         CU_ASSERT ((res = apteryx_set_tree (root)));
         if (!res)
             goto exit;
     }
-    time = ((get_time_us () - start) / 1000);
+    time = ((get_time_us () - start) / TEST_ITERATIONS);
     printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
 exit:
     apteryx_free_tree (root);
@@ -1895,14 +1960,14 @@ test_perf_get_tree ()
         CU_ASSERT (apteryx_set_string (path, value, value));
     }
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < (TEST_ITERATIONS/10); i++)
     {
         root = apteryx_get_tree (path, -1);
         if (!root)
             goto exit;
         apteryx_free_tree (root);
     }
-    time = ((get_time_us () - start) / 1000);
+    time = ((get_time_us () - start) / (TEST_ITERATIONS/10));
     printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
 exit:
     CU_ASSERT (apteryx_prune (path));
@@ -1916,7 +1981,7 @@ test_perf_get_tree_5000 ()
     char value[32];
     GNode* root;
     uint64_t start, time;
-    int count = 1000;
+    int count = TEST_ITERATIONS;
     int i;
 
     for (i=0; i<count; i++)
@@ -1946,14 +2011,14 @@ test_perf_provide ()
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
     start = get_time_us ();
-    for (i = 0; i < 1000; i++)
+    for (i = 0; i < TEST_ITERATIONS; i++)
     {
         CU_ASSERT ((value = apteryx_get (path)) != NULL);
         if (!value)
             goto exit;
         free ((void *) value);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
     apteryx_unprovide (path, test_provide_callback_up);
     CU_ASSERT (assert_apteryx_empty ());
@@ -2014,7 +2079,9 @@ test_proxy_before_db_get ()
 
     CU_ASSERT (apteryx_set (TEST_PATH"/local", "dog"));
     CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "cat"));
+#ifdef USE_SHM_CACHE
     cache_set (TEST_PATH"/remote/test/local", NULL);
+#endif
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote/test/local")) != NULL);
@@ -2374,14 +2441,20 @@ static CU_TestInfo tests_api_tree[] = {
 static CU_TestInfo tests_performance[] = {
     { "dummy", test_perf_dummy },
     { "set", test_perf_set },
+#ifdef USE_SHM_CACHE
+    { "set(no cache)", test_perf_set_no_cache },
+#endif
     { "set(tcp)", test_perf_tcp_set },
     { "set(tcp6)", test_perf_tcp6_set },
-    { "set tree", test_perf_set_tree },
+    { "set tree 50", test_perf_set_tree },
     { "set tree 5000", test_perf_set_tree_5000 },
     { "get", test_perf_get },
+#ifdef USE_SHM_CACHE
+    { "get(no cache)", test_perf_get_no_cache },
+#endif
     { "get(tcp)", test_perf_tcp_get },
     { "get(tcp6)", test_perf_tcp6_get },
-    { "get tree", test_perf_get_tree },
+    { "get tree 50", test_perf_get_tree },
     { "get tree 5000", test_perf_get_tree_5000 },
     { "get null", test_perf_get_null },
     { "search", test_perf_search },

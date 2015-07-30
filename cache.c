@@ -24,9 +24,11 @@
 #include <semaphore.h>
 #include <sys/shm.h>
 #include <errno.h>
-#define MAX_PATH                256
-#define MAX_VALUE               128
-#define NUM_BUCKETS             1024
+
+#define NUM_BUCKETS     16381 /* Must be prime (e.g. 4093, 8191, 16381, 32771, 65537) */
+#define NUM_STEPS       5    /* Number of checks for free buckets */
+#define MAX_PATH        128
+#define MAX_VALUE       64
 
 typedef struct hash_entry_t
 {
@@ -40,11 +42,57 @@ typedef struct cache_t
     sem_t ref;
     int shmid;
     int length;
+    bool enabled;
     uint32_t hit;
     uint32_t miss;
     hash_entry_t table[0];
 } cache_t;
 static cache_t *cache = NULL;
+
+/* Robert Sedgewick's string hashing algorithm */
+static inline uint32_t
+hash_fn (const char* key)
+{
+    int len = strlen (key);
+    uint32_t a = 63689;
+    uint32_t b = 378551;
+    uint32_t hash = 0;
+    int i;
+
+    for (i = 0; i < len; key++, i++)
+    {
+        hash = hash * a + (*key);
+        a *= b;
+    }
+    return hash;
+}
+
+/* Open addressing indexing with quadratic probing
+ * and a fixed number of steps */
+static uint32_t
+hash_index (const char *key)
+{
+    uint32_t hash = hash_fn (key) % NUM_BUCKETS;
+    uint32_t rindex = NUM_BUCKETS;
+    uint32_t index;
+    int i = 0;
+
+    index = hash;
+    while (i < NUM_STEPS)
+    {
+        if (strcmp (key, (char *) cache->table[index].path) == 0)
+        {
+            return index;
+        }
+        if (rindex == NUM_BUCKETS && cache->table[index].path[0] == '\0')
+        {
+            rindex = index;
+        }
+        i++;
+        index = (hash + i * i) % NUM_BUCKETS;
+    }
+    return rindex == NUM_BUCKETS ? hash : rindex;
+}
 
 void
 cache_init (void)
@@ -95,6 +143,7 @@ cache_init (void)
     /* Initialise the cache */
     cache->shmid = 0;
     cache->length = length;
+    cache->enabled = true;
     pthread_rwlockattr_init (&attr);
     pthread_rwlockattr_setpshared (&attr, PTHREAD_PROCESS_SHARED);
     pthread_rwlock_init (&cache->rwlock, &attr);
@@ -103,8 +152,25 @@ cache_init (void)
     sem_init (&cache->ref, 1, 1);
     memset (cache->table, 0, NUM_BUCKETS * sizeof (hash_entry_t));
     cache->shmid = shmid;
+    cache->enabled = true;
     pthread_rwlock_unlock (&cache->rwlock);
     return;
+}
+
+void
+cache_disable (void)
+{
+    pthread_rwlock_wrlock (&cache->rwlock);
+    cache->enabled = false;
+    pthread_rwlock_unlock (&cache->rwlock);
+}
+
+void
+cache_enable (void)
+{
+    pthread_rwlock_wrlock (&cache->rwlock);
+    cache->enabled = true;
+    pthread_rwlock_unlock (&cache->rwlock);
 }
 
 void
@@ -144,12 +210,13 @@ cache_set (const char *path, const char *value)
 {
     hash_entry_t *entry;
 
-    if (!cache || strlen (path) + 1 > MAX_PATH ||
+    if (!cache || !cache->enabled ||
+        strlen (path) + 1 > MAX_PATH ||
         (value && strlen (value) + 1 > MAX_VALUE))
         return;
 
     pthread_rwlock_wrlock (&cache->rwlock);
-    entry = &cache->table[g_str_hash (path) % NUM_BUCKETS];
+    entry = &cache->table[hash_index (path)];
     if (value)
     {
         strcpy ((char *) entry->path, path);
@@ -170,11 +237,11 @@ cache_get (const char *path)
     char *value = NULL;
     hash_entry_t *entry;
 
-    if (!cache)
+    if (!cache || !cache->enabled)
         return NULL;
 
     pthread_rwlock_rdlock (&cache->rwlock);
-    entry = &cache->table[g_str_hash (path) % NUM_BUCKETS];
+    entry = &cache->table[hash_index (path)];
     if (strcmp (path, (char *) entry->path) == 0)
     {
         value = strdup ((char *) entry->value);
@@ -208,8 +275,9 @@ cache_dump_table (void)
                            cache->table[i].value);
         }
     }
-    sprintf (pt, "%d/%d buckets, %" PRIu32 " hits, %" PRIu32" misses",
-             count, NUM_BUCKETS, cache->hit, cache->miss);
+    sprintf (pt, "%s %d/%d buckets, %" PRIu32 " hits, %" PRIu32" misses",
+            cache->enabled ? "enabled" : "disabled",
+            count, NUM_BUCKETS, cache->hit, cache->miss);
     pthread_rwlock_unlock (&cache->rwlock);
     return buffer;
 }
