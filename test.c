@@ -1822,6 +1822,24 @@ test_tree_nodes_wide ()
 }
 
 void
+test_tree_docs ()
+{
+    GNode* root = APTERYX_NODE (NULL, "/interfaces/eth0");
+    GNode* state = APTERYX_NODE (root, "state");
+    APTERYX_LEAF (state, "state", "up");
+    APTERYX_LEAF (state, "speed", "1000");
+    APTERYX_LEAF (state, "duplex", "full");
+    printf ("\nNumber of nodes = %d\n", APTERYX_NUM_NODES (root));
+    printf ("Number of paths = %d\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
+    for (GNode *node = g_node_first_child (state); node; node = g_node_next_sibling (node)) {
+        char* path = apteryx_node_path (node);
+        printf ("%s = %s\n", path, APTERYX_VALUE (node));
+        free (path);
+    }
+    g_node_destroy (root);
+}
+
+void
 test_set_tree ()
 {
     GNode* root;
@@ -2430,6 +2448,7 @@ static CU_TestInfo tests_api_proxy[] = {
 };
 
 static CU_TestInfo tests_api_tree[] = {
+    { "doc example", test_tree_docs },
     { "tree nodes", test_tree_nodes },
     { "tree nodes deep", test_tree_nodes_deep },
     { "tree nodes wide", test_tree_nodes_wide },
