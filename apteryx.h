@@ -146,13 +146,16 @@ int32_t apteryx_get_int (const char *path, const char *key);
  * - Creator owns the GNode data (names and values).
  * Example:
     GNode* root = APTERYX_NODE (NULL, "/interfaces/eth0");
-    APTERYX_LEAF (root, "state", "up");
-    APTERYX_LEAF (root, "speed", "1000");
-    APTERYX_LEAF (root, "duplex", "full");
-    printf (Number of nodes = %d\n, APTERYX_NUM_NODES (root));
-    printf (Number of paths = %d\n, g_node_n_nodes (root, G_TRAVERSE_LEAVES));
-    for (GNode *node = g_node_first_child (root); node; node = g_node_next_sibling (node)) {
-        printf ("%s = %s", APTERYX_NAME (node), APTERYX_VALUE (node));
+    GNode* state = APTERYX_NODE (root, "state");
+    APTERYX_LEAF (state, "state", "up");
+    APTERYX_LEAF (state, "speed", "1000");
+    APTERYX_LEAF (state, "duplex", "full");
+    printf ("\nNumber of nodes = %d\n", APTERYX_NUM_NODES (root));
+    printf ("Number of paths = %d\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
+    for (GNode *node = g_node_first_child (state); node; node = g_node_next_sibling (node)) {
+        char* path = apteryx_node_path (node);
+        printf ("%s = %s\n", path, APTERYX_VALUE (node));
+        free (path);
     }
     g_node_destroy (root);
  */
@@ -161,7 +164,7 @@ int32_t apteryx_get_int (const char *path, const char *key);
 #define APTERYX_LEAF(p,n,v) \
     (g_node_append_data (g_node_append_data (p, (gpointer)n), (gpointer)v))
 #define APTERYX_NUM_NODES(p) \
-    (g_node_n_nodes (p, G_TRAVERSE_ALL) - g_node_n_nodes (p, G_TRAVERSE_LEAVES))
+    (g_node_n_nodes (p, G_TRAVERSE_NON_LEAVES))
 #define APTERYX_NAME(n) \
     ((char*)(n)->data)
 #define APTERYX_HAS_VALUE(n) \
