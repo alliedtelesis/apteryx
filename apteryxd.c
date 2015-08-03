@@ -660,6 +660,10 @@ apteryx__set (Apteryx__Server_Service *service,
     }
     INC_COUNTER (counters.set);
 
+#ifdef USE_SHM_CACHE
+    cache_flush ();
+#endif
+
     /* For each Path Value in the set */
     for (i=0; i<set->n_sets; i++)
     {
@@ -696,10 +700,7 @@ apteryx__set (Apteryx__Server_Service *service,
             db_delete (path);
 
 #ifdef USE_SHM_CACHE
-        if (value)
-            cache_set (path, value);
-        else
-            cache_set (path, NULL);
+        cache_set (path, value, false);
 #endif
     }
 
@@ -707,9 +708,6 @@ apteryx__set (Apteryx__Server_Service *service,
     result.result = 0;
 
 exit:
-    /* Return result */
-    closure (&result, closure_data);
-
     if (validation_result >= 0)
     {
         /* Notify watchers for each Path Value in the set*/
@@ -719,6 +717,9 @@ exit:
         }
     }
 
+    /* Return result */
+    closure (&result, closure_data);
+
     /* Release validation lock - this is a sensitive value */
     if (validation_result)
     {
@@ -727,6 +728,20 @@ exit:
     }
     return;
 }
+
+#ifdef USE_SHM_CACHE
+static int
+do_set (const char *path, const char *value)
+{
+    /* Add/Delete to/from database */
+    if (value)
+        db_add (path, (unsigned char*)value, strlen (value) + 1);
+    else
+        db_delete (path);
+    notify_watchers (path);
+    return 0;
+}
+#endif
 
 static void
 apteryx__get (Apteryx__Server_Service *service,
@@ -749,6 +764,10 @@ apteryx__get (Apteryx__Server_Service *service,
 
     DEBUG ("GET: %s\n", get->path);
 
+#ifdef USE_SHM_CACHE
+    cache_flush ();
+#endif
+
     /* Lookup value */
     value = NULL;
     vsize = 0;
@@ -767,7 +786,7 @@ apteryx__get (Apteryx__Server_Service *service,
 #ifdef USE_SHM_CACHE
         else
         {
-            cache_set (get->path, value);
+            cache_set (get->path, value, false);
         }
 #endif
     }
@@ -803,6 +822,10 @@ apteryx__search (Apteryx__Server_Service *service,
     INC_COUNTER (counters.search);
 
     DEBUG ("SEARCH: %s\n", search->path);
+
+#ifdef USE_SHM_CACHE
+    cache_flush ();
+#endif
 
     /* Proxy first */
     results = proxy_search (search->path);
@@ -892,6 +915,10 @@ apteryx__prune (Apteryx__Server_Service *service,
 
     DEBUG ("PRUNE: %s\n", prune->path);
 
+#ifdef USE_SHM_CACHE
+    cache_flush ();
+#endif
+
     /* Proxy first */
     if (proxy_prune (prune->path))
     {
@@ -909,7 +936,7 @@ apteryx__prune (Apteryx__Server_Service *service,
 #ifdef USE_SHM_CACHE
     for (iter = paths; iter; iter = g_list_next (iter))
     {
-        cache_set ((const char *) iter->data, NULL);
+        cache_set ((const char *) iter->data, NULL, false);
     }
 #endif
 
@@ -945,6 +972,10 @@ apteryx__timestamp (Apteryx__Server_Service *service,
     INC_COUNTER (counters.timestamp);
 
     DEBUG ("TIMESTAMP: %s\n", get->path);
+
+#ifdef USE_SHM_CACHE
+    cache_flush ();
+#endif
 
     /* Proxy first */
     if ((value = proxy_timestamp (get->path)) == 0)
@@ -1053,6 +1084,7 @@ main (int argc, char **argv)
 #ifdef USE_SHM_CACHE
     /* Init cache */
     cache_init ();
+    cache_start_monitor (do_set);
 #endif
 
     /* Create a lock for currently-validating */
@@ -1081,6 +1113,7 @@ exit:
 
 #ifdef USE_SHM_CACHE
     /* Shut cache */
+    cache_stop_monitor ();
     cache_shutdown (true);
 #endif
     /* Cleanup callbacks */

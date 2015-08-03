@@ -479,14 +479,13 @@ apteryx_shutdown (void)
         return true;
     }
 
+    /* Shutdown */
+    DEBUG ("Shutdown: Shutting down\n");
+    stop_client_threads ();
 #ifdef USE_SHM_CACHE
     /* Shut cache */
     cache_shutdown (false);
 #endif
-
-    /* Shutdown */
-    DEBUG ("Shutdown: Shutting down\n");
-    stop_client_threads ();
     DEBUG ("Shutdown: Shutdown\n");
     assert (!client_running);
     assert (!worker_running);
@@ -501,7 +500,7 @@ apteryx_bind (const char *url)
     if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
         return false;
-    return apteryx_set (path, url);
+    return apteryx_set_blocking (path, url);
 }
 
 bool
@@ -512,7 +511,7 @@ apteryx_unbind (const char *url)
     if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
         return false;
-    return apteryx_set (path, NULL);
+    return apteryx_set_blocking (path, NULL);
 }
 
 bool
@@ -592,7 +591,7 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_set (const char *path, const char *value)
+apteryx_set_blocking (const char *path, const char *value)
 {
     const char *url = NULL;
     ProtobufCService *rpc_client;
@@ -633,6 +632,20 @@ apteryx_set (const char *path, const char *value)
 
     /* Success */
     return true;
+}
+
+bool
+apteryx_set (const char *path, const char *value)
+{
+#ifdef USE_SHM_CACHE
+    /* Try cache first */
+    if (path && path[0] == '/' && cache_set (path, value, true))
+    {
+        DEBUG ("SET(c): %s = %s\n", path, value);
+        return true;
+    }
+#endif
+    return apteryx_set_blocking (path, value);
 }
 
 bool
@@ -1106,7 +1119,7 @@ add_callback (const char *type, const char *path, void *cb)
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
-    if (!apteryx_set (_path, path))
+    if (!apteryx_set_blocking (_path, path))
         return false;
     return start_client_threads ();
 }
@@ -1119,7 +1132,7 @@ delete_callback (const char *type, const char *path,  void *cb)
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
-    if (!apteryx_set (_path, NULL))
+    if (!apteryx_set_blocking (_path, NULL))
         return false;
     return true;
 }
