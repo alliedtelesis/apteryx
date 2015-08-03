@@ -119,6 +119,8 @@ bool apteryx_dump (const char *path, FILE *fp);
  * @return false if the path is invalid
  */
 bool apteryx_set (const char *path, const char *value);
+/** Blocking set - Forces ordering and required for validated and proxied paths */
+bool apteryx_set_blocking (const char *path, const char *value);
 /** Helper to extend the path with the specified key */
 bool apteryx_set_string (const char *path, const char *key, const char *value);
 /** Helper to store a simple int at an extended path */

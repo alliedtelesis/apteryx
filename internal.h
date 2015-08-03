@@ -199,8 +199,11 @@ void cache_init (void);
 void cache_disable (void);
 void cache_enable (void);
 void cache_shutdown (bool force);
-void cache_set (const char *path, const char *value);
+bool cache_set (const char *path, const char *value, bool dirty);
 char* cache_get (const char *path);
+void cache_flush (void);
+void cache_start_monitor (int (*set)(const char *path, const char *value));
+void cache_stop_monitor (void);
 char* cache_dump_table (void);
 
 /* Tests */
