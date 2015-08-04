@@ -694,13 +694,6 @@ apteryx__set (Apteryx__Server_Service *service,
             db_add (path, (unsigned char*)value, strlen (value) + 1);
         else
             db_delete (path);
-
-#ifdef USE_SHM_CACHE
-        if (value)
-            cache_set (path, value);
-        else
-            cache_set (path, NULL);
-#endif
     }
 
     /* Set succeeded */
@@ -764,12 +757,6 @@ apteryx__get (Apteryx__Server_Service *service,
                 DEBUG ("GET: not in database or provided or proxied\n");
             }
         }
-#ifdef USE_SHM_CACHE
-        else
-        {
-            cache_set (get->path, value);
-        }
-#endif
     }
 
     /* Send result */
@@ -906,12 +893,6 @@ apteryx__prune (Apteryx__Server_Service *service,
 
     /* Prune from database */
     db_delete (prune->path);
-#ifdef USE_SHM_CACHE
-    for (iter = paths; iter; iter = g_list_next (iter))
-    {
-        cache_set ((const char *) iter->data, NULL);
-    }
-#endif
 
     /* Return result */
     closure (&result, closure_data);
@@ -1050,11 +1031,6 @@ main (int argc, char **argv)
     /* Configuration Set/Get */
     config_init ();
 
-#ifdef USE_SHM_CACHE
-    /* Init cache */
-    cache_init ();
-#endif
-
     /* Create a lock for currently-validating */
     pthread_mutex_init (&validating, NULL);
 
@@ -1079,10 +1055,6 @@ exit:
     close (pipefd[0]);
     close (pipefd[1]);
 
-#ifdef USE_SHM_CACHE
-    /* Shut cache */
-    cache_shutdown (true);
-#endif
     /* Cleanup callbacks */
     cb_shutdown ();
     /* Clean up the database */

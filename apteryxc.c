@@ -64,7 +64,6 @@ usage ()
     printf ("    %s\n", APTERYX_PROVIDERS_PATH);
     printf ("    %s\n", APTERYX_VALIDATORS_PATH);
     printf ("    %s\n", APTERYX_PROXIES_PATH);
-    printf ("    %s\n", APTERYX_CACHE);
     printf ("    %s\n", APTERYX_COUNTERS);
     printf ("\n");
 }

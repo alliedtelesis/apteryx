@@ -193,16 +193,6 @@ cb_info_t * cb_find (GList **list, const char *guid);
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
 
-/* SHM cache */
-#define APTERYX_SHM_KEY    0xda7aba5e
-void cache_init (void);
-void cache_disable (void);
-void cache_enable (void);
-void cache_shutdown (bool force);
-void cache_set (const char *path, const char *value);
-char* cache_get (const char *path);
-char* cache_dump_table (void);
-
 /* Tests */
 void run_unit_tests (const char *filter);
 
