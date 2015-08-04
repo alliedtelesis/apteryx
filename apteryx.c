@@ -445,12 +445,6 @@ apteryx_init (bool debug_enabled)
     debug |= debug_enabled;
     pthread_mutex_unlock (&lock);
 
-#ifdef USE_SHM_CACHE
-    /* Init cache */
-    if (ref_count == 1)
-        cache_init ();
-#endif
-
     /* Ready to go */
     if (ref_count > 1)
         DEBUG ("Init: Initialised\n");
@@ -478,11 +472,6 @@ apteryx_shutdown (void)
         DEBUG ("Shutdown: More users (refcount=%d)\n", ref_count);
         return true;
     }
-
-#ifdef USE_SHM_CACHE
-    /* Shut cache */
-    cache_shutdown (false);
-#endif
 
     /* Shutdown */
     DEBUG ("Shutdown: Shutting down\n");
@@ -714,15 +703,6 @@ apteryx_get (const char *path)
     get_data_t data = {0};
 
     DEBUG ("GET: %s\n", path);
-
-#ifdef USE_SHM_CACHE
-    /* Check cache first */
-    if (path && path[0] == '/' && (value = cache_get (path)))
-    {
-        DEBUG ("    = (c)%s\n", value);
-        return value;
-    }
-#endif
 
     /* Check path */
     path = validate_path (path, &url);

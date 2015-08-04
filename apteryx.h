@@ -54,7 +54,6 @@
   /apteryx/indexers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/proxies                         - List of proxied paths and remote url to proxy gets and sets to.
   /apteryx/proxies/-                       - Unique identifier based on PID-HASH(path)-HASH(url). Value is the full url for the path.
-  /apteryx/cache                           - Formatted dump of the Apteryx cache
   /apteryx/counters                        - Formatted list of counters and values for Apteryx usage
  */
 #define APTERYX_PATH                             "/apteryx"
@@ -68,7 +67,6 @@
 #define APTERYX_VALIDATORS_PATH                  "/apteryx/validators"
 #define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
 #define APTERYX_PROXIES_PATH                     "/apteryx/proxies"
-#define APTERYX_CACHE                            "/apteryx/cache"
 #define APTERYX_COUNTERS                         "/apteryx/counters"
 
 /** Initialise this instance of the Apteryx library.

@@ -41,9 +41,6 @@ static bool
 assert_apteryx_empty (void)
 {
     GList *paths = apteryx_search ("/");
-#ifdef USE_SHM_CACHE
-    char *value = NULL;
-#endif
     GList *iter;
     bool ret = true;
     for (iter = paths; iter; iter = g_list_next (iter))
@@ -57,18 +54,6 @@ assert_apteryx_empty (void)
         }
     }
     g_list_free_full (paths, free);
-#ifdef USE_SHM_CACHE
-    if ((value = apteryx_get (APTERYX_CACHE)) != NULL)
-    {
-        if (strstr (value, TEST_PATH) != NULL)
-        {
-            if (ret) fprintf (stderr, "\n");
-            fprintf (stderr, "ERROR: Node still set in cache: %s\n", value);
-            ret = false;
-        }
-        free (value);
-    }
-#endif
     return ret;
 }
 
@@ -287,39 +272,6 @@ exit:
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-#ifdef USE_SHM_CACHE
-void
-test_perf_set_no_cache ()
-{
-    uint64_t start;
-    int i;
-    bool res;
-
-    cache_disable ();
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
-        CU_ASSERT ((res = apteryx_set (path, "private")));
-        free (path);
-        if (!res)
-            goto exit;
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
-        CU_ASSERT (apteryx_set (path, NULL));
-        free (path);
-    }
-    CU_ASSERT (assert_apteryx_empty ());
-    cache_enable ();
-}
-#endif
-
 void
 test_perf_tcp_set ()
 {
@@ -419,35 +371,6 @@ exit:
     _perf_setup (TEST_ITERATIONS, TRUE);
     CU_ASSERT (assert_apteryx_empty ());
 }
-
-#ifdef USE_SHM_CACHE
-void
-test_perf_get_no_cache ()
-{
-    const char *value = NULL;
-    uint64_t start;
-    int i;
-
-    cache_disable ();
-    _perf_setup (TEST_ITERATIONS, FALSE);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/%d/state", i) > 0);
-        CU_ASSERT ((value = apteryx_get (path)) != NULL);
-        free (path);
-        if (!value)
-            goto exit;
-        free ((void *) value);
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    _perf_setup (TEST_ITERATIONS, TRUE);
-    CU_ASSERT (assert_apteryx_empty ());
-    cache_enable ();
-}
-#endif
 
 void
 test_perf_tcp_get ()
@@ -2097,9 +2020,6 @@ test_proxy_before_db_get ()
 
     CU_ASSERT (apteryx_set (TEST_PATH"/local", "dog"));
     CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "cat"));
-#ifdef USE_SHM_CACHE
-    cache_set (TEST_PATH"/remote/test/local", NULL);
-#endif
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote/test/local")) != NULL);
@@ -2460,17 +2380,11 @@ static CU_TestInfo tests_api_tree[] = {
 static CU_TestInfo tests_performance[] = {
     { "dummy", test_perf_dummy },
     { "set", test_perf_set },
-#ifdef USE_SHM_CACHE
-    { "set(no cache)", test_perf_set_no_cache },
-#endif
     { "set(tcp)", test_perf_tcp_set },
     { "set(tcp6)", test_perf_tcp6_set },
     { "set tree 50", test_perf_set_tree },
     { "set tree 5000", test_perf_set_tree_5000 },
     { "get", test_perf_get },
-#ifdef USE_SHM_CACHE
-    { "get(no cache)", test_perf_get_no_cache },
-#endif
     { "get(tcp)", test_perf_tcp_get },
     { "get(tcp6)", test_perf_tcp6_get },
     { "get tree 50", test_perf_get_tree },

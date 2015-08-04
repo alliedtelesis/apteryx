@@ -29,7 +29,6 @@
 			<NODE name="*" mode="rw" help="Unique identifier based on PID-HASH(path)-HASH(url). Value is the full url for the path."
 				pattern="^(unix:\/\/\/(.*)[^:]:|tcp:\/\/(.*)[^:]:\d+)\/([^\/\0]+(\/)?)+$" />
 		</NODE>
-		<NODE name="cache" mode="r" help="Formatted dump of the Apteryx cache"/>
 		<NODE name="counters" help="List of counters and values for Apteryx usage">
 			<NODE name="*" mode="r" help="Counter and value" pattern="^\d+$" />
 		</NODE>

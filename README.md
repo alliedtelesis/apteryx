@@ -134,7 +134,6 @@ Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]
     /apteryx/providers
     /apteryx/validators
     /apteryx/proxies
-    /apteryx/cache
     /apteryx/counters
 ```
 

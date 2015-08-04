@@ -201,14 +201,6 @@ handle_counters_get (const char *path)
     return value;
 }
 
-#ifdef USE_SHM_CACHE
-static char*
-handle_cache_get (const char *path)
-{
-    return cache_dump_table ();
-}
-#endif
-
 void
 config_init (void)
 {
@@ -256,11 +248,4 @@ config_init (void)
     cb = cb_create (&watch_list, "proxies", APTERYX_PROXIES_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set);
     cb_release (cb);
-
-#ifdef USE_SHM_CACHE
-    /* Cache */
-    cb = cb_create (&provide_list, "cache", APTERYX_CACHE,
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_cache_get);
-    cb_release (cb);
-#endif
 }
