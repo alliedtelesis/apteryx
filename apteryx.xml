@@ -32,5 +32,8 @@
 		<NODE name="counters" help="List of counters and values for Apteryx usage">
 			<NODE name="*" mode="r" help="Counter and value" pattern="^\d+$" />
 		</NODE>
+		<NODE name="sync">
+			<NODE name="*" help="Unique identifier HASH(socket). Value is the (remote) socket." value="^[a-zA-Z0-9]*$" />
+		</NODE>
 	</NODE>
 </MODULE>

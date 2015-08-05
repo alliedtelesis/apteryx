@@ -68,6 +68,7 @@
 #define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
 #define APTERYX_PROXIES_PATH                     "/apteryx/proxies"
 #define APTERYX_COUNTERS                         "/apteryx/counters"
+#define APTERYX_SYNC_PATH                        "/apteryx/sync"
 
 /** Initialise this instance of the Apteryx library.
  * @param debug verbose debug to stdout
