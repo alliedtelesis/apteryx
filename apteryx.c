@@ -1174,7 +1174,9 @@ apteryx_timestamp (const char *path)
 
     /* Check path */
     path = validate_path (path, &url);
-    if (!path || path[strlen(path)-1] == '/')
+    /* if path is empty, or path ends in '/' but is not the root db path (ie "/") */
+    if (!path ||
+        ((path[strlen(path)-1] == '/') && strlen(path) > 1))
     {
         ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
         assert (!debug || path);

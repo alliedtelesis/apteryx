@@ -24,7 +24,7 @@ EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --cflags
 EXTRA_LDFLAGS += `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --libs lua || $(PKG_CONFIG) --libs lua5.2`
 endif
 
-all: libapteryx.so apteryx apteryxd
+all: libapteryx.so apteryx apteryxd apteryx-sync
 
 libapteryx.so: rpc.o rpc_transport.o rpc_socket.o apteryx.pb-c.o apteryx.o lua.o
 	@echo "Creating library "$@""
@@ -44,6 +44,10 @@ apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c rpc_transport.o rpc_socket.
 apteryx: apteryxc.c database.c callbacks.c test.c libapteryx.so
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
+
+apteryx-sync: syncer.c libapteryx.so
+	@echo "Building $@"
+	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
@@ -74,9 +78,10 @@ install: all
 	@install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
 	@install -d $(DESTDIR)/$(PREFIX)/lib/pkgconfig
 	@install -D apteryx.pc $(DESTDIR)/$(PREFIX)/lib/pkgconfig/
+	@install -D apteryx-sync $(DESTDIR)/$(PREFIX)/bin/
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx.so apteryx apteryxd *.o *.pb-c.c *.pb-c.h
+	@rm -f libapteryx.so apteryx apteryxd apteryx-sync *.o *.pb-c.c *.pb-c.h
 
 .PHONY: all clean
