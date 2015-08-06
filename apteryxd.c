@@ -560,6 +560,7 @@ proxy_get (const char *path)
 static GList *
 proxy_search (const char *path)
 {
+    const char *in_path = path;
     ProtobufCService *rpc_client;
     Apteryx__Search search = APTERYX__SEARCH__INIT;
     search_data_t data = {0};
@@ -576,6 +577,24 @@ proxy_search (const char *path)
     {
         INC_COUNTER (counters.proxied_timeout);
         ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+    }
+    else
+    {
+        /* Prepend local path to start of all search results */
+        size_t path_len = path - in_path;
+        char *local_path = calloc (path_len + 1, sizeof (char));
+        strncpy (local_path, in_path, path_len);
+        GList *itr = data.paths;
+        for (; itr; itr = itr->next)
+        {
+            char *tmp = NULL;
+            if (asprintf (&tmp, "%s%s", local_path, (char *)itr->data) >= 0)
+            {
+                free (itr->data);
+                itr->data = tmp;
+            }
+        }
+        free (local_path);
     }
 
     /* Destroy the service */

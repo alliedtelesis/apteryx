@@ -2073,9 +2073,9 @@ test_proxy_search ()
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT ((paths = apteryx_search (TEST_PATH"/remote/test/local/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/local/cat",
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/remote"TEST_PATH"/local/cat",
             (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/local/dog",
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/remote"TEST_PATH"/local/dog",
             (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
