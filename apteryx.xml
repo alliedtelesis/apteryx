@@ -2,7 +2,7 @@
 <MODULE xmlns="https://github.com/alliedtelesis/apteryx"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="https://github.com/alliedtelesis/apteryx
-	https://github.com/alliedtelesis/apteryx/releases/download/v2.04/apteryx.xsd">
+	https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd">
 	<!--=======================================================-->
 	<NODE name="apteryx">
 		<NODE name="debug" mode="rw" default="0" help="Apteryx debug" pattern="^(0|1)$">
