@@ -315,7 +315,7 @@ notify_watchers (const char *path)
 
     /* Retrieve a list of watchers for this path */
     watchers = cb_match (&watch_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
     if (!watchers)
         return;
 
