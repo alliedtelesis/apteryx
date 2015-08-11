@@ -864,6 +864,120 @@ apteryx__search (Apteryx__Server_Service *service,
 }
 
 static void
+_traverse_paths (GList **pvlist, const char *path)
+{
+    GList *children, *iter;
+    char *value = NULL;
+    size_t vsize;
+
+    /* Look for a value - db first */
+    if (!db_get (path, (unsigned char**)&value, &vsize))
+    {
+        /* Provide next */
+        value = provide_get (path);
+    }
+    if (value)
+    {
+        Apteryx__PathValue *pv = NULL;
+
+        /* Allocate a new pv */
+        pv = calloc (1, sizeof (Apteryx__PathValue));
+        pv->base.descriptor = &apteryx__path_value__descriptor;
+        pv->path = strdup (path);
+        pv->value = value;
+
+        /* Add to the list */
+        *pvlist = g_list_append (*pvlist, pv);
+    }
+
+    /* Check for children - index first */
+    if (!index_get (path, &children))
+    {
+        /* Search database next */
+        children = db_search (path);
+
+        /* Append any provided paths */
+        GList *providers = NULL;
+        providers = cb_match (&provide_list, path, CB_MATCH_PART);
+        for (iter = providers; iter; iter = g_list_next (iter))
+        {
+            cb_info_t *provider = iter->data;
+            char *ptr, *ppath;
+            int len = strlen (path);
+
+            if (strcmp (provider->path, path) == 0)
+                continue;
+
+            ppath = strdup (provider->path);
+            if ((ptr = strchr (&ppath[len+1], '/')) != 0)
+                   *ptr = '\0';
+            if (!g_list_find_custom (children, ppath, (GCompareFunc) strcmp))
+                children = g_list_append (children, ppath);
+            else
+                free (ppath);
+        }
+        g_list_free_full (providers, (GDestroyNotify) cb_release);
+    }
+    for (iter = children; iter; iter = g_list_next (iter))
+    {
+        _traverse_paths (pvlist, (const char *) iter->data);
+    }
+    g_list_free_full (children, free);
+}
+
+static void
+apteryx__traverse (Apteryx__Server_Service *service,
+                 const Apteryx__Traverse *traverse,
+                 Apteryx__TraverseResult_Closure closure, void *closure_data)
+{
+    Apteryx__TraverseResult result = APTERYX__TRAVERSE_RESULT__INIT;
+    GList *iter, *pvlist = NULL;
+    (void) service;
+
+    /* Check parameters */
+    if (traverse == NULL || traverse->path == NULL)
+    {
+        ERROR ("TRAVERSE: Invalid parameters.\n");
+        closure (NULL, closure_data);
+        INC_COUNTER (counters.traverse_invalid);
+        return;
+    }
+    INC_COUNTER (counters.traverse);
+
+    DEBUG ("TRAVERSE: %s\n", traverse->path);
+
+    /* Traverse paths */
+    _traverse_paths (&pvlist, traverse->path);
+    if (pvlist)
+    {
+        result.n_pv = 0;
+        result.pv = malloc (g_list_length (pvlist) * sizeof (Apteryx__PathValue *));
+        for (iter = pvlist; iter; iter = g_list_next (iter))
+        {
+            Apteryx__PathValue *pv = (Apteryx__PathValue *) iter->data;
+            DEBUG ("  %s = %s\n", pv->path, pv->value);
+            result.pv[result.n_pv++] = pv;
+        }
+    }
+
+    /* Send result */
+    closure (&result, closure_data);
+    if (pvlist)
+    {
+        for (iter = pvlist; iter; iter = g_list_next (iter))
+        {
+            Apteryx__PathValue *pv = (Apteryx__PathValue *) iter->data;
+            free (pv->path);
+            free (pv->value);
+            free (pv);
+        }
+        free (result.pv);
+        g_list_free (pvlist);
+    }
+    return;
+}
+
+static void
 _search_paths (GList **paths, const char *path)
 {
     GList *children, *iter;

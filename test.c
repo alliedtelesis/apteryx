@@ -1794,11 +1794,11 @@ test_get_tree ()
     root = apteryx_get_tree (TEST_PATH"/interfaces", -1);
     CU_ASSERT (root != NULL);
     CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/interfaces") == 0);
-    CU_ASSERT (g_node_n_children (root) == 1);
-    node = g_node_first_child (root);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
     CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
-    CU_ASSERT (g_node_n_children (node) == 3);
-    node = g_node_first_child (node);
+    CU_ASSERT (node && g_node_n_children (node) == 3);
+    node = node ? g_node_first_child (node) : NULL;
     while (node)
     {
         if (strcmp (APTERYX_NAME (node), "state") == 0)
@@ -1821,6 +1821,92 @@ test_get_tree ()
     }
     CU_ASSERT (apteryx_prune (path));
     apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static char*
+test_provide_callback_100 (const char *path)
+{
+    return strdup ("100");
+}
+
+static char*
+test_provide_callback_1000 (const char *path)
+{
+    return strdup ("1000");
+}
+
+void
+test_get_tree_indexed_provided ()
+{
+    GNode *root, *node, *child;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
+
+    root = apteryx_get_tree (TEST_PATH"/counters", -1);
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    node = root ? g_node_first_child (root) : NULL;
+    while (node)
+    {
+        if (strcmp (APTERYX_NAME (node), "rx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else if (strcmp (APTERYX_NAME (node), "tx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else
+        {
+            CU_ASSERT (node == NULL);
+        }
+        node = node->next;
+    }
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters", test_index_cb));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -2374,6 +2460,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes wide", test_tree_nodes_wide },
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },
+    { "get tree indexed/provided", test_get_tree_indexed_provided },
     CU_TEST_INFO_NULL,
 };
 
