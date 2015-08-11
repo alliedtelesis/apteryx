@@ -123,6 +123,8 @@ typedef struct _cb_info_t
     X(uint32_t, get_invalid) \
     X(uint32_t, search) \
     X(uint32_t, search_invalid) \
+    X(uint32_t, traverse) \
+    X(uint32_t, traverse_invalid) \
     X(uint32_t, indexed) \
     X(uint32_t, indexed_no_handler) \
     X(uint32_t, indexed_timeout) \
