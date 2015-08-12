@@ -42,6 +42,25 @@ counters_t counters = {};
 /* Synchronise validation */
 static pthread_mutex_t validating;
 
+/* Worker pool */
+GThreadPool *workers_pool;
+
+struct worker_request_s {
+    int type;
+    rpc_socket sock; // Which socket send this request
+    void *priv;
+};
+
+struct worker_request_s *worker_request_create (int type, rpc_socket sock, void *priv)
+{
+    struct worker_request_s *wr = (struct worker_request_s *)calloc (1, sizeof (*wr));
+    wr->type = type;
+    wr->sock = sock;
+    rpc_socket_ref (sock);
+    wr->priv = priv;
+    return wr;
+}
+
 /* Callbacks for client communication */
 static void
 handle_set_response (const Apteryx__OKResult *result, void *closure_data)
@@ -172,7 +191,6 @@ index_get (const char *path, GList **result)
         ProtobufCService *rpc_client;
         Apteryx__Index index = APTERYX__INDEX__INIT;
         search_data_t data = {0};
-        char service_name[64];
 
         /* Check for local provider */
         if (indexer->id == getpid ())
@@ -188,8 +206,7 @@ index_get (const char *path, GList **result)
                 indexer->path, indexer->id, indexer->cb);
 
         /* Setup IPC */
-        sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", indexer->id);
-        rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
+        rpc_client = rpc_connect_service_sock (indexer->sock, &apteryx__client__descriptor);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -212,7 +229,7 @@ index_get (const char *path, GList **result)
         }
 
         /* Destroy the service */
-        protobuf_c_service_destroy (rpc_client);
+        rpc_connect_deref (rpc_client);
 
         /* Result */
         INC_COUNTER (counters.indexed);
@@ -251,7 +268,6 @@ validate_set (const char *path, const char *value)
         cb_info_t *validator = iter->data;
         ProtobufCService *rpc_client;
         Apteryx__Validate validate = APTERYX__VALIDATE__INIT;
-        char service_name[64];
 
         /* Check for local validator */
         if (validator->id == getpid ())
@@ -267,8 +283,7 @@ validate_set (const char *path, const char *value)
                  validator->path, value, validator->id, validator->cb);
 
         /* Setup IPC */
-        sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", validator->id);
-        rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
+        rpc_client = rpc_connect_service_sock (validator->sock, &apteryx__client__descriptor);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -285,18 +300,16 @@ validate_set (const char *path, const char *value)
         validate.id = validator->id;
         validate.cb = validator->cb;
         apteryx__client__validate (rpc_client, &validate, handle_validate_response, &result);
+        /* Destroy the service */
+        rpc_connect_deref (rpc_client);
         if (result < 0)
         {
             DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n",
                     (char *)path, (char*)value, validator->id, result);
-            /* Destroy the service */
-            protobuf_c_service_destroy (rpc_client);
             INC_COUNTER (counters.validated_timeout);
             break;
         }
 
-        /* Destroy the service */
-        protobuf_c_service_destroy (rpc_client);
         INC_COUNTER (counters.validated);
     }
     g_list_free_full (validators, (GDestroyNotify) cb_release);
@@ -306,7 +319,7 @@ validate_set (const char *path, const char *value)
 }
 
 static void
-notify_watchers (const char *path)
+notify_watchers (const char *path, rpc_socket sock)
 {
     GList *watchers = NULL;
     GList *iter = NULL;
@@ -331,15 +344,14 @@ notify_watchers (const char *path)
         ProtobufCService *rpc_client;
         protobuf_c_boolean is_done = false;
         Apteryx__Watch watch = APTERYX__WATCH__INIT;
-        char service_name[64];
 
         /* Check for local watcher */
         if (watcher->id == getpid ())
         {
-            apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
+            apteryx_internal_watch_callback cb = (apteryx_internal_watch_callback) (long) watcher->cb;
             DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
                     watcher->path, watcher->id, watcher->cb);
-            cb (path, value);
+            cb (path, value, sock);
             continue;
         }
 
@@ -347,8 +359,7 @@ notify_watchers (const char *path)
                 path, value, watcher->path, watcher->id, watcher->cb);
 
         /* Setup IPC */
-        sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", watcher->id);
-        rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
+        rpc_client = rpc_connect_service_sock (watcher->sock, &apteryx__client__descriptor);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -372,7 +383,7 @@ notify_watchers (const char *path)
         }
 
         /* Destroy the service */
-        protobuf_c_service_destroy (rpc_client);
+        rpc_connect_deref (rpc_client);
         INC_COUNTER (counters.watched);
         INC_COUNTER (watcher->count);
     }
@@ -381,6 +392,19 @@ notify_watchers (const char *path)
     /* Free memory if allocated */
     if (value)
         free (value);
+}
+
+static void
+worker_thread (gpointer callback, gpointer data)
+{
+    struct worker_request_s *wr = (struct worker_request_s *)callback;
+    if (wr)
+    {
+        notify_watchers ((const char *)wr->priv, wr->sock);
+        free (wr->priv);
+        rpc_socket_deref (wr->sock);
+        free (wr);
+    }
 }
 
 static char *
@@ -403,7 +427,6 @@ provide_get (const char *path)
         ProtobufCService *rpc_client;
         get_data_t data = {0};
         Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
-        char service_name[64];
 
         /* Check for local provider */
         if (provider->id == getpid ())
@@ -419,8 +442,7 @@ provide_get (const char *path)
                provider->path, provider->id, provider->cb);
 
         /* Setup IPC */
-        sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", provider->id);
-        rpc_client = rpc_connect_service (service_name, &apteryx__client__descriptor);
+        rpc_client = rpc_connect_service_sock (provider->sock, &apteryx__client__descriptor);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -443,7 +465,7 @@ provide_get (const char *path)
         }
 
         /* Destroy the service */
-        protobuf_c_service_destroy (rpc_client);
+        rpc_connect_deref (rpc_client);
 
         /* Result */
         INC_COUNTER (counters.provided);
@@ -479,7 +501,7 @@ find_proxy (const char **path)
         int len = strlen (proxy->path);
 
         /* Setup IPC */
-        rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor);
+        rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor, NULL);
         if (!rpc_client)
         {
             ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
@@ -525,7 +547,7 @@ proxy_set (const char *path, const char *value)
     apteryx__server__set (rpc_client, &set, handle_set_response, &result);
 
     /* Destroy the service */
-    protobuf_c_service_destroy (rpc_client);
+    rpc_connect_deref (rpc_client);
 
     return result;
 }
@@ -552,7 +574,7 @@ proxy_get (const char *path)
     }
 
     /* Destroy the service */
-    protobuf_c_service_destroy (rpc_client);
+    rpc_connect_deref (rpc_client);
 
     return data.value;
 }
@@ -598,7 +620,7 @@ proxy_search (const char *path)
     }
 
     /* Destroy the service */
-    protobuf_c_service_destroy (rpc_client);
+    rpc_connect_deref (rpc_client);
 
     return data.paths;
 }
@@ -618,7 +640,7 @@ proxy_prune (const char *path)
     /* Do remote prune */
     prune.path = (char *) path;
     apteryx__server__prune (rpc_client, &prune, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
+    rpc_connect_deref (rpc_client);
     if (!is_done)
     {
         ERROR ("PRUNE: No response\n");
@@ -650,7 +672,7 @@ proxy_timestamp (const char *path)
     }
 
     /* Destroy the service */
-    protobuf_c_service_destroy (rpc_client);
+    rpc_connect_deref (rpc_client);
 
     return value;
 }
@@ -727,7 +749,7 @@ exit:
         /* Notify watchers for each Path Value in the set*/
         for (i=0; i<set->n_sets; i++)
         {
-            notify_watchers (set->sets[i]->path);
+            g_thread_pool_push (workers_pool, worker_request_create (0, rpc_socket_current (), strdup (set->sets[i]->path)), NULL);
         }
     }
 
@@ -919,7 +941,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     /* Call watchers for each pruned path */
     for (iter = paths; iter; iter = g_list_next (iter))
     {
-        notify_watchers ((const char *) iter->data);
+        g_thread_pool_push (workers_pool, worker_request_create (0, rpc_socket_current (), strdup ((const char *)iter->data)), NULL);
     }
 
     g_list_free_full (paths, free);
@@ -1053,6 +1075,11 @@ main (int argc, char **argv)
     /* Create a lock for currently-validating */
     pthread_mutex_init (&validating, NULL);
 
+    /* Create the workers - 8 currently */
+    workers_pool = g_thread_pool_new ((GFunc)worker_thread, NULL, 8, false, NULL);
+    /* Init the RPC */
+    rpc_init ();
+
     /* Create fd to stop server */
     if (pipe (pipefd) != 0)
     {
@@ -1061,8 +1088,8 @@ main (int argc, char **argv)
     }
     stopfd = pipefd[1];
 
-    /* Create server and process requests - 4 threads */
-    if (!rpc_provide_service (url, (ProtobufCService *)&apteryx_service, 8, pipefd[0]))
+    /* Create server and process requests */
+    if (!rpc_provide_service (url, (ProtobufCService *)&apteryx_service, pipefd[0]))
     {
         ERROR ("Failed to start rpc service\n");
     }

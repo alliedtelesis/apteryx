@@ -39,45 +39,11 @@ bool debug = false;                      /* Debug enabled */
 static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
-static int stopfd = -1;                 /* Used to stop the RPC server service */
-static pthread_t client_id = 0;        /* Thread to process Apteryx events */
-static pthread_t worker_id = 0;        /* Worker to handle watch callbacks */
-static GList *pending_watches = NULL;   /* List of watches to process */
-static sem_t wake_worker;               /* How we wake up the watch callback handler */
-static volatile bool client_running = false;
-static volatile bool worker_running = false;
 
 static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
 static int pending_watch_count = 0;
 
-/* Callback */
-typedef struct _ccb_info_t
-{
-    apteryx_watch_callback cb;
-    const char *path;
-    char *value;
-} ccb_info_t;
-
-static void
-ccb_info_destroy (gpointer data)
-{
-    ccb_info_t *info = (ccb_info_t*)data;
-    free ((void *) info->path);
-    free ((void *) info->value);
-    free (info);
-}
-
-static gpointer
-ccb_info_create (const Apteryx__Watch *watch)
-{
-    ccb_info_t *info = calloc (1, sizeof (ccb_info_t));
-    info->cb = (apteryx_watch_callback) (long) watch->cb;
-    info->path = strdup (watch->path);
-    if (watch->value && watch->value[0] != '\0')
-        info->value = strdup (watch->value);
-    return (gpointer)info;
-}
 
 static const char *
 validate_path (const char *path, char **url)
@@ -155,24 +121,33 @@ apteryx__watch (Apteryx__Client_Service *service,
 {
     Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     (void) service;
+    char *value = NULL;
 
     DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
            watch->path, watch->value,
            watch->id, watch->cb);
 
+    if (watch->value && (watch->value[0] != '\0'))
+    {
+        value = watch->value;
+    }
+
     pthread_mutex_lock (&pending_watches_lock);
     ++pending_watch_count;
     pthread_mutex_unlock (&pending_watches_lock);
 
-    /* Queue the callback for processing */
-    pthread_mutex_lock (&lock);
-    if (pending_watches == NULL)
-        sem_post (&wake_worker);
-    pending_watches = g_list_append (pending_watches, ccb_info_create (watch));
-    pthread_mutex_unlock (&lock);
+    /* Process watch callback */
+    if (watch->cb)
+        ((apteryx_watch_callback) watch->cb) (watch->path, value);
+
+    pthread_mutex_lock (&pending_watches_lock);
+    if (--pending_watch_count == 0)
+        pthread_cond_signal(&no_pending_watches);
+    pthread_mutex_unlock (&pending_watches_lock);
 
     /* Return result */
     closure (&result, closure_data);
+
     return;
 }
 
@@ -205,6 +180,7 @@ apteryx__validate (Apteryx__Client_Service *service,
     }
     else
         pthread_mutex_unlock (&pending_watches_lock);
+
 
     if (validate->value && (validate->value[0] != '\0'))
     {
@@ -244,186 +220,7 @@ apteryx__provide (Apteryx__Client_Service *service,
     return;
 }
 
-static void*
-worker_thread (void *data)
-{
-    GList *job;
-
-    /* Process callbacks while the client thread is running */
-    DEBUG ("Worker Thread: started...\n");
-    worker_running = true;
-    while (worker_running)
-    {
-        /* Wait for some work */
-        pthread_mutex_lock (&lock);
-        if (pending_watches == NULL)
-        {
-            pthread_mutex_unlock (&lock);
-            sem_wait (&wake_worker);
-            if (!worker_running)
-                break;
-            if (pending_watches == NULL)
-                continue;
-            pthread_mutex_lock (&lock);
-        }
-
-        /* Dequeue the work */
-        job = pending_watches;
-        pending_watches = g_list_remove_link (pending_watches, job);
-        pthread_mutex_unlock (&lock);
-
-        /* Process callback */
-        ccb_info_t *info = (ccb_info_t *) job->data;
-        if (info->cb)
-            info->cb (info->path, info->value);
-
-        /* Free this element */
-        ccb_info_destroy (job->data);
-        g_list_free_1 (job);
-
-        pthread_mutex_lock (&pending_watches_lock);
-        if (--pending_watch_count == 0)
-            pthread_cond_signal(&no_pending_watches);
-        pthread_mutex_unlock (&pending_watches_lock);
-    }
-    DEBUG ("Worker Thread: Exiting\n");
-    sem_destroy(&wake_worker);
-    worker_id = 0;
-    worker_running = false;
-    return NULL;
-}
-
-static void*
-client_thread (void *data)
-{
-    Apteryx__Client_Service service = APTERYX__CLIENT__INIT (apteryx__);
-    char service_name[64];
-    int pipefd[2];
-
-    /* Create fd to stop server */
-    if (pipe (pipefd) != 0)
-    {
-        ERROR ("Failed to create pipe\n");
-        return NULL;
-    }
-    stopfd = pipefd[1];
-
-    /* Create service and process requests */
-    DEBUG ("Watch/Provide/Validate Thread: started...\n");
-    client_running = true;
-    sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", (uint64_t)getpid ());
-    if (!rpc_provide_service (service_name, (ProtobufCService *)&service, 0, pipefd[0]))
-    {
-        ERROR ("Watch/Provide/Validate Thread: Failed to start rpc service\n");
-    }
-
-    /* Clean up */
-    DEBUG ("Watch/Provide/Validate Thread: Exiting\n");
-    close (pipefd[0]);
-    close (pipefd[1]);
-    stopfd = -1;
-    client_id = 0;
-    client_running = false;
-    return NULL;
-}
-
-static void
-stop_client_threads (void)
-{
-    uint8_t dummy = 1;
-    int i;
-
-    /* Not from a callback please */
-    if (pthread_self () == worker_id)
-        return;
-
-    /* Stop the client thread */
-    if (client_running && client_id != 0)
-    {
-        /* Signal stop and wait */
-        client_running = false;
-        if (write (stopfd, &dummy, 1) != 1)
-            ERROR ("Failed to stop server\n");
-        for (i=0; i < 5000 && client_id != 0; i++)
-            usleep (1000);
-        if (client_id != 0)
-        {
-            DEBUG ("Shutdown: Killing Client thread\n");
-            pthread_cancel (client_id);
-            pthread_join (client_id, NULL);
-        }
-    }
-
-    /* Stop the worker thread */
-    if (worker_running && worker_id != 0)
-    {
-        /* Wait for the worker to exit */
-        worker_running = false;
-        sem_post (&wake_worker);
-        for (i=0; i < 5000 && worker_id != 0; i++)
-            usleep (1000);
-        if (worker_id != 0)
-        {
-            DEBUG ("Shutdown: Killing worker thread\n");
-            pthread_cancel (worker_id);
-            pthread_join (worker_id, NULL);
-        }
-        pthread_mutex_lock (&lock);
-        g_list_free_full (pending_watches, ccb_info_destroy);
-        pending_watches = NULL;
-        pthread_mutex_unlock (&lock);
-    }
-
-    /* Done */
-    worker_running = false;
-    client_running = false;
-    return;
-}
-
-static bool
-start_client_threads (void)
-{
-    int i;
-
-    /* Create threads if not already running */
-    pthread_mutex_lock (&lock);
-
-    /* Return early if we are shutting down */
-    if (ref_count == 0)
-    {
-        pthread_mutex_unlock (&lock);
-        return false;
-    }
-
-    if (!client_running)
-    {
-        /* Create the worker to process the watch callbacks */
-        sem_init (&wake_worker, 1, 0);
-        pthread_create (&worker_id, NULL, worker_thread, NULL);
-        for (i=0; i < 5000 && !worker_running; i++)
-            usleep (1000);
-        if (!worker_running || worker_id == 0)
-        {
-            ERROR ("Failed to create Apteryx worker thread\n");
-            pthread_mutex_unlock (&lock);
-            return false;
-        }
-
-        /* Create a thread to process Apteryx events */
-        pthread_create (&client_id, NULL, client_thread, NULL);
-        for (i=0; i < 5000 && !client_running; i++)
-            usleep (1000);
-        if (!client_running || client_id == 0)
-        {
-            pthread_mutex_unlock (&lock);
-            stop_client_threads ();
-            ERROR ("Failed to create Apteryx client thread\n");
-            return false;
-        }
-    }
-    pthread_mutex_unlock (&lock);
-    return true;
-}
+static Apteryx__Client_Service server_service = APTERYX__CLIENT__INIT (apteryx__);
 
 static void
 handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
@@ -441,6 +238,82 @@ handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
     }
 }
 
+GHashTable *client_cache = NULL;
+
+static ProtobufCService *rpc_client_get (const char *url)
+{
+    if (url == NULL)
+    {
+        return NULL;
+    }
+    pthread_mutex_lock (&lock);
+    if (client_cache == NULL)
+    {
+        client_cache = g_hash_table_new (g_str_hash, g_str_equal);
+    }
+    ProtobufCService *rpc_client = (ProtobufCService *) g_hash_table_lookup (client_cache, url);
+    if (!rpc_client)
+    {
+        rpc_client = rpc_connect_service (url, &apteryx__server__descriptor, (const struct ProtobufCService *)&server_service);
+        if (rpc_client)
+        {
+            g_hash_table_insert (client_cache, strdup (url), rpc_client);
+        }
+    }
+    pthread_mutex_unlock (&lock);
+
+    if (rpc_client)
+    {
+        rpc_connect_ref (rpc_client);
+    }
+
+    return rpc_client;
+}
+
+static void rpc_client_abandon (const char *url)
+{
+    if (url == NULL || client_cache == NULL)
+    {
+        return;
+    }
+    char *name = NULL;
+    ProtobufCService *rpc_client = NULL;
+
+    pthread_mutex_lock (&lock);
+    if (g_hash_table_lookup_extended (client_cache, url, (void **)&name, (void **)&rpc_client))
+    {
+        g_hash_table_remove (client_cache, url);
+        free (name);
+        rpc_connect_deref (rpc_client);
+    }
+    pthread_mutex_unlock (&lock);
+
+    return;
+}
+
+static bool
+remove_rpc_client (gpointer key, gpointer value, gpointer empty)
+{
+    ProtobufCService * service = (ProtobufCService *) value;
+    if (service)
+    {
+        rpc_connect_deref (service);
+    }
+    if (key)
+    {
+        free (key);
+    }
+
+    return true;
+}
+
+static void rpc_client_shutdown ()
+{
+    pthread_mutex_lock (&lock);
+    g_hash_table_foreach_remove (client_cache, (GHRFunc)remove_rpc_client, NULL);
+    pthread_mutex_unlock (&lock);
+}
+
 bool
 apteryx_init (bool debug_enabled)
 {
@@ -448,6 +321,10 @@ apteryx_init (bool debug_enabled)
     pthread_mutex_lock (&lock);
     ref_count++;
     debug |= debug_enabled;
+    if (ref_count == 1)
+    {
+        rpc_init ();
+    }
     pthread_mutex_unlock (&lock);
 
     /* Ready to go */
@@ -480,10 +357,8 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("Shutdown: Shutting down\n");
-    stop_client_threads ();
+    rpc_client_shutdown ();
     DEBUG ("Shutdown: Shutdown\n");
-    assert (!client_running);
-    assert (!worker_running);
     return true;
 }
 
@@ -508,47 +383,6 @@ apteryx_unbind (const char *url)
         return false;
     return apteryx_set (path, NULL);
 }
-
-__thread GHashTable *client_cache = NULL;
-
-static ProtobufCService *rpc_client_get (const char *url)
-{
-    if (url == NULL)
-    {
-        return NULL;
-    }
-    if (client_cache == NULL)
-    {
-        client_cache = g_hash_table_new (g_str_hash, g_str_equal);
-    }
-    ProtobufCService *rpc_client = (ProtobufCService *) g_hash_table_lookup (client_cache, url);
-    if (!rpc_client)
-    {
-        rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
-        g_hash_table_insert (client_cache, strdup (url), rpc_client);
-    }
-    return rpc_client;
-}
-
-static void rpc_client_abandon (const char *url)
-{
-    if (url == NULL || client_cache == NULL)
-    {
-        return;
-    }
-    char *name = NULL;
-    ProtobufCService *rpc_client = NULL;
-
-    if (g_hash_table_lookup_extended (client_cache, url, (void **)&name, (void **)&rpc_client))
-    {
-        g_hash_table_remove (client_cache, url);
-        free (name);
-        protobuf_c_service_destroy (rpc_client);
-    }
-
-    return;
-}
-
 
 bool
 apteryx_prune (const char *path)
@@ -579,6 +413,7 @@ apteryx_prune (const char *path)
     }
     prune.path = (char *) path;
     apteryx__server__prune (rpc_client, &prune, handle_ok_response, &is_done);
+    rpc_connect_deref (rpc_client);
     if (!is_done)
     {
         ERROR ("PRUNE: No response\n");
@@ -663,6 +498,7 @@ apteryx_set (const char *path, const char *value)
     set.n_sets = 1;
     set.sets = pv;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
+    rpc_connect_deref (rpc_client);
     if (!is_done)
     {
         DEBUG ("SET: Failed %s\n", strerror(errno));
@@ -733,16 +569,20 @@ static void
 handle_get_response (const Apteryx__GetResult *result, void *closure_data)
 {
     get_data_t *data = (get_data_t *)closure_data;
+    data->done = false;
     if (result == NULL)
     {
         ERROR ("GET: Error processing request.\n");
         errno = -ETIMEDOUT;
     }
-    else if (result->value && result->value[0] != '\0')
+    else
     {
-        data->value = strdup (result->value);
+        data->done = true;
+        if (result->value && result->value[0] != '\0')
+        {
+            data->value = strdup (result->value);
+        }
     }
-    data->done = true;
 }
 
 char *
@@ -775,6 +615,7 @@ apteryx_get (const char *path)
     }
     get.path = (char *) path;
     apteryx__server__get (rpc_client, &get, handle_get_response, &data);
+    rpc_connect_deref (rpc_client);
     if (!data.done)
     {
         ERROR ("GET: No response\n");
@@ -948,6 +789,7 @@ apteryx_set_tree (GNode* root)
     set.n_sets = 0;
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &set);
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
+    rpc_connect_deref (rpc_client);
     if (!is_done)
     {
         DEBUG ("SET_TREE: Failed %s\n", strerror(errno));
@@ -1121,6 +963,7 @@ apteryx_search (const char *path)
     }
     search.path = (char *) path;
     apteryx__server__search (rpc_client, &search, handle_search_response, &data);
+    rpc_connect_deref (rpc_client);
     if (!data.done)
     {
         ERROR ("SEARCH: No response\n");
@@ -1145,7 +988,7 @@ add_callback (const char *type, const char *path, void *cb)
         return false;
     if (!apteryx_set (_path, path))
         return false;
-    return start_client_threads ();
+    return true;
 }
 
 static bool
@@ -1281,6 +1124,7 @@ apteryx_timestamp (const char *path)
     }
     get.path = (char *) path;
     apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
+    rpc_connect_deref (rpc_client);
 
     DEBUG ("    = %"PRIu64"\n", value);
     return value;

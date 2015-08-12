@@ -1473,7 +1473,7 @@ test_provide_remove_handler ()
 static char*
 test_provide_timeout_cb (const char *path)
 {
-    sleep (1.2);
+    usleep (1.1 * RPC_TIMEOUT_US);
     return strdup ("down");
 }
 
