@@ -34,6 +34,8 @@
 #include <glib.h>
 #include <protobuf-c/protobuf-c.h>
 
+typedef struct rpc_socket_s *rpc_socket;
+
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
 /* Default PID file */
@@ -114,6 +116,7 @@ typedef struct _cb_info_t
     GList **list;
     int refcnt;
     uint32_t count;
+    rpc_socket sock;
 } cb_info_t;
 
 #define X_FIELDS \
@@ -167,16 +170,24 @@ GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
 
 /* RPC API */
-#define RPC_TIMEOUT_US 1000000
-bool rpc_provide_service (const char *url, ProtobufCService *service, int num_threads, int stopfd);
-bool rpc_bind_url (const char *id, const char *url);
-bool rpc_unbind_url (const char *id, const char *url);
-ProtobufCService *rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor);
+#define RPC_TIMEOUT_US 10000000
+bool rpc_init ();
+bool rpc_provide_service (const char *url, ProtobufCService *service, int stopfd);
+bool rpc_bind_url (const char *guid, const char *url);
+bool rpc_unbind_url (const char *guid, const char *url);
+ProtobufCService *rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor, const ProtobufCService *descriptor2);
+ProtobufCService *rpc_connect_service_sock (rpc_socket sock, const ProtobufCServiceDescriptor *descriptor);
+void rpc_connect_ref (ProtobufCService *service);
+void rpc_connect_deref (ProtobufCService *service);
+rpc_socket rpc_socket_current (void);
+void rpc_socket_current_set (rpc_socket sock);
 
 /* Apteryx configuration */
 void config_init (void);
 
 /* Callbacks to clients */
+typedef bool (*apteryx_internal_watch_callback) (const char *path, const char *value, rpc_socket sock);
+
 extern GList *watch_list;
 extern GList *validation_list;
 extern GList *provide_list;
