@@ -18,7 +18,7 @@ CFLAGS := $(CFLAGS) -g -O2
 EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
 EXTRA_CFLAGS += -I. -I/usr/include/google `$(PKG_CONFIG) --cflags glib-2.0`
 EXTRA_LDFLAGS := `$(PKG_CONFIG) --libs glib-2.0` -lpthread
-EXTRA_LDFLAGS += -lrt -lprotobuf-c
+EXTRA_LDFLAGS += -lrt -lprotobuf-c -lgcc_s
 ifneq ($(HAVE_LUA),no)
 EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --cflags lua || $(PKG_CONFIG) --cflags lua5.2`
 EXTRA_LDFLAGS += `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --libs lua || $(PKG_CONFIG) --libs lua5.2`
@@ -26,7 +26,7 @@ endif
 
 all: libapteryx.so apteryx apteryxd
 
-libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o lua.o
+libapteryx.so: rpc.o rpc_transport.o rpc_socket.o apteryx.pb-c.o apteryx.o lua.o locks.o
 	@echo "Creating library "$@""
 	@$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
@@ -37,7 +37,7 @@ libapteryx.so: rpc.o apteryx.pb-c.o apteryx.o lua.o
 %.pb-c.c : %.proto
 	@$(PROTOC_C) --c_out=. $<
 
-apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c config.o callbacks.o
+apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.c rpc_transport.o rpc_socket.o config.o callbacks.o locks.o
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
