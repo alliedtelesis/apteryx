@@ -95,7 +95,7 @@ update_callback (GList **list, const char *guid, const char *value)
 }
 
 static bool
-handle_indexers_set (const char *path, const char *value)
+handle_indexers_set (const char *path, const char *value, rpc_socket sock)
 {
     const char *guid = path + strlen (APTERYX_INDEXERS_PATH"/");
     cb_info_t *cb;
@@ -103,12 +103,16 @@ handle_indexers_set (const char *path, const char *value)
     DEBUG ("CFG-Index: %s = %s\n", guid, value);
 
     cb = update_callback (&index_list, guid, value);
+    if (cb)
+    {
+        cb->sock = sock;
+    }
     cb_release (cb);
     return true;
 }
 
 static bool
-handle_watchers_set (const char *path, const char *value)
+handle_watchers_set (const char *path, const char *value, rpc_socket sock)
 {
     const char *guid = path + strlen (APTERYX_WATCHERS_PATH"/");
     cb_info_t *cb;
@@ -116,12 +120,16 @@ handle_watchers_set (const char *path, const char *value)
     DEBUG ("CFG-Watch: %s = %s\n", guid, value);
 
     cb = update_callback (&watch_list, guid, value);
+    if (cb)
+    {
+        cb->sock = sock;
+    }
     cb_release (cb);
     return true;
 }
 
 static bool
-handle_providers_set (const char *path, const char *value)
+handle_providers_set (const char *path, const char *value, rpc_socket sock)
 {
     const char *guid = path + strlen (APTERYX_PROVIDERS_PATH"/");
     cb_info_t *cb;
@@ -129,12 +137,16 @@ handle_providers_set (const char *path, const char *value)
     DEBUG ("CFG-Provide: %s = %s\n", guid, value);
 
     cb = update_callback (&provide_list, guid, value);
+    if (cb)
+    {
+        cb->sock = sock;
+    }
     cb_release (cb);
     return true;
 }
 
 static bool
-handle_validators_set (const char *path, const char *value)
+handle_validators_set (const char *path, const char *value, rpc_socket sock)
 {
     const char *guid = path + strlen (APTERYX_VALIDATORS_PATH"/");
     cb_info_t *cb;
@@ -142,12 +154,16 @@ handle_validators_set (const char *path, const char *value)
     DEBUG ("CFG-Validate: %s = %s\n", guid, value);
 
     cb = update_callback (&validation_list, guid, value);
+    if (cb)
+    {
+        cb->sock = sock;
+    }
     cb_release (cb);
     return true;
 }
 
 static bool
-handle_proxies_set (const char *path, const char *value)
+handle_proxies_set (const char *path, const char *value, rpc_socket sock)
 {
     const char *guid = path + strlen (APTERYX_PROXIES_PATH"/");
     cb_info_t *cb;
