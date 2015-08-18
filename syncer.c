@@ -23,8 +23,12 @@ typedef struct sync_partner_s
     uint64_t last_sync_remote;
 } sync_partner;
 
+/* keep a list of the partners we are syncing paths to */
 GList *partners = NULL;
 pthread_rwlock_t partners_lock = PTHREAD_RWLOCK_INITIALIZER;
+/* keep a list of the paths we are syncing */
+GList *paths = NULL;
+pthread_rwlock_t paths_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 bool
 syncer_add (sync_partner *sp)
@@ -89,12 +93,12 @@ new_syncer (const char *path, const char *value)
 bool
 sync_path_check (const char *path)
 {
-    if (strncmp (path, "/apteryx", 8) == 0)
+	/* as a sanity check, make sure the path to sync isn't something crazy */
+    if ((strncmp (path, "/apteryx", 8) == 0) ||
+        (strcmp (path, "/") == 0))
     {
         return false;
     }
-    // should check other data for other paths we shouldn't sync
-    // like the schema files ...
     return true;
 }
 
@@ -152,10 +156,6 @@ bool
 sync_recursive (sync_partner *sp, const char *path)
 {
     uint64_t ts = apteryx_timestamp (path);
-    if (!sync_path_check (path))
-    {
-        return true;
-    }
     if (ts < sp->last_sync_local)
     {
         if (ts == 0)
@@ -166,29 +166,61 @@ sync_recursive (sync_partner *sp, const char *path)
         /* Skip anything that hasn't changed since last sync */
         return true;
     }
+    /* make sure the path doesn't end in '/' for the get */
+    char *get_path = strdup (path);
+    if (get_path[strlen (get_path -1)] == '/')
+    {
+    	get_path[strlen (get_path -1)] = '\0';
+    }
+    /* now make sure the path ends in '/' for the search */
+    char *search_path = NULL;
+    if (path[strlen (path -1)] != '/')
+    {
+    	if (asprintf (&search_path, "%s/", path) == -1)
+    	{
+    		ERROR ("SYNC couldn't allocate search path!\n");
+    		search_path = NULL;
+    		free (get_path);
+    		return false;
+    	}
+    }
+    else
+    {
+    	search_path = strdup (path);
+    }
     /* Update this node */
-    char *value = apteryx_get (path);
-    apteryx_set_sp (sp, path, value);
+    char *value = apteryx_get (get_path);
+    apteryx_set_sp (sp, get_path, value);
     free (value);
+    free (get_path);
     /* Update all children */
-    GList *paths = apteryx_search (path);
-    for (GList *iter = paths; iter; iter = iter->next)
+    GList *sync_paths = apteryx_search (search_path);
+    free (search_path);
+    for (GList *iter = sync_paths; iter; iter = iter->next)
     {
         sync_recursive (sp, iter->data);
     }
-    g_list_free_full (paths, free);
-    // Update remote children that weren't already covered above
-    // Specifically, look for local deletes that haven't propogated
+    g_list_free_full (sync_paths, free);
+    // TODO: Update remote children that weren't already covered above
+    // Specifically, look for local deletes that haven't propagated
     return true;
 }
 
 bool
 resync (sync_partner *sp)
 {
+	DEBUG ("Resyncing!\n");
     uint64_t local_ts = apteryx_timestamp ("/");
     if (local_ts > sp->last_sync_local)
     {
-        sync_recursive (sp, "/");
+    	/* go through the list of paths to sync to the partner */
+    	pthread_rwlock_rdlock (&paths_lock);
+    	for (GList *iter = paths; iter; iter = iter->next)
+        {
+    		DEBUG ("About to sync path %s to node %s\n", (char *)iter->data, sp->socket);
+            sync_recursive (sp, iter->data);
+        }
+        pthread_rwlock_unlock (&paths_lock);
     }
     sp->last_sync_local = local_ts;
     sp->last_sync_remote = apteryx_get_timestamp_sp (sp, "/");
@@ -200,6 +232,7 @@ periodic_syncer_thread (void *ign)
 {
     while (1)
     {
+    	DEBUG ("Period Syncer Thread running!\n");
         pthread_rwlock_rdlock (&partners_lock);
         for (GList *iter = partners; iter; iter = iter->next)
         {
@@ -229,40 +262,129 @@ new_change (const char *path, const char *value)
 void
 register_existing_partners (void)
 {
-	GList *iter = NULL;
-	char *value = NULL;
+    GList *iter = NULL;
+    char *value = NULL;
+    char *path = NULL;
     /* get all paths under the APTERYX_SYNC_PATH node
-	 * note: need to add a "/" on the end for search to work
-	 */
-	char *base_path = NULL;
-	if (asprintf (&base_path, "%s/", APTERYX_SYNC_PATH) <= 0)
-	{
-		/* shouldn't fail, but if it does we can't continue */
-		return;
-	}
-	GList *existing_partners = apteryx_search (base_path);
-	free (base_path);
-	/* for each path in the search result, get the value and create a new syncer */
-	iter = existing_partners;
-	while (iter != NULL)
-	{
-		DEBUG ("Adding existing partner %s\n", (char *)iter->data);
-		/* the path is a char* in the iter->data. need to add "/*" to the end */
-		if (asprintf (&base_path, "%s/*", (char *)iter->data) <= 0)
+     * note: need to add a "/" on the end for search to work
+     */
+    GList *existing_partners = apteryx_search (APTERYX_SYNC_PATH "/");
+    /* for each path in the search result, get the value and create a new syncer */
+    iter = existing_partners;
+    while (iter != NULL)
+    {
+        DEBUG ("Adding existing partner %s\n", (char *)iter->data);
+        /* the path is a char* in the iter->data. need to add "/*" to the end */
+        if (asprintf (&path, "%s/*", (char *)iter->data) <= 0)
         {
             /* shouldn't fail, but if it does we can't do any more with it */
             continue;
         }
-		value = apteryx_get (base_path);
-		new_syncer (base_path, value);
-		free (value);
-		free (base_path);
-		/* finished with this entry. move along, nothing to see here. */
-		iter = iter->next;
-	}
-	/* finally, clean up the list */
-	g_list_free_full (existing_partners, free);
-	existing_partners = NULL;
+        value = apteryx_get (path);
+        new_syncer (path, value);
+        free (value);
+        free (path);
+        /* finished with this entry. move along, nothing to see here. */
+        iter = iter->next;
+    }
+    /* finally, clean up the list */
+    g_list_free_full (existing_partners, free);
+    existing_partners = NULL;
+}
+
+bool
+add_path_to_sync (const char *path)
+{
+    /* Note: it is required that the path in the file ends with "/*" */
+    if (sync_path_check (path))
+    {
+        DEBUG ("SYNC INIT: about to watch path: %s\n", path);
+        apteryx_watch (path, new_change);
+        /* Lastly, add the path to our list for the resyncer thread.
+        /* note: because we need to do a few things to this later,
+         * remove the trailing '/*'
+         */
+        char *new_path = strdup (path);
+        char *end_ptr = NULL;
+        if ((end_ptr = strstr (new_path, "/*")) != NULL)
+        {
+        	end_ptr[0] = '\0';
+        }
+        pthread_rwlock_wrlock (&paths_lock);
+        paths = g_list_append (paths, strdup (new_path));
+        pthread_rwlock_unlock (&paths_lock);
+    }
+    else
+    {
+    	ERROR ("Path %s is not valid for syncing\n", path);
+    }
+    return TRUE;
+}
+
+bool
+parse_config_files (const char* config_dir)
+{
+	FILE *fp = NULL;
+    struct dirent *config_file;
+    DIR *dp = NULL;
+    char *config_file_name = NULL;
+
+    /* open the sync config dir and read all the files in it to get sync paths */
+    dp = opendir (config_dir);
+    if (!dp)
+    {
+        ERROR ("Couldn't open sync config directory \"%s\"\n", config_dir);
+        return FALSE;
+    }
+    /* Now read the config file(s) to know which paths should be synced */
+    while ((config_file = readdir(dp)) != NULL)
+    {
+        if ((strcmp(config_file->d_name, ".") == 0) ||
+            (strcmp(config_file->d_name, "..") == 0))
+        {
+            /* skip the directory entries */
+            continue;
+        }
+        if (asprintf (&config_file_name, "%s%s", config_dir, config_file->d_name) == -1)
+        {
+            /* this shouldn't fail, but can't do anything if it does */
+            continue;
+        }
+        fp = fopen (config_file_name, "r");
+        if (!fp)
+        {
+            ERROR ("Couldn't open sync config file \"%s\"\n", config_file_name);
+        }
+        else
+        {
+            char *sync_path = NULL;
+            char *newline = NULL;
+            size_t n = 0;
+            while (getline (&sync_path, &n, fp) != -1)
+            {
+                /* ignore lines starting with '#' */
+                if (sync_path[0] == '#')
+                {
+                    free (sync_path);
+                    sync_path = NULL;
+                    continue;
+                }
+                if ((newline = strchr (sync_path, '\n')) != NULL)
+                {
+                    newline[0] = '\0'; // remove the trailing newline char
+                }
+
+                add_path_to_sync (sync_path);
+
+                free (sync_path);
+                sync_path = NULL;
+            }
+            fclose (fp);
+        }
+        free (config_file_name);
+    }
+    closedir (dp);
+    return TRUE;
 }
 
 void
@@ -279,7 +401,7 @@ help (char *app_name)
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
             "  -p   use <pidfile> (defaults to "APTERYX_SYNC_PID")\n"
-			"  -c   use <configdir> (defaults to "APTERYX_SYNC_CONFIG_DIR")\n",
+            "  -c   use <configdir> (defaults to "APTERYX_SYNC_CONFIG_DIR")\n",
             app_name);
 }
 
@@ -291,9 +413,6 @@ main (int argc, char *argv[])
     int i = 0;
     bool background = false;
     FILE *fp = NULL;
-    struct dirent *config_file;
-    DIR *dp = NULL;
-    char *config_file_name = NULL;
 
     apteryx_init (false);
 
@@ -348,71 +467,15 @@ main (int argc, char *argv[])
         fclose (fp);
     }
 
-    /* open the sync config dir and read all the files in it to get sync paths */
-    dp = opendir (config_dir);
-    if (!dp)
-    {
-    	ERROR ("Couldn't open sync config directory \"%s\"\n", config_dir);
-    	goto exit;
-    }
-
     /* The sync path is how applications can register the nodes to sync to */
     /* we need to check for any existing nodes and setup syncers for them */
     register_existing_partners ();
     /* next, watch the sync path for any new nodes we need to sync to. */
     apteryx_watch (APTERYX_SYNC_PATH, new_syncer);
+    /* and finally, read the list of paths we should sync */
+    parse_config_files (config_dir);
 
-    /* Now read the config file(s) to know which paths should be synced */
-    while ((config_file = readdir(dp)) != NULL)
-    {
-    	if ((strcmp(config_file->d_name, ".") == 0) ||
-    		(strcmp(config_file->d_name, "..") == 0))
-    	{
-    		/* skip the directory entries */
-    		continue;
-    	}
-    	if (asprintf (&config_file_name, "%s%s", config_dir, config_file->d_name) == -1)
-    	{
-    		/* this shouldn't fail, but can't do anything if it does */
-    		continue;
-    	}
-        fp = fopen (config_file_name, "r");
-        if (!fp)
-        {
-            ERROR ("Couldn't open sync config file \"%s\"\n", config_file_name);
-        }
-        else
-        {
-            char *sync_path = NULL;
-            char *newline = NULL;
-            int i = 0;
-            size_t n = 0;
-            while (getline (&sync_path, &n, fp) != -1)
-            {
-                i++;
-                /* ignore lines starting with '#' */
-                if (sync_path[0] == '#')
-                {
-                    free (sync_path);
-                    sync_path = NULL;
-                    continue;
-                }
-                if ((newline = strchr (sync_path, '\n')) != NULL)
-                {
-                    newline[0] = '\0'; // remove the trailing newline char
-                }
-                /* Note: it is required that the path in the file ends with "/*" */
-                DEBUG ("SYNC INIT: about to watch path: %s\n", sync_path);
-                apteryx_watch (sync_path, new_change);
-                free (sync_path);
-                sync_path = NULL;
-            }
-            fclose (fp);
-        }
-        free (config_file_name);
-    }
-    closedir (dp);
-
+    /* Now we have done the setup, we can start running */
     pthread_t timer;
     pthread_create (&timer, NULL, periodic_syncer_thread, NULL);
 
@@ -424,7 +487,7 @@ main (int argc, char *argv[])
     pthread_cancel (timer);
     pthread_join (timer, NULL);
 
-exit:
+    exit:
     /* Remove the pid file */
     if (background)
     {
