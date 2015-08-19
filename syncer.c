@@ -68,16 +68,27 @@ new_syncer (const char *path, const char *value)
     pthread_rwlock_wrlock (&partners_lock);
     if (value)
     {
-        DEBUG ("Adding new syncer. path %s, value %s\n", path, value);
-        sync_partner *sp = malloc (sizeof (sync_partner));
+        sync_partner *sp = syncer_find_path (path);
         if (sp)
         {
-            sp->socket = strdup (value);
-            sp->path = strdup (path);
-            sp->last_sync_local = 0;
-            sp->last_sync_remote = 0;
+            /* partner already exists. update it */
+            DEBUG ("Updating syncer. path %s, value %s\n", path, value);
+            free (sp->socket);
+            free (sp->path);
+        }
+        else
+        {
+            /* new partner so get memory and add to the list now.
+             * fill in the details afterwards (while we still hold the lock).
+             */
+            DEBUG ("Adding new syncer. path %s, value %s\n", path, value);
+            sp = malloc (sizeof (sync_partner));
             syncer_add (sp);
         }
+        sp->socket = strdup (value);
+        sp->path = strdup (path);
+        sp->last_sync_local = 0;
+        sp->last_sync_remote = 0;
     }
     else
     {
@@ -469,10 +480,9 @@ main (int argc, char *argv[])
     }
 
     /* The sync path is how applications can register the nodes to sync to */
-    /* we need to check for any existing nodes and setup syncers for them */
-    register_existing_partners ();
-    /* next, watch the sync path for any new nodes we need to sync to. */
     apteryx_watch (APTERYX_SYNC_PATH "/*", new_syncer);
+    /* next, we need to check for any existing nodes and setup syncers for them */
+    register_existing_partners ();
     /* and finally, read the list of paths we should sync */
     parse_config_files (config_dir);
 
