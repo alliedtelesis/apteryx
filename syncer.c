@@ -68,6 +68,7 @@ new_syncer (const char *path, const char *value)
     pthread_rwlock_wrlock (&partners_lock);
     if (value)
     {
+        DEBUG ("Adding new syncer. path %s, value %s\n", path, value);
         sync_partner *sp = malloc (sizeof (sync_partner));
         if (sp)
         {
@@ -80,6 +81,7 @@ new_syncer (const char *path, const char *value)
     }
     else
     {
+        DEBUG ("Deleting syncer. path %s\n", path);
         sync_partner *sp = syncer_find_path (path);
         if (sp)
         {
@@ -93,7 +95,7 @@ new_syncer (const char *path, const char *value)
 bool
 sync_path_check (const char *path)
 {
-	/* as a sanity check, make sure the path to sync isn't something crazy */
+    /* as a sanity check, make sure the path to sync isn't something crazy */
     if ((strncmp (path, "/apteryx", 8) == 0) ||
         (strcmp (path, "/") == 0))
     {
@@ -170,23 +172,23 @@ sync_recursive (sync_partner *sp, const char *path)
     char *get_path = strdup (path);
     if (get_path[strlen (get_path -1)] == '/')
     {
-    	get_path[strlen (get_path -1)] = '\0';
+        get_path[strlen (get_path -1)] = '\0';
     }
     /* now make sure the path ends in '/' for the search */
     char *search_path = NULL;
     if (path[strlen (path -1)] != '/')
     {
-    	if (asprintf (&search_path, "%s/", path) == -1)
-    	{
-    		ERROR ("SYNC couldn't allocate search path!\n");
-    		search_path = NULL;
-    		free (get_path);
-    		return false;
-    	}
+        if (asprintf (&search_path, "%s/", path) == -1)
+        {
+            ERROR ("SYNC couldn't allocate search path!\n");
+            search_path = NULL;
+            free (get_path);
+            return false;
+        }
     }
     else
     {
-    	search_path = strdup (path);
+        search_path = strdup (path);
     }
     /* Update this node */
     char *value = apteryx_get (get_path);
@@ -209,15 +211,14 @@ sync_recursive (sync_partner *sp, const char *path)
 bool
 resync (sync_partner *sp)
 {
-	DEBUG ("Resyncing!\n");
     uint64_t local_ts = apteryx_timestamp ("/");
     if (local_ts > sp->last_sync_local)
     {
-    	/* go through the list of paths to sync to the partner */
-    	pthread_rwlock_rdlock (&paths_lock);
-    	for (GList *iter = paths; iter; iter = iter->next)
+        /* go through the list of paths to sync to the partner */
+        pthread_rwlock_rdlock (&paths_lock);
+        for (GList *iter = paths; iter; iter = iter->next)
         {
-    		DEBUG ("About to sync path %s to node %s\n", (char *)iter->data, sp->socket);
+            DEBUG ("About to sync path %s to node %s\n", (char *)iter->data, sp->socket);
             sync_recursive (sp, iter->data);
         }
         pthread_rwlock_unlock (&paths_lock);
@@ -230,9 +231,9 @@ resync (sync_partner *sp)
 static void *
 periodic_syncer_thread (void *ign)
 {
+    DEBUG ("Period Syncer Thread started!\n");
     while (1)
     {
-    	DEBUG ("Period Syncer Thread running!\n");
         pthread_rwlock_rdlock (&partners_lock);
         for (GList *iter = partners; iter; iter = iter->next)
         {
@@ -249,10 +250,10 @@ bool
 new_change (const char *path, const char *value)
 {
     pthread_rwlock_rdlock (&partners_lock);
-    DEBUG ("NEW_CHANGE on path %s, value %s.", path, value);
     for (GList *iter = partners; iter; iter = iter->next)
     {
         sync_partner *sp = iter->data;
+        DEBUG ("Pushing NEW_CHANGE on path %s, value %s to %s\n", path, value, sp->socket);
         apteryx_set_sp (sp, path, value);
     }
     pthread_rwlock_unlock (&partners_lock);
@@ -308,7 +309,7 @@ add_path_to_sync (const char *path)
         char *end_ptr = NULL;
         if ((end_ptr = strstr (new_path, "/*")) != NULL)
         {
-        	end_ptr[0] = '\0';
+            end_ptr[0] = '\0';
         }
         pthread_rwlock_wrlock (&paths_lock);
         paths = g_list_append (paths, strdup (new_path));
@@ -316,7 +317,7 @@ add_path_to_sync (const char *path)
     }
     else
     {
-    	ERROR ("Path %s is not valid for syncing\n", path);
+        ERROR ("Path %s is not valid for syncing\n", path);
     }
     return TRUE;
 }
@@ -324,7 +325,7 @@ add_path_to_sync (const char *path)
 bool
 parse_config_files (const char* config_dir)
 {
-	FILE *fp = NULL;
+    FILE *fp = NULL;
     struct dirent *config_file;
     DIR *dp = NULL;
     char *config_file_name = NULL;
@@ -471,7 +472,7 @@ main (int argc, char *argv[])
     /* we need to check for any existing nodes and setup syncers for them */
     register_existing_partners ();
     /* next, watch the sync path for any new nodes we need to sync to. */
-    apteryx_watch (APTERYX_SYNC_PATH, new_syncer);
+    apteryx_watch (APTERYX_SYNC_PATH "/*", new_syncer);
     /* and finally, read the list of paths we should sync */
     parse_config_files (config_dir);
 
