@@ -205,7 +205,7 @@ sync_recursive (sync_partner *sp, const char *path)
     char *value = apteryx_get (get_path);
     if (value)
     {
-    	/* only sync non-null values or you'll inadvertently prune */
+        /* only sync non-null values or you'll inadvertently prune */
         apteryx_set_sp (sp, get_path, value);
         free (value);
     }
