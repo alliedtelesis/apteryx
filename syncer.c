@@ -203,8 +203,12 @@ sync_recursive (sync_partner *sp, const char *path)
     }
     /* Update this node */
     char *value = apteryx_get (get_path);
-    apteryx_set_sp (sp, get_path, value);
-    free (value);
+    if (value)
+    {
+    	/* only sync non-null values or you'll inadvertently prune */
+        apteryx_set_sp (sp, get_path, value);
+        free (value);
+    }
     free (get_path);
     /* Update all children */
     GList *sync_paths = apteryx_search (search_path);
