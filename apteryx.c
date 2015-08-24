@@ -963,19 +963,31 @@ static void
 handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_data)
 {
     traverse_data_t *data = (traverse_data_t *)closure_data;
+    const char *path = APTERYX_NAME (data->root);
     int i;
 
     if (result == NULL)
     {
         ERROR ("TRAVERSE: Error processing request.\n");
+        apteryx_free_tree (data->root);
+        data->root = NULL;
     }
     else if (result->pv == NULL)
     {
         DEBUG ("    = (null)\n");
+        apteryx_free_tree (data->root);
+        data->root = NULL;
+    }
+    else if (result->n_pv == 1 &&
+        strcmp (path, result->pv[0]->path) == 0)
+    {
+        Apteryx__PathValue *pv = result->pv[0];
+        DEBUG ("  %s = %s\n", pv->path, pv->value);
+        g_node_append_data (data->root, (gpointer)strdup (pv->value));
     }
     else if (result->n_pv != 0)
     {
-        int slen = strlen (((char*)(data->root)->data));
+        int slen = strlen (path);
         for (i = 0; i < result->n_pv; i++)
         {
             Apteryx__PathValue *pv = result->pv[i];
