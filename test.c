@@ -1824,6 +1824,37 @@ test_get_tree ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_get_tree_single_node ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+
+    CU_ASSERT (apteryx_set (path, "up"));
+    root = apteryx_get_tree (path, -1);
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && APTERYX_HAS_VALUE (root));
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), path) == 0);
+    if (root && APTERYX_HAS_VALUE (root))
+    {
+        CU_ASSERT (root && strcmp (APTERYX_VALUE (root), "up") == 0);
+    }
+    CU_ASSERT (apteryx_set (path, NULL));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_get_tree_null ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+
+    root = apteryx_get_tree (path, -1);
+    CU_ASSERT (root == NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_100 (const char *path)
 {
@@ -2460,6 +2491,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes wide", test_tree_nodes_wide },
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },
+    { "get tree single node", test_get_tree_single_node },
+    { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     CU_TEST_INFO_NULL,
 };
