@@ -1791,7 +1791,7 @@ test_get_tree ()
     CU_ASSERT (apteryx_set_string (path, "state", "up"));
     CU_ASSERT (apteryx_set_string (path, "speed", "1000"));
     CU_ASSERT (apteryx_set_string (path, "duplex", "full"));
-    root = apteryx_get_tree (TEST_PATH"/interfaces", -1);
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
     CU_ASSERT (root != NULL);
     CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/interfaces") == 0);
     CU_ASSERT (root && g_node_n_children (root) == 1);
@@ -1831,7 +1831,7 @@ test_get_tree_single_node ()
     GNode *root = NULL;
 
     CU_ASSERT (apteryx_set (path, "up"));
-    root = apteryx_get_tree (path, -1);
+    root = apteryx_get_tree (path);
     CU_ASSERT (root != NULL);
     CU_ASSERT (root && APTERYX_HAS_VALUE (root));
     CU_ASSERT (root && strcmp (APTERYX_NAME (root), path) == 0);
@@ -1850,7 +1850,7 @@ test_get_tree_null ()
     const char *path = TEST_PATH"/interfaces/eth0/state";
     GNode *root = NULL;
 
-    root = apteryx_get_tree (path, -1);
+    root = apteryx_get_tree (path);
     CU_ASSERT (root == NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1878,7 +1878,7 @@ test_get_tree_indexed_provided ()
     CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
     CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
 
-    root = apteryx_get_tree (TEST_PATH"/counters", -1);
+    root = apteryx_get_tree (TEST_PATH"/counters");
     CU_ASSERT (root && g_node_n_children (root) == 2);
     node = root ? g_node_first_child (root) : NULL;
     while (node)
@@ -2020,7 +2020,7 @@ test_perf_get_tree ()
     start = get_time_us ();
     for (i = 0; i < (TEST_ITERATIONS/10); i++)
     {
-        root = apteryx_get_tree (path, -1);
+        root = apteryx_get_tree (path);
         if (!root)
             goto exit;
         apteryx_free_tree (root);
@@ -2048,7 +2048,7 @@ test_perf_get_tree_5000 ()
         CU_ASSERT (apteryx_set_string (path, value, value));
     }
     start = get_time_us ();
-    root = apteryx_get_tree (path, -1);
+    root = apteryx_get_tree (path);
     if (!root)
         goto exit;
     time = (get_time_us () - start);

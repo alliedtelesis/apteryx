@@ -185,10 +185,9 @@ bool apteryx_set_tree (GNode* root);
 /**
  * Get a tree of multiple values from Apteryx.
  * @param path path to the root of the tree to return.
- * @param depth depth of the tree to traverse (-1 means keep going).
  * @return N-ary tree of nodes.
  */
-GNode* apteryx_get_tree (const char *path, int depth);
+GNode* apteryx_get_tree (const char *path);
 
 /**
  * Search for all children that start with the root path.

@@ -1000,7 +1000,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
 }
 
 GNode*
-apteryx_get_tree (const char *path, int depth)
+apteryx_get_tree (const char *path)
 {
     ProtobufCService *rpc_client;
     Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
