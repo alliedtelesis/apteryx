@@ -969,6 +969,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
     if (result == NULL)
     {
         ERROR ("TRAVERSE: Error processing request.\n");
+        errno = -ETIMEDOUT;
         apteryx_free_tree (data->root);
         data->root = NULL;
     }
