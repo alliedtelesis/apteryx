@@ -496,6 +496,103 @@ test_db_add_delete_perf ()
 }
 
 void
+test_db_long_path ()
+{
+    char *path = NULL;
+    char *value = NULL;
+    size_t length;
+    int i;
+
+    CU_ASSERT (asprintf (&path, "%s", "/database/test"));
+    for (i=0; i<1024; i++)
+    {
+        char *old = path;
+        CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
+        free (old);
+    }
+    db_init ();
+    CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+    CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (length == (strlen ("test") + 1));
+    CU_ASSERT (value && strcmp (value, "test") == 0);
+    free ((void *) value);
+    CU_ASSERT (db_delete (path));
+    free ((void *) path);
+    db_shutdown ();
+}
+
+void
+_path_perf (int path_length)
+{
+    char *path = NULL;
+    int count = TEST_DB_MAX_ITERATIONS / path_length;
+    uint64_t start;
+    int i;
+
+    CU_ASSERT (asprintf (&path, "%s", "/database/test"));
+    for (i=0; i<path_length; i++)
+    {
+        char *old = path;
+        CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
+        free (old);
+    }
+    db_init ();
+    start = get_time_us ();
+    for (i = 0; i < count; i++)
+    {
+        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+        CU_ASSERT (db_delete (path));
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / count);
+    free (path);
+    db_shutdown ();
+}
+
+void
+test_db_path_perf_10 ()
+{
+    _path_perf (10);
+}
+
+void
+test_db_path_perf_100 ()
+{
+    _path_perf (100);
+}
+
+void
+test_db_path_perf_1000 ()
+{
+    _path_perf (1000);
+}
+
+void
+test_db_large_value ()
+{
+    const char *path = "/database/test";
+    char *large;
+    int len = 1024*1024;
+    char *value = NULL;
+    size_t length;
+
+    large = calloc (1, len);
+    memset (large, 'a', len-1);
+    db_init ();
+    CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
+    CU_ASSERT (db_add (path, (const unsigned char *) large, len));
+    CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (length == len);
+    CU_ASSERT (value && strcmp (value, large) == 0);
+    free ((void *) value);
+    CU_ASSERT (db_delete (path));
+    free ((void *) large);
+    db_shutdown ();
+}
+
+void
 test_db_get ()
 {
     const char *path = "/database/test";
@@ -672,6 +769,11 @@ CU_TestInfo tests_database[] = {
     { "init/shutdown", test_db_init_shutdown },
     { "add/delete", test_db_add_delete },
     { "add/delete performance", test_db_add_delete_perf },
+    { "large value", test_db_large_value },
+//    { "long path", test_db_long_path },
+    { "path (10) performance", test_db_path_perf_10 },
+    { "path (100) performance", test_db_path_perf_100 },
+//    { "path (1000) performance", test_db_path_perf_1000 },
     { "get", test_db_get },
     { "get performance", test_db_get_perf },
     { "replace", test_db_replace },
