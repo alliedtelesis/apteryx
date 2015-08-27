@@ -38,7 +38,17 @@ message Search
 
 message SearchResult
 {
-  repeated string paths = 1;
+    repeated string paths = 1;
+};
+
+message Traverse
+{
+    required string path = 1;
+};
+
+message TraverseResult
+{
+    repeated PathValue pv = 1;
 };
 
 message Index
@@ -86,6 +96,7 @@ service server
     rpc set (Set) returns (OKResult);
     rpc get (Get) returns (GetResult);
     rpc search (Search) returns (SearchResult);
+    rpc traverse (Traverse) returns (TraverseResult);
     rpc prune (Prune) returns (OKResult);
     rpc timestamp (Get) returns (TimeStampResult);
 }

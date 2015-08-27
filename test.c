@@ -25,6 +25,7 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <sys/un.h>
 #include <assert.h>
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
@@ -36,6 +37,9 @@
 #define TEST_SLEEP_TIMEOUT  100000
 #define TEST_TCP_URL        "tcp://127.0.0.1:9999"
 #define TEST_TCP6_URL       "tcp://[::1]:9999"
+#define TEST_RPC_PATH       "/tmp/apteryx.test"
+#define TEST_PORT_NUM       9999
+#define TEST_MESSAGE_SIZE   100
 
 static bool
 assert_apteryx_empty (void)
@@ -83,6 +87,47 @@ test_set_get_raw ()
     CU_ASSERT (value && strlen (value) == 4);
     CU_ASSERT (value && memcmp (value, bytes, 4) == 0);
     free ((void *) value);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_set_get_long_path ()
+{
+    char *path = NULL;
+    char *value = NULL;
+    int i;
+
+    CU_ASSERT (asprintf (&path, "%s", TEST_PATH));
+    for (i=0; i<1024; i++)
+    {
+        char *old = path;
+        CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
+        free (old);
+    }
+    CU_ASSERT (apteryx_set (path, "private"));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "private") == 0);
+    free ((void *) value);
+    CU_ASSERT (apteryx_set (path, NULL));
+    free ((void *) path);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_set_get_large_value ()
+{
+    const char *path = TEST_PATH"/value";
+    char *svalue, *gvalue;
+    int len = 1024*1024;
+
+    svalue = calloc (1, len);
+    memset (svalue, 'a', len-1);
+    CU_ASSERT (apteryx_set (path, svalue));
+    CU_ASSERT ((gvalue = apteryx_get (path)) != NULL);
+    CU_ASSERT (gvalue && strcmp (gvalue, svalue) == 0);
+    free ((void *) gvalue);
+    free ((void *) svalue);
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1791,14 +1836,14 @@ test_get_tree ()
     CU_ASSERT (apteryx_set_string (path, "state", "up"));
     CU_ASSERT (apteryx_set_string (path, "speed", "1000"));
     CU_ASSERT (apteryx_set_string (path, "duplex", "full"));
-    root = apteryx_get_tree (TEST_PATH"/interfaces", -1);
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
     CU_ASSERT (root != NULL);
     CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/interfaces") == 0);
-    CU_ASSERT (g_node_n_children (root) == 1);
-    node = g_node_first_child (root);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
     CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
-    CU_ASSERT (g_node_n_children (node) == 3);
-    node = g_node_first_child (node);
+    CU_ASSERT (node && g_node_n_children (node) == 3);
+    node = node ? g_node_first_child (node) : NULL;
     while (node)
     {
         if (strcmp (APTERYX_NAME (node), "state") == 0)
@@ -1821,6 +1866,123 @@ test_get_tree ()
     }
     CU_ASSERT (apteryx_prune (path));
     apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_get_tree_single_node ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+
+    CU_ASSERT (apteryx_set (path, "up"));
+    root = apteryx_get_tree (path);
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && APTERYX_HAS_VALUE (root));
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), path) == 0);
+    if (root && APTERYX_HAS_VALUE (root))
+    {
+        CU_ASSERT (root && strcmp (APTERYX_VALUE (root), "up") == 0);
+    }
+    CU_ASSERT (apteryx_set (path, NULL));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_get_tree_null ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+
+    root = apteryx_get_tree (path);
+    CU_ASSERT (root == NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static char*
+test_provide_callback_100 (const char *path)
+{
+    return strdup ("100");
+}
+
+static char*
+test_provide_callback_1000 (const char *path)
+{
+    return strdup ("1000");
+}
+
+void
+test_get_tree_indexed_provided ()
+{
+    GNode *root, *node, *child;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
+
+    root = apteryx_get_tree (TEST_PATH"/counters");
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    node = root ? g_node_first_child (root) : NULL;
+    while (node)
+    {
+        if (strcmp (APTERYX_NAME (node), "rx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else if (strcmp (APTERYX_NAME (node), "tx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else
+        {
+            CU_ASSERT (node == NULL);
+        }
+        node = node->next;
+    }
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters", test_index_cb));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1903,7 +2065,7 @@ test_perf_get_tree ()
     start = get_time_us ();
     for (i = 0; i < (TEST_ITERATIONS/10); i++)
     {
-        root = apteryx_get_tree (path, -1);
+        root = apteryx_get_tree (path);
         if (!root)
             goto exit;
         apteryx_free_tree (root);
@@ -1922,7 +2084,7 @@ test_perf_get_tree_5000 ()
     char value[32];
     GNode* root;
     uint64_t start, time;
-    int count = TEST_ITERATIONS;
+    int count = 5000;
     int i;
 
     for (i=0; i<count; i++)
@@ -1931,7 +2093,7 @@ test_perf_get_tree_5000 ()
         CU_ASSERT (apteryx_set_string (path, value, value));
     }
     start = get_time_us ();
-    root = apteryx_get_tree (path, -1);
+    root = apteryx_get_tree (path);
     if (!root)
         goto exit;
     time = (get_time_us () - start);
@@ -2264,6 +2426,170 @@ test_docs ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_socket_latency (int family, bool cd, bool req, bool resp)
+{
+    int iterations = 2 * TEST_ITERATIONS;
+    char buf[TEST_MESSAGE_SIZE] = {};
+    union
+    {
+        struct sockaddr_in addr_in;
+        struct sockaddr_in6 addr_in6;
+        struct sockaddr_un addr_un;
+    } server, client;
+    socklen_t address_len, len;
+    int64_t start, i, s, s2 = -1;
+    int on = 1;
+    int pid;
+    int status;
+    int ret;
+
+    if (family == AF_UNIX)
+    {
+        server.addr_un.sun_family = AF_UNIX;
+        strcpy (server.addr_un.sun_path, TEST_RPC_PATH);
+        unlink (server.addr_un.sun_path);
+        address_len = sizeof (server.addr_un);
+    }
+    else if (family == AF_INET)
+    {
+        server.addr_in.sin_family = AF_INET;
+        server.addr_in.sin_port = htons (TEST_PORT_NUM);
+        server.addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address_len = sizeof (server.addr_in);
+        client = server;
+        client.addr_in.sin_port = htons (TEST_PORT_NUM+1);
+    }
+    else
+    {
+        CU_ASSERT (family == AF_UNIX || family == AF_INET);
+        return;
+    }
+    CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+    CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
+    CU_ASSERT ((ret = bind (s, (struct sockaddr *)&server, address_len)) >= 0);
+    CU_ASSERT ((ret = listen (s, 5)) >= 0);
+    if (ret < 0)
+        return;
+
+    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=1 > /dev/null 2>&1") == 0);
+    if ((pid = fork ()) == 0)
+    {
+        if (!cd)
+        {
+            len = address_len;
+            CU_ASSERT ((s2 = accept (s, (struct sockaddr *)&client, &len)) >= 0);
+            if (s2 < 0)
+                exit (-1);
+        }
+        for (i = 0; i < iterations; i++)
+        {
+            if (cd)
+            {
+                len = address_len;
+                CU_ASSERT ((s2 = accept (s, (struct sockaddr *)&client, &len)) >= 0);
+                if (s2 < 0)
+                    exit (-1);
+            }
+            if (req)
+                CU_ASSERT (read (s2, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (resp)
+                CU_ASSERT (write (s2, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (cd)
+                close (s2);
+        }
+        if (!cd)
+            close (s2);
+        close (s);
+        exit (0);
+    }
+    else
+    {
+        close (s);
+        if (!cd)
+        {
+            CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+            CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
+            CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
+            if (ret)
+                goto exit;
+        }
+        start = get_time_us ();
+        for (i = 0; i < iterations; i++)
+        {
+            if (cd)
+            {
+                CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+                CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
+                CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
+                if (ret)
+                    goto exit;
+            }
+            if (req)
+                CU_ASSERT (write (s, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (resp)
+                CU_ASSERT (read (s, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (cd)
+                close (s);
+        }
+        printf ("%"PRIu64"us ... ", (get_time_us () - start) / iterations);
+        if (!cd)
+            close (s);
+    }
+exit:
+    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=0 > /dev/null 2>&1") == 0);
+    kill (pid, 9);
+    waitpid (pid, &status, 0);
+}
+
+void
+test_unix_req_latency ()
+{
+    test_socket_latency (AF_UNIX, false, true, false);
+}
+
+void
+test_unix_req_resp_latency ()
+{
+    test_socket_latency (AF_UNIX, false, true, true);
+}
+
+void
+test_unix_con_disc_latency ()
+{
+    test_socket_latency (AF_UNIX, true, false, false);
+}
+
+void
+test_unix_con_req_resp_disc_latency ()
+{
+    test_socket_latency (AF_UNIX, true, true, true);
+}
+
+void
+test_tcp_req_latency ()
+{
+    test_socket_latency (AF_INET, false, true, false);
+}
+
+void
+test_tcp_req_resp_latency ()
+{
+    test_socket_latency (AF_INET, false, true, true);
+}
+
+void
+test_tcp_con_disc_latency ()
+{
+    test_socket_latency (AF_INET, true, false, false);
+}
+
+void
+test_tcp_con_req_resp_disc_latency ()
+{
+    test_socket_latency (AF_INET, true, true, true);
+}
+
 static int
 suite_init (void)
 {
@@ -2279,7 +2605,9 @@ suite_clean (void)
 static CU_TestInfo tests_api[] = {
     { "doc example", test_docs },
     { "set and get", test_set_get },
-    { "set and get raw byte streams", test_set_get_raw },
+    { "raw byte streams", test_set_get_raw },
+//    { "long path", test_set_get_long_path },
+    { "large value", test_set_get_large_value },
     { "multiple leaves", test_multiple_leaves },
     { "set/get string", test_set_get_string },
     { "set/get int", test_set_get_int },
@@ -2374,6 +2702,9 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes wide", test_tree_nodes_wide },
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },
+    { "get tree single node", test_get_tree_single_node },
+    { "get tree null", test_get_tree_null },
+    { "get tree indexed/provided", test_get_tree_indexed_provided },
     CU_TEST_INFO_NULL,
 };
 
@@ -2396,6 +2727,18 @@ static CU_TestInfo tests_performance[] = {
     CU_TEST_INFO_NULL,
 };
 
+CU_TestInfo tests_sockets[] = {
+    { "unix req", test_unix_req_latency },
+    { "unix req/resp", test_unix_req_resp_latency },
+    { "unix con/disc", test_unix_con_disc_latency },
+    { "unix c/r/r/d", test_unix_con_req_resp_disc_latency},
+    { "tcp req", test_tcp_req_latency },
+    { "tcp req/resp", test_tcp_req_resp_latency },
+    { "tcp con/disc", test_tcp_con_disc_latency },
+    { "tcp c/r/r/d", test_tcp_con_req_resp_disc_latency},
+    CU_TEST_INFO_NULL,
+};
+
 extern CU_TestInfo tests_database_internal[];
 extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
@@ -2404,6 +2747,7 @@ static CU_SuiteInfo suites[] = {
     { "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
+    { "Sockets", suite_init, suite_clean, tests_sockets },
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
     { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },

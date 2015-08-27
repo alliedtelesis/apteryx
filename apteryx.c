@@ -796,8 +796,11 @@ _node_free (GNode *node, gpointer data)
 void
 apteryx_free_tree (GNode* root)
 {
-    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_ALL, -1, _node_free, NULL);
-    g_node_destroy (root);
+    if (root)
+    {
+        g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_ALL, -1, _node_free, NULL);
+        g_node_destroy (root);
+    }
 }
 
 static char *
@@ -913,50 +916,95 @@ apteryx_set_tree (GNode* root)
     return rc;
 }
 
-static bool
-_get_traverse (GNode* node, const char *path, int depth)
+typedef struct _traverse_data_t
 {
-    char *_path;
-    char *key = "";
-    GList *children = NULL, *iter;
-    char *value = NULL;
+    GNode* root;
+    bool done;
+} traverse_data_t;
 
-    /* Get the key */
-    if (strrchr(path, '/'))
-        key = strrchr(path, '/') + 1;
+static void
+path_to_node (GNode* root, const char *path, const char *value)
+{
+    const char *next;
+    GNode *node;
 
-    /* Get value and/or children */
-    if (!asprintf (&_path, "%s/", path))
-        return false;
-    children = apteryx_search (_path);
-    free (_path);
-    if (children == NULL)
-        value = apteryx_get (path);
-
-    /* Value or children */
-    if (children == NULL && value)
+    if (path && path[0] == '/')
     {
-        APTERYX_LEAF (node, strdup (key), value);
-    }
-    else if (children)
-    {
-        if (node->data == NULL)
-            node->data = (gpointer)strdup (path);
-        else
-            node = APTERYX_NODE (node, strdup (key));
-        for (iter = children; iter; iter = g_list_next (iter))
+        path++;
+        next = strchr (path, '/');
+        if (!next)
         {
-            _get_traverse (node, (const char *) iter->data, depth);
+            APTERYX_LEAF (root, strdup (path), strdup (value));
         }
-        g_list_free_full(children, free);
+        else
+        {
+            char *name = strndup (path, next - path);
+            for (node = g_node_first_child (root); node;
+                    node = g_node_next_sibling (node))
+            {
+                if (strcmp (APTERYX_NAME (node), name) == 0)
+                {
+                    root = node;
+                    free (name);
+                    break;
+                }
+            }
+            if (!node)
+            {
+                root = APTERYX_NODE (root, name);
+            }
+            path_to_node (root, next, value);
+        }
     }
-    return true;
+    return;
+}
+
+static void
+handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_data)
+{
+    traverse_data_t *data = (traverse_data_t *)closure_data;
+    const char *path = APTERYX_NAME (data->root);
+    int i;
+
+    if (result == NULL)
+    {
+        ERROR ("TRAVERSE: Error processing request.\n");
+        errno = -ETIMEDOUT;
+        apteryx_free_tree (data->root);
+        data->root = NULL;
+    }
+    else if (result->pv == NULL)
+    {
+        DEBUG ("    = (null)\n");
+        apteryx_free_tree (data->root);
+        data->root = NULL;
+    }
+    else if (result->n_pv == 1 &&
+        strcmp (path, result->pv[0]->path) == 0)
+    {
+        Apteryx__PathValue *pv = result->pv[0];
+        DEBUG ("  %s = %s\n", pv->path, pv->value);
+        g_node_append_data (data->root, (gpointer)strdup (pv->value));
+    }
+    else if (result->n_pv != 0)
+    {
+        int slen = strlen (path);
+        for (i = 0; i < result->n_pv; i++)
+        {
+            Apteryx__PathValue *pv = result->pv[i];
+            DEBUG ("  %s = %s\n", pv->path + slen, pv->value);
+            path_to_node (data->root, pv->path + slen, pv->value);
+        }
+    }
+    data->done = true;
 }
 
 GNode*
-apteryx_get_tree (const char *path, int depth)
+apteryx_get_tree (const char *path)
 {
-    GNode* root = NULL;
+    ProtobufCService *rpc_client;
+    Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
+    traverse_data_t data = {0};
 
     DEBUG ("GET_TREE: %s\n", path);
 
@@ -976,14 +1024,25 @@ apteryx_get_tree (const char *path, int depth)
         return false;
     }
 
-    /* Traverse */
-    root = g_node_new (NULL);
-    if (!_get_traverse (root, path, depth))
+    /* IPC */
+    rpc_client = rpc_connect_service (APTERYX_SERVER, &apteryx__server__descriptor);
+    if (!rpc_client)
     {
-        g_node_destroy (root);
-        root = NULL;
+        ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
+        return false;
     }
-    return root;
+    traverse.path = (char *) path;
+    data.root = g_node_new (strdup (path));
+    apteryx__server__traverse (rpc_client, &traverse, handle_traverse_response, &data);
+    protobuf_c_service_destroy (rpc_client);
+    if (!data.done)
+    {
+        ERROR ("TRAVERSE: No response\n");
+        apteryx_free_tree (data.root);
+        data.root = NULL;
+        return NULL;
+    }
+    return data.root;
 }
 
 typedef struct _search_data_t
