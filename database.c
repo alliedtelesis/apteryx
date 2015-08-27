@@ -507,48 +507,58 @@ test_db_long_path ()
 }
 
 void
-_path_perf (int path_length)
+_path_perf (int path_length, bool full)
 {
     char *path = NULL;
     int count = TEST_DB_MAX_ITERATIONS / path_length;
     uint64_t start;
     int i;
 
-    CU_ASSERT (asprintf (&path, "%s", "/database/test"));
-    for (i=0; i<path_length; i++)
+    CU_ASSERT (asprintf (&path, "%s", "/database"));
+    for (i=0; i<(path_length - 1); i++)
     {
         char *old = path;
         CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
         free (old);
     }
     db_init ();
+    if (!full)
+    {
+        db_add (path, (const unsigned char *) "placeholder", strlen ("placeholder") + 1);
+        path[strlen (path) - 1]++;
+    }
     start = get_time_us ();
     for (i = 0; i < count; i++)
     {
         CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
         CU_ASSERT (db_delete (path));
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / count);
+    printf ("%d=%"PRIu64"us ", path_length, (get_time_us () - start) / count);
+    if (!full)
+    {
+        path[strlen (path) - 1]--;
+        db_delete (path);
+    }
     free (path);
     db_shutdown ();
 }
 
-void
-test_db_path_perf_10 ()
+void test_db_path_perf ()
 {
-    _path_perf (10);
+    _path_perf (5, true);
+    _path_perf (10, true);
+    _path_perf (100, true);
+    _path_perf (1000, true);
+    printf ("... ");
 }
 
-void
-test_db_path_perf_100 ()
+void test_db_path_exists_perf ()
 {
-    _path_perf (100);
-}
-
-void
-test_db_path_perf_1000 ()
-{
-    _path_perf (1000);
+    _path_perf (5, false);
+    _path_perf (10, false);
+    _path_perf (100, false);
+    _path_perf (1000, false);
+    printf (" ... ");
 }
 
 void
@@ -755,9 +765,8 @@ CU_TestInfo tests_database[] = {
     { "add/delete performance", test_db_add_delete_perf },
     { "large value", test_db_large_value },
     { "long path", test_db_long_path },
-    { "path (10) performance", test_db_path_perf_10 },
-    { "path (100) performance", test_db_path_perf_100 },
-    { "path (1000) performance", test_db_path_perf_1000 },
+    { "path performance", test_db_path_perf },
+    { "path exists perf", test_db_path_exists_perf },
     { "get", test_db_get },
     { "get performance", test_db_get_perf },
     { "replace", test_db_replace },
