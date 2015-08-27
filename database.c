@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <glib.h>
+#include <inttypes.h>
 #include "internal.h"
 #ifdef TEST
 #include <CUnit/CUnit.h>
@@ -48,7 +49,7 @@ db_calculate_timestamp (void)
 {
     struct timespec tms;
     uint64_t micros = 0;
-    if (clock_gettime(CLOCK_REALTIME,&tms)) {
+    if (clock_gettime(CLOCK_REALTIME, &tms)) {
         return 0;
     }
 
@@ -81,7 +82,7 @@ db_node_to_path (struct database_node *node, char **buf)
 }
 
 static struct database_node *
-db_path_to_node (const char *path)
+db_path_to_node (const char *path, uint64_t timestamp)
 {
     char *key = strdup (path);
     char *start = key;
@@ -119,9 +120,17 @@ db_path_to_node (const char *path)
         if (strchr (key, '/'))
             *strchr (key, '/') = '\0';
 
+        /* This node is in a path that is being updated */
+        if (timestamp)
+            current->timestamp = timestamp;
+
         if ((current = g_hash_table_lookup (current->children, key)) == NULL)
             break;
     }
+
+    /* This node is in a path that is being updated */
+    if (node && timestamp)
+        node->timestamp = timestamp;
 
     free (start);
     return node;
@@ -239,56 +248,32 @@ db_parent_get (const char *path)
     if (strchr (parent, '/') != NULL)
         *strrchr (parent, '/') = '\0';
 
-    if ((node = db_path_to_node (parent)) == NULL)
+    if ((node = db_path_to_node (parent, 0)) == NULL)
     {
         db_add (parent, NULL, 0);
-        node = db_path_to_node (parent);
+        node = db_path_to_node (parent, 0);
     }
     free (parent);
     return node;
 }
 
-static void
-db_update_parent_timestamp (const char *path, uint64_t timestamp)
-{
-    struct database_node *node = NULL;
-    char *parent = strdup (path);
-    if (strlen (parent) == 0)
-    {
-        /* found the root node */
-        node = root;
-    }
-    else
-    {
-        if (strchr (parent, '/') != NULL)
-            *strrchr (parent, '/') = '\0';
-
-        node = db_path_to_node (parent);
-    }
-    if (node)
-    {
-        node->timestamp = timestamp;
-        if (node != root)
-        {
-            db_update_parent_timestamp (parent, timestamp);
-        }
-    }
-    free (parent);
-}
-
 uint64_t
 db_timestamp (const char *path)
 {
-    struct database_node *new_value = db_path_to_node (path);
+    struct database_node *new_value = db_path_to_node (path, 0);
     if (new_value)
+    {
         return new_value->timestamp;
+    }
     return 0;
 }
 
 bool
 db_add (const char *path, const unsigned char *value, size_t length)
 {
-    struct database_node *new_value = db_path_to_node (path);
+    uint64_t timestamp = db_calculate_timestamp();
+
+    struct database_node *new_value = db_path_to_node (path, timestamp);
     if (!new_value)
     {
         struct database_node *parent = db_parent_get (path);
@@ -299,6 +284,7 @@ db_add (const char *path, const unsigned char *value, size_t length)
         else
             key = path;
         new_value = db_node_add (parent, key);
+        new_value->timestamp = timestamp;
     }
     pthread_rwlock_wrlock (&db_lock);
     free (new_value->value);
@@ -312,8 +298,6 @@ db_add (const char *path, const unsigned char *value, size_t length)
         memcpy (new_value->value, value, length);
     }
     new_value->length = length;
-    new_value->timestamp = db_calculate_timestamp ();
-    db_update_parent_timestamp (path, new_value->timestamp);
     pthread_rwlock_unlock (&db_lock);
     return true;
 }
@@ -322,8 +306,7 @@ bool
 db_delete (const char *path)
 {
     pthread_rwlock_wrlock (&db_lock);
-    db_update_parent_timestamp (path, db_calculate_timestamp ());
-    struct database_node *node = db_path_to_node (path);
+    struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
     if (node)
         db_node_delete (node);
     pthread_rwlock_unlock (&db_lock);
@@ -334,7 +317,7 @@ bool
 db_get (const char *path, unsigned char **value, size_t *length)
 {
     pthread_rwlock_rdlock (&db_lock);
-    struct database_node *node = db_path_to_node (path);
+    struct database_node *node = db_path_to_node (path, 0);
     if (!node || !node->value)
     {
         pthread_rwlock_unlock (&db_lock);
@@ -352,7 +335,7 @@ db_search (const char *path)
 {
     pthread_rwlock_rdlock (&db_lock);
     GList *children, *iter, *values = NULL;
-    struct database_node *node = db_path_to_node (path);
+    struct database_node *node = db_path_to_node (path, 0);
     if (node == NULL || node->children == NULL)
     {
         pthread_rwlock_unlock (&db_lock);
@@ -422,17 +405,17 @@ test_db_path_to_node ()
     struct database_node *toru = db_node_add (two, "toru");
 
 
-    CU_ASSERT (db_path_to_node ("") == root);
-    CU_ASSERT (db_path_to_node ("/") == root);
-    CU_ASSERT (db_path_to_node ("/one") == one);
-    CU_ASSERT (db_path_to_node ("/one/two") == two);
-    CU_ASSERT (db_path_to_node ("/one/rua") == rua);
-    CU_ASSERT (db_path_to_node ("/one/two/three") == three);
-    CU_ASSERT (db_path_to_node ("/one/two/dos") == dos);
-    CU_ASSERT (db_path_to_node ("/one/two/toru") == toru);
-    CU_ASSERT (db_path_to_node ("/uno") == NULL);
-    CU_ASSERT (db_path_to_node ("/uno/two") == NULL);
-    CU_ASSERT (db_path_to_node ("/one/") == one);
+    CU_ASSERT (db_path_to_node ("", 0) == root);
+    CU_ASSERT (db_path_to_node ("/", 0) == root);
+    CU_ASSERT (db_path_to_node ("/one", 0) == one);
+    CU_ASSERT (db_path_to_node ("/one/two", 0) == two);
+    CU_ASSERT (db_path_to_node ("/one/rua", 0) == rua);
+    CU_ASSERT (db_path_to_node ("/one/two/three", 0) == three);
+    CU_ASSERT (db_path_to_node ("/one/two/dos", 0) == dos);
+    CU_ASSERT (db_path_to_node ("/one/two/toru", 0) == toru);
+    CU_ASSERT (db_path_to_node ("/uno", 0) == NULL);
+    CU_ASSERT (db_path_to_node ("/uno/two", 0) == NULL);
+    CU_ASSERT (db_path_to_node ("/one/", 0) == one);
 
     // nodes not in this list get destroyed as their children are deleted
     db_node_delete (three);
@@ -746,11 +729,12 @@ test_db_timestamping ()
     CU_ASSERT (db_timestamp (path2) > last_ts);
     last_ts = db_timestamp (path2);
     CU_ASSERT (db_timestamp (path) < db_timestamp (path2));
-    CU_ASSERT (db_timestamp (ppath) == db_timestamp (path2));
-    CU_ASSERT (db_timestamp ("/") == db_timestamp (ppath));
+    CU_ASSERT (db_timestamp (ppath) >= db_timestamp (path2));
+    CU_ASSERT (db_timestamp ("/") >= db_timestamp (ppath));
 
     CU_ASSERT (db_delete (path2));
     CU_ASSERT (db_timestamp (ppath) > last_ts);
+    CU_ASSERT (db_timestamp ("/") >= db_timestamp (ppath));
 
     CU_ASSERT (db_delete (path));
 
@@ -770,10 +754,10 @@ CU_TestInfo tests_database[] = {
     { "add/delete", test_db_add_delete },
     { "add/delete performance", test_db_add_delete_perf },
     { "large value", test_db_large_value },
-//    { "long path", test_db_long_path },
+    { "long path", test_db_long_path },
     { "path (10) performance", test_db_path_perf_10 },
     { "path (100) performance", test_db_path_perf_100 },
-//    { "path (1000) performance", test_db_path_perf_1000 },
+    { "path (1000) performance", test_db_path_perf_1000 },
     { "get", test_db_get },
     { "get performance", test_db_get_perf },
     { "replace", test_db_replace },
