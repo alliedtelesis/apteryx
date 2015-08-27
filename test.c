@@ -2606,7 +2606,7 @@ static CU_TestInfo tests_api[] = {
     { "doc example", test_docs },
     { "set and get", test_set_get },
     { "raw byte streams", test_set_get_raw },
-//    { "long path", test_set_get_long_path },
+    { "long path", test_set_get_long_path },
     { "large value", test_set_get_large_value },
     { "multiple leaves", test_multiple_leaves },
     { "set/get string", test_set_get_string },
