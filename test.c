@@ -1035,7 +1035,7 @@ test_watch_wildcard ()
     _watch_cleanup ();
 }
 
-/* We now only support wildcards on the end. This test confirms that we don't support this.
+/* We now support wildcards in the watch path
  */
 void
 test_watch_wildcard_not_last ()
@@ -1048,7 +1048,7 @@ test_watch_wildcard_not_last ()
                (TEST_PATH"/entity/zones/*/state", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_path == NULL);
+    CU_ASSERT (_path && strcmp(_path, path) == 0);
     CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/*/state", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     _watch_cleanup ();
