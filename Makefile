@@ -50,8 +50,8 @@ apteryxd = \
 		kill -TERM `cat /tmp/apteryxd.pid` && sleep 0.1; \
 	fi; \
 	rm -f /tmp/apteryxd.pid; \
-	LD_LIBRARY_PATH=./ ./apteryxd -b -p /tmp/apteryxd.pid && sleep 0.1; \
-	LD_LIBRARY_PATH=./ $(TEST_WRAPPER) ./$(1); \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):./ ./apteryxd -b -p /tmp/apteryxd.pid && sleep 0.1; \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):./ $(TEST_WRAPPER) ./$(1); \
 	kill -TERM `cat /tmp/apteryxd.pid`;
 
 ifeq (test,$(firstword $(MAKECMDGOALS)))
