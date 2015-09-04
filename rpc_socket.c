@@ -47,6 +47,7 @@ listen_thread (void *p)
             {
                 /* Shutdown */
                 DEBUG ("RPC[%i]: Shutdown\n", fd);
+                free (data);
                 goto finished;
             }
             if (r < 0)

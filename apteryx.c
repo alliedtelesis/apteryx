@@ -484,6 +484,7 @@ apteryx_set (const char *path, const char *value)
     if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("SET: invalid path (%s)!\n", path);
+        free (url);
         assert (!debug || path);
         return false;
     }
@@ -605,6 +606,7 @@ apteryx_get (const char *path)
     if (!path || path[strlen(path)-1] == '/')
     {
         ERROR ("GET: invalid path (%s)!\n", path);
+        free (url);
         assert (!debug || path);
         return NULL;
     }
@@ -996,6 +998,7 @@ apteryx_search (const char *path)
     if (!path)
     {
         ERROR ("SEARCH: invalid root (%s)!\n", path);
+        free (url);
         assert (!debug || path);
         return false;
     }
@@ -1159,7 +1162,10 @@ handle_timestamp_response (const Apteryx__TimeStampResult *result, void *closure
     {
         ERROR ("TIMESTAMP: Error processing request.\n");
     }
-    *data = result->value;
+    else
+    {
+        *data = result->value;
+    }
 }
 
 uint64_t
@@ -1179,6 +1185,7 @@ apteryx_timestamp (const char *path)
         ((path[strlen(path)-1] == '/') && strlen(path) > 1))
     {
         ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
+        free (url);
         assert (!debug || path);
         return 0;
     }
