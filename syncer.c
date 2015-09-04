@@ -48,8 +48,11 @@ syncer_match_path (gconstpointer a, gconstpointer b)
 sync_partner *
 syncer_find_path (const char *path)
 {
-    sync_partner *res = (sync_partner *) g_list_find_custom (partners, path, syncer_match_path);
-    return res;
+    GList *list_pt;
+
+    list_pt = g_list_find_custom (partners, path, syncer_match_path);
+
+    return list_pt ? (sync_partner *) list_pt->data : NULL;
 }
 
 bool
