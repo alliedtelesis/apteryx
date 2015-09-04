@@ -169,7 +169,9 @@ db_node_delete (struct database_node *node)
             g_list_free (children);
         }
         free (node->value);
+        node->value = NULL;
         free (node->key);
+        node->key = NULL;
         if (node == root)
             root = NULL;
         free (node);
@@ -288,11 +290,8 @@ db_add (const char *path, const unsigned char *value, size_t length)
     }
     pthread_rwlock_wrlock (&db_lock);
     free (new_value->value);
-    if (length == 0)
-    {
-        new_value->value = NULL;
-    }
-    else
+    new_value->value = NULL;
+    if (length > 0)
     {
         new_value->value = malloc (length);
         memcpy (new_value->value, value, length);
