@@ -184,13 +184,13 @@ sync_recursive (sync_partner *sp, const char *path)
     }
     /* make sure the path doesn't end in '/' for the get */
     char *get_path = strdup (path);
-    if (get_path[strlen (get_path -1)] == '/')
+    if (get_path[strlen (get_path) - 1] == '/')
     {
-        get_path[strlen (get_path -1)] = '\0';
+        get_path[strlen (get_path) - 1] = '\0';
     }
     /* now make sure the path ends in '/' for the search */
     char *search_path = NULL;
-    if (path[strlen (path -1)] != '/')
+    if (path[strlen (path) - 1] != '/')
     {
         if (asprintf (&search_path, "%s/", path) == -1)
         {
