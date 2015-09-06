@@ -44,6 +44,10 @@ struct database_node *root = NULL;  /* The database root */
 
 static pthread_rwlock_t db_lock = PTHREAD_RWLOCK_INITIALIZER;
 
+/* This function needs to be forward declared - it is used in a recursive loop. It needs
+ * to be called with db_lock (above) held for writing */
+static bool db_add_no_lock (const char *path, const unsigned char *value, size_t length);
+
 static uint64_t
 db_calculate_timestamp (void)
 {
@@ -181,13 +185,12 @@ db_node_delete (struct database_node *node)
 
 }
 
-struct database_node *
+static struct database_node *
 db_node_add (struct database_node *parent, const char *key)
 {
     struct database_node *new_node = calloc (1, sizeof (struct database_node));
     new_node->key = strdup (key);
     new_node->parent = parent;
-    pthread_rwlock_wrlock (&db_lock);
     if (parent)
     {
         if (!parent->children)
@@ -208,15 +211,16 @@ db_node_add (struct database_node *parent, const char *key)
             root = new_node;
         }
     }
-    pthread_rwlock_unlock (&db_lock);
     return new_node;
 }
 
 void
 db_init (void)
 {
+    pthread_rwlock_wrlock (&db_lock);
     if (!root)
         root = db_node_add (NULL, "");
+    pthread_rwlock_unlock (&db_lock);
 }
 
 void
@@ -227,8 +231,10 @@ db_shutdown (void)
         printf ("DB ERROR: path still set %s\n", (char*)iter->data);
     g_list_free_full (paths, free);
 
+    pthread_rwlock_wrlock (&db_lock);
     if (root)
         db_node_delete (root);
+    pthread_rwlock_unlock (&db_lock);
     root = NULL;
 }
 
@@ -250,7 +256,7 @@ db_parent_get (const char *path)
 
     if ((node = db_path_to_node (parent, 0)) == NULL)
     {
-        db_add (parent, NULL, 0);
+        db_add_no_lock (parent, NULL, 0);
         node = db_path_to_node (parent, 0);
     }
     free (parent);
@@ -260,16 +266,19 @@ db_parent_get (const char *path)
 uint64_t
 db_timestamp (const char *path)
 {
+    uint64_t timestamp = 0;
+    pthread_rwlock_rdlock (&db_lock);
     struct database_node *new_value = db_path_to_node (path, 0);
     if (new_value)
     {
-        return new_value->timestamp;
+        timestamp = new_value->timestamp;
     }
-    return 0;
+    pthread_rwlock_unlock (&db_lock);
+    return timestamp;
 }
 
-bool
-db_add (const char *path, const unsigned char *value, size_t length)
+static bool
+db_add_no_lock (const char *path, const unsigned char *value, size_t length)
 {
     uint64_t timestamp = db_calculate_timestamp();
 
@@ -286,7 +295,6 @@ db_add (const char *path, const unsigned char *value, size_t length)
         new_value = db_node_add (parent, key);
         new_value->timestamp = timestamp;
     }
-    pthread_rwlock_wrlock (&db_lock);
     free (new_value->value);
     if (length == 0)
     {
@@ -298,8 +306,18 @@ db_add (const char *path, const unsigned char *value, size_t length)
         memcpy (new_value->value, value, length);
     }
     new_value->length = length;
-    pthread_rwlock_unlock (&db_lock);
+
     return true;
+}
+
+bool
+db_add (const char *path, const unsigned char *value, size_t length)
+{
+    bool ret = false;
+    pthread_rwlock_wrlock (&db_lock);
+    ret = db_add_no_lock (path, value, length);
+    pthread_rwlock_unlock (&db_lock);
+    return ret;
 }
 
 bool
@@ -397,13 +415,13 @@ void
 test_db_path_to_node ()
 {
     db_init ();
+    pthread_rwlock_wrlock (&db_lock);
     struct database_node *one = db_node_add (root, "one");
     struct database_node *two = db_node_add (one, "two");
     struct database_node *rua = db_node_add (one, "rua");
     struct database_node *three = db_node_add (two, "three");
     struct database_node *dos = db_node_add (two, "dos");
     struct database_node *toru = db_node_add (two, "toru");
-
 
     CU_ASSERT (db_path_to_node ("", 0) == root);
     CU_ASSERT (db_path_to_node ("/", 0) == root);
@@ -422,6 +440,8 @@ test_db_path_to_node ()
     db_node_delete (dos);
     db_node_delete (toru);
     db_node_delete (rua);
+
+    pthread_rwlock_unlock (&db_lock);
 }
 
 void
