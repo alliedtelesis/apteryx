@@ -163,6 +163,43 @@ cb_match (GList **list, const char *path, int criteria)
                 {
                     match = true;
                 }
+                else
+                {
+                    const char *pattern = cb->path;
+                    const char *p = path;
+
+                    while (*pattern && *p)
+                    {
+                        if (*pattern == '*')
+                        {
+                            /* skip to '/' */
+                            while (*p && *p != '/') p++;
+                            pattern++;
+                        }
+                        else if (*pattern == *p)
+                        {
+                            pattern++;
+                            p++;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+
+                    if (*pattern == '\0' && *p && !strcmp (pattern - 1, "*"))
+                    {
+                        match = true;
+                    }
+                    else if (*pattern == '\0' && *p == '\0')
+                    {
+                        match = true;
+                    }
+                    else
+                    {
+                        match = false;
+                    }
+                }
             }
         }
 
