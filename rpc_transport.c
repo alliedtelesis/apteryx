@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 static socket_info
 parse_url (const char *url)
@@ -98,6 +99,7 @@ create_rpc_server_with_listener (const char *guid, const char *url, int fd, rpc_
 {
     rpc_server s = calloc (1, sizeof (*s));
     s->sock = fd;
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
     s->url = strdup (url);
     s->guid = strdup (guid);
     s->request_cb = cb;

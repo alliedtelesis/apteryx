@@ -5,6 +5,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <linux/tcp.h>
+#include <fcntl.h>
 
 #define MODE_REQUEST 1
 #define MODE_RESPONSE 2
@@ -27,6 +28,14 @@ listen_thread (void *p)
         ssize_t r;
         while ((r = recv (fd, &hdr, sizeof (hdr), 0)) <= 0)
         {
+            if (r < 0)
+            {
+                if (errno == EINTR || errno == EAGAIN)
+                {
+                    continue;
+                }
+                ERROR ("RPC[%i]: Recv error: %s", fd, strerror (errno));
+            }
             if (r <= 0)
             {
                 /* Shutdown */
@@ -52,6 +61,10 @@ listen_thread (void *p)
             }
             if (r < 0)
             {
+                if (errno == EINTR || errno == EAGAIN)
+                {
+                    continue;
+                }
                 ERROR ("RPC[%i]: Recv error: %s", fd, strerror (errno));
             }
             else
@@ -180,6 +193,7 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
     sock->sock = fd;
     int flag = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *) &flag, sizeof(int));
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
     sock->next_id = 1;
     sock->request_cb = cb;
     sock->parent = parent;
