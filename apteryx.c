@@ -1058,6 +1058,7 @@ apteryx_search (const char *path)
              path[strlen (path) - 1] != '/' ||
              strstr (path, "//") != NULL)
     {
+        free (url);
         ERROR ("SEARCH: invalid root (%s)!\n", path);
         assert(!debug || path[0] == '/');
         assert(!debug || path[strlen (path) - 1] == '/');
