@@ -99,6 +99,7 @@ listen_thread (void *p)
         else
         {
             ERROR ("Unknown message type %x", ntohl(hdr.mode));
+            free (data);
             goto finished;
         }
     } while (1);
