@@ -330,7 +330,7 @@ add_path_to_sync (const char *path)
             end_ptr[0] = '\0';
         }
         pthread_rwlock_wrlock (&paths_lock);
-        paths = g_list_append (paths, strdup (new_path));
+        paths = g_list_append (paths, new_path);
         pthread_rwlock_unlock (&paths_lock);
     }
     else
