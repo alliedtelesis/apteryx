@@ -20,7 +20,6 @@ typedef struct sync_partner_s
     char *socket;
     char *path;
     uint64_t last_sync_local;
-    uint64_t last_sync_remote;
 } sync_partner;
 
 /* keep a list of the partners we are syncing paths to */
@@ -91,7 +90,6 @@ new_syncer (const char *path, const char *value)
         sp->socket = strdup (value);
         sp->path = strdup (path);
         sp->last_sync_local = 0;
-        sp->last_sync_remote = 0;
     }
     else
     {
@@ -153,19 +151,6 @@ apteryx_set_sp (sync_partner *sp, const char *path, const char *value)
     apteryx_set (full_path, value);
     free (full_path);
     return true;
-}
-
-uint64_t
-apteryx_get_timestamp_sp (sync_partner *sp, const char *path)
-{
-    char *full_path = sp_path (sp, path);
-    if (!full_path)
-    {
-        return false;
-    }
-    uint64_t res = apteryx_timestamp (full_path);
-    free (full_path);
-    return res;
 }
 
 bool
@@ -242,7 +227,6 @@ resync (sync_partner *sp)
         pthread_rwlock_unlock (&paths_lock);
     }
     sp->last_sync_local = local_ts;
-    sp->last_sync_remote = apteryx_get_timestamp_sp (sp, "/");
     return true;
 }
 
