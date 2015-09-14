@@ -66,15 +66,16 @@ static void
 handle_get_response (const Apteryx__GetResult *result, void *closure_data)
 {
     get_data_t *data = (get_data_t *)closure_data;
+    data->done = false;
     if (result == NULL)
     {
         ERROR ("GET: Error processing request.\n");
     }
     else if (result->value && result->value[0] != '\0')
     {
+        data->done = true;
         data->value = strdup (result->value);
     }
-    data->done = true;
 }
 
 /* Indexer */
@@ -90,6 +91,7 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
     search_data_t *data = (search_data_t *)closure_data;
     int i;
     data->paths = NULL;
+    data->done = false;
     if (result == NULL)
     {
         ERROR ("SEARCH: Error processing request.\n");
@@ -97,6 +99,7 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
     else if (result->paths == NULL)
     {
         DEBUG ("    = (null)\n");
+        data->done = true;
     }
     else if (result->n_paths != 0)
     {
@@ -105,8 +108,8 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
             data->paths = g_list_append (data->paths,
                               (gpointer) strdup (result->paths[i]));
         }
+        data->done = true;
     }
-    data->done = true;
 }
 
 static void
