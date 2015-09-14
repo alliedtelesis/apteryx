@@ -332,7 +332,7 @@ rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descript
 ProtobufCService *
 rpc_connect_service_sock (rpc_socket sock, const ProtobufCServiceDescriptor *descriptor)
 {
-    if (!sock)
+    if (!sock || sock->dead)
     {
         return NULL;
     }
