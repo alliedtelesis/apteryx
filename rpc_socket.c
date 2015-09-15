@@ -229,6 +229,7 @@ rpc_socket_priv_get (rpc_socket sock)
 static bool
 rpc_socket_die (rpc_socket sock)
 {
+    DEBUG ("RPC[%i]: Socket Die\n", sock->sock);
     pthread_mutex_lock (&sock->lock);
     assert (sock->refcount == 0);
     sock->dead = true;

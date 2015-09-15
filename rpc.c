@@ -104,11 +104,35 @@ worker_func (gpointer a, gpointer b)
 }
 
 bool
-rpc_init ()
+rpc_init (void)
 {
     if (!rpc_workers)
     {
-        rpc_workers = g_thread_pool_new ((GFunc)worker_func, NULL, 8, false, NULL);
+        rpc_workers = g_thread_pool_new ((GFunc)worker_func, NULL, 8, FALSE, NULL);
+        DEBUG ("RPC: Create workers\n");
+    }
+    return true;
+}
+
+bool
+rpc_shutdown (void)
+{
+    if (rpc_workers)
+    {
+        int i;
+        DEBUG ("RPC: Destroy workers\n");
+        /* Need to wait until all threads are cleaned up */
+        for (i=0; i<10; i++)
+        {
+            g_thread_pool_stop_unused_threads ();
+            if (g_thread_pool_unprocessed (rpc_workers) == 0 &&
+                g_thread_pool_get_num_threads (rpc_workers) == 0 &&
+                g_thread_pool_get_num_unused_threads () == 0)
+                break;
+            g_usleep (G_USEC_PER_SEC / 10);
+        }
+        g_thread_pool_free (rpc_workers, FALSE, TRUE);
+        rpc_workers = NULL;
     }
     return true;
 }
