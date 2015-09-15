@@ -275,8 +275,30 @@ watch_pool_init ()
 {
     if (!watch_pool)
     {
-        watch_pool = g_thread_pool_new (do_watch, NULL, 1, false, NULL);
+        watch_pool = g_thread_pool_new (do_watch, NULL, 1, FALSE, NULL);
     }
+}
+
+bool
+watch_pool_shutdown (void)
+{
+    if (watch_pool)
+    {
+        int i;
+        /* Need to wait until all threads are cleaned up */
+        for (i=0; i<10; i++)
+        {
+            g_thread_pool_stop_unused_threads ();
+            if (g_thread_pool_unprocessed (watch_pool) == 0 &&
+                g_thread_pool_get_num_threads (watch_pool) == 0 &&
+                g_thread_pool_get_num_unused_threads () == 0)
+                break;
+            g_usleep (G_USEC_PER_SEC / 10);
+        }
+        g_thread_pool_free (watch_pool, FALSE, TRUE);
+        watch_pool = NULL;
+    }
+    return true;
 }
 
 bool
@@ -324,6 +346,8 @@ apteryx_shutdown (void)
     /* Shutdown */
     DEBUG ("Shutdown: Shutting down\n");
     rpc_client_shutdown ();
+    rpc_shutdown ();
+    watch_pool_shutdown ();
     DEBUG ("Shutdown: Shutdown\n");
     return true;
 }

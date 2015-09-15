@@ -1616,7 +1616,7 @@ test_provide_different_process ()
     else if (pid > 0)
     {
         apteryx_init (debug);
-        usleep (50000);
+        usleep (RPC_TIMEOUT_US / 2);
         CU_ASSERT ((value = apteryx_get (path)) != NULL);
         CU_ASSERT (value && strcmp (value, "up") == 0);
         if (value)

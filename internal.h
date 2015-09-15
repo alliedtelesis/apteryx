@@ -126,7 +126,8 @@ uint64_t db_timestamp (const char *path);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
-bool rpc_init ();
+bool rpc_init (void);
+bool rpc_shutdown (void);
 bool rpc_provide_service (const char *url, ProtobufCService *service, int stopfd);
 bool rpc_bind_url (const char *guid, const char *url);
 bool rpc_unbind_url (const char *guid, const char *url);
