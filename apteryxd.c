@@ -71,10 +71,13 @@ handle_get_response (const Apteryx__GetResult *result, void *closure_data)
     {
         ERROR ("GET: Error processing request.\n");
     }
-    else if (result->value && result->value[0] != '\0')
+    else
     {
         data->done = true;
-        data->value = strdup (result->value);
+        if (result->value && result->value[0] != '\0')
+        {
+            data->value = strdup (result->value);
+        }
     }
 }
 
