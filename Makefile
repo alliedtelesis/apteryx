@@ -26,7 +26,7 @@ endif
 
 all: libapteryx.so apteryx apteryxd apteryx-sync
 
-libapteryx.so: rpc.o rpc_transport.o rpc_socket.o apteryx.pb-c.o apteryx.o lua.o
+libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Creating library "$@""
 	@$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 

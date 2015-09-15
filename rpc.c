@@ -4,10 +4,13 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include "apteryx.pb-c.h"
 
 #include "rpc_transport.h"
 
 static rpc_service Service;
+static GHashTable *connection_cache = NULL;
+static pthread_mutex_t connection_cache_lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
 
 /* Message header */
 #define RPC_HEADER_LENGTH (2 * sizeof (uint32_t))
@@ -375,4 +378,90 @@ rpc_connect_deref (ProtobufCService *service)
     {
         destroy_client_service (service);
     }
+}
+
+ProtobufCService *
+rpc_client_get_service (const char *url, const ProtobufCService *service)
+{
+    if (url == NULL)
+    {
+        return NULL;
+    }
+    pthread_mutex_lock (&connection_cache_lock);
+    if (connection_cache == NULL)
+    {
+        connection_cache = g_hash_table_new (g_str_hash, g_str_equal);
+    }
+    ProtobufCService *rpc_client = (ProtobufCService *) g_hash_table_lookup (connection_cache, url);
+    if (!rpc_client)
+    {
+        rpc_client = rpc_connect_service (url, &apteryx__server__descriptor, service);
+        if (rpc_client)
+        {
+            g_hash_table_insert (connection_cache, strdup (url), rpc_client);
+        }
+    }
+    pthread_mutex_unlock (&connection_cache_lock);
+
+    if (rpc_client)
+    {
+        rpc_connect_ref (rpc_client);
+    }
+
+    return rpc_client;
+}
+
+ProtobufCService *
+rpc_client_get (const char *url)
+{
+    return rpc_client_get_service (url, NULL);
+}
+
+void
+rpc_client_abandon (const char *url)
+{
+    if (url == NULL || connection_cache == NULL)
+    {
+        return;
+    }
+    char *name = NULL;
+    ProtobufCService *rpc_client = NULL;
+
+    pthread_mutex_lock (&connection_cache_lock);
+    if (g_hash_table_lookup_extended (connection_cache, url, (void **)&name, (void **)&rpc_client))
+    {
+        g_hash_table_remove (connection_cache, url);
+        free (name);
+        rpc_connect_deref (rpc_client);
+    }
+    pthread_mutex_unlock (&connection_cache_lock);
+
+    return;
+}
+
+bool
+remove_rpc_client (gpointer key, gpointer value, gpointer empty)
+{
+    ProtobufCService * service = (ProtobufCService *) value;
+    if (service)
+    {
+        rpc_connect_deref (service);
+    }
+    if (key)
+    {
+        free (key);
+    }
+
+    return true;
+}
+
+void
+rpc_client_shutdown ()
+{
+    pthread_mutex_lock (&connection_cache_lock);
+    if (connection_cache)
+    {
+        g_hash_table_foreach_remove (connection_cache, (GHRFunc)remove_rpc_client, NULL);
+    }
+    pthread_mutex_unlock (&connection_cache_lock);
 }

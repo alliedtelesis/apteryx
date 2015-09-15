@@ -254,85 +254,6 @@ handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
     }
 }
 
-GHashTable *client_cache = NULL;
-
-static ProtobufCService *rpc_client_get (const char *url)
-{
-    if (url == NULL)
-    {
-        return NULL;
-    }
-    pthread_mutex_lock (&lock);
-    if (client_cache == NULL)
-    {
-        client_cache = g_hash_table_new (g_str_hash, g_str_equal);
-    }
-    ProtobufCService *rpc_client = (ProtobufCService *) g_hash_table_lookup (client_cache, url);
-    if (!rpc_client)
-    {
-        rpc_client = rpc_connect_service (url, &apteryx__server__descriptor, (const struct ProtobufCService *)&server_service);
-        if (rpc_client)
-        {
-            g_hash_table_insert (client_cache, strdup (url), rpc_client);
-        }
-    }
-    pthread_mutex_unlock (&lock);
-
-    if (rpc_client)
-    {
-        rpc_connect_ref (rpc_client);
-    }
-
-    return rpc_client;
-}
-
-static void rpc_client_abandon (const char *url)
-{
-    if (url == NULL || client_cache == NULL)
-    {
-        return;
-    }
-    char *name = NULL;
-    ProtobufCService *rpc_client = NULL;
-
-    pthread_mutex_lock (&lock);
-    if (g_hash_table_lookup_extended (client_cache, url, (void **)&name, (void **)&rpc_client))
-    {
-        g_hash_table_remove (client_cache, url);
-        free (name);
-        rpc_connect_deref (rpc_client);
-    }
-    pthread_mutex_unlock (&lock);
-
-    return;
-}
-
-static bool
-remove_rpc_client (gpointer key, gpointer value, gpointer empty)
-{
-    ProtobufCService * service = (ProtobufCService *) value;
-    if (service)
-    {
-        rpc_connect_deref (service);
-    }
-    if (key)
-    {
-        free (key);
-    }
-
-    return true;
-}
-
-static void rpc_client_shutdown ()
-{
-    pthread_mutex_lock (&lock);
-    if (client_cache)
-    {
-        g_hash_table_foreach_remove (client_cache, (GHRFunc)remove_rpc_client, NULL);
-    }
-    pthread_mutex_unlock (&lock);
-}
-
 static void
 do_watch (void *w, void *d)
 {
@@ -449,7 +370,7 @@ apteryx_prune (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get (url);
+    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
     if (!rpc_client)
     {
         ERROR ("PRUNE: Falied to connect to server: %s\n", strerror (errno));
@@ -532,7 +453,7 @@ apteryx_set (const char *path, const char *value)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get (url);
+    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
     if (!rpc_client)
     {
         ERROR ("SET: Falied to connect to server: %s\n", strerror (errno));
@@ -654,7 +575,7 @@ apteryx_get (const char *path)
     }
 
     /* IPC */
-    while (tries < 2 && (rpc_client = rpc_client_get (url)) != NULL)
+    while (tries < 2 && (rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service)) != NULL)
     {
         get.path = (char *) path;
         apteryx__server__get (rpc_client, &get, handle_get_response, &data);
@@ -830,7 +751,7 @@ apteryx_set_tree (GNode* root)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get (url);
+    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
     free (url);
     if (!rpc_client)
     {
@@ -973,7 +894,7 @@ apteryx_get_tree (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get (APTERYX_SERVER);
+    rpc_client = rpc_client_get_service (APTERYX_SERVER, (const ProtobufCService *) &server_service);
     if (!rpc_client)
     {
         ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
@@ -1067,7 +988,7 @@ apteryx_search (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get (url);
+    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
     if (!rpc_client)
     {
         ERROR ("SEARCH: Falied to connect to server: %s\n", strerror (errno));
@@ -1234,7 +1155,7 @@ apteryx_timestamp (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get (url);
+    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
     free (url);
     if (!rpc_client)
     {

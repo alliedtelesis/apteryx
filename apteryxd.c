@@ -457,17 +457,19 @@ provide_get (const char *path)
 }
 
 static ProtobufCService *
-find_proxy (const char **path)
+find_proxy (const char **path, cb_info_t **proxy_pt)
 {
     ProtobufCService *rpc_client = NULL;
     GList *proxies = NULL;
     GList *iter = NULL;
 
+    *proxy_pt = NULL;
+
     /* Retrieve a list of proxies for this path */
     proxies = cb_match (&proxy_list, *path,
             CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
     if (!proxies)
-        return 0;
+        return NULL;
 
     /* Find the first good proxy */
     for (iter = proxies; iter; iter = g_list_next (iter))
@@ -476,7 +478,7 @@ find_proxy (const char **path)
         int len = strlen (proxy->path);
 
         /* Setup IPC */
-        rpc_client = rpc_connect_service (proxy->uri, &apteryx__server__descriptor, NULL);
+        rpc_client = rpc_client_get (proxy->uri);
         if (!rpc_client)
         {
             ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
@@ -494,6 +496,7 @@ find_proxy (const char **path)
             len -= 1;
         *path = *path  + len;
         DEBUG ("PROXY CB \"%s\" to \"%s\"\n", *path, proxy->uri);
+        *proxy_pt = proxy;
         break;
     }
     g_list_free_full (proxies, (GDestroyNotify) cb_release);
@@ -508,11 +511,15 @@ proxy_set (const char *path, const char *value)
     Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
     Apteryx__PathValue *pv[1] = {&_pv};
     int result = 1;
+    cb_info_t *proxy = NULL;
 
     /* Find and connect to a proxied instance */
-    rpc_client = find_proxy (&path);
+    rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
+        /* A positive value is interpreted as proxy not found */
         return 1;
+    }
 
     /* Do remote set */
     pv[0]->path = (char *) path;
@@ -520,10 +527,13 @@ proxy_set (const char *path, const char *value)
     set.n_sets = 1;
     set.sets = pv;
     apteryx__server__set (rpc_client, &set, handle_set_response, &result);
-
-    /* Destroy the service */
     rpc_connect_deref (rpc_client);
-
+    if (result != 0)
+    {
+        /* We got some form of error.  Kill the socket. */
+        ERROR ("PROXY SET: Error or no response:%s\n", strerror (errno));
+        rpc_client_abandon (proxy->uri);
+    }
     return result;
 }
 
@@ -533,25 +543,30 @@ proxy_get (const char *path)
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
     get_data_t data = {0};
+    cb_info_t *proxy = NULL;
+    char *value = NULL;
 
     /* Find and connect to a proxied instance */
-    rpc_client = find_proxy (&path);
+    rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
         return NULL;
 
     /* Do remote get */
     get.path = (char *) path;
     apteryx__server__get (rpc_client, &get, handle_get_response, &data);
+    rpc_connect_deref (rpc_client);
     if (!data.done)
     {
         INC_COUNTER (counters.proxied_timeout);
         ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        rpc_client_abandon (proxy->uri);
+    }
+    else
+    {
+        value = data.value;
     }
 
-    /* Destroy the service */
-    rpc_connect_deref (rpc_client);
-
-    return data.value;
+    return value;
 }
 
 static GList *
@@ -561,19 +576,22 @@ proxy_search (const char *path)
     ProtobufCService *rpc_client;
     Apteryx__Search search = APTERYX__SEARCH__INIT;
     search_data_t data = {0};
+    cb_info_t *proxy = NULL;
 
     /* Find and connect to a proxied instance */
-    rpc_client = find_proxy (&path);
+    rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
         return NULL;
 
     /* Do remote search */
     search.path = (char *) path;
     apteryx__server__search (rpc_client, &search, handle_search_response, &data);
+    rpc_connect_deref (rpc_client);
     if (!data.done)
     {
         INC_COUNTER (counters.proxied_timeout);
         ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        rpc_client_abandon (proxy->uri);
     }
     else
     {
@@ -594,9 +612,6 @@ proxy_search (const char *path)
         free (local_path);
     }
 
-    /* Destroy the service */
-    rpc_connect_deref (rpc_client);
-
     return data.paths;
 }
 
@@ -606,9 +621,10 @@ proxy_prune (const char *path)
     ProtobufCService *rpc_client;
     Apteryx__Prune prune = APTERYX__PRUNE__INIT;
     protobuf_c_boolean is_done = 0;
+    cb_info_t *proxy = NULL;
 
     /* Find and connect to a proxied instance */
-    rpc_client = find_proxy (&path);
+    rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
         return false;
 
@@ -618,7 +634,8 @@ proxy_prune (const char *path)
     rpc_connect_deref (rpc_client);
     if (!is_done)
     {
-        ERROR ("PRUNE: No response\n");
+        ERROR ("PROXY PRUNE: No response\n");
+        rpc_client_abandon (proxy->uri);
         return false;
     }
 
@@ -631,23 +648,23 @@ proxy_timestamp (const char *path)
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
     uint64_t value = 0;
+    cb_info_t *proxy = NULL;
 
     /* Find and connect to a proxied instance */
-    rpc_client = find_proxy (&path);
+    rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
         return 0;
 
     /* Do remote timestamp */
     get.path = (char *) path;
     apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
+    rpc_connect_deref (rpc_client);
     if (!value)
     {
         INC_COUNTER (counters.proxied_timeout);
         ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        rpc_client_abandon (proxy->uri);
     }
-
-    /* Destroy the service */
-    rpc_connect_deref (rpc_client);
 
     return value;
 }
@@ -695,6 +712,7 @@ apteryx__set (Apteryx__Server_Service *service,
             result.result = proxy_result;
             goto exit;
         }
+        /* else proxy not found. */
 
         /* Validate new data */
         validation_result = validate_set (path, value);
@@ -1189,6 +1207,7 @@ exit:
     close (pipefd[1]);
 
     /* Cleanup callbacks */
+    rpc_client_shutdown ();
     cb_shutdown ();
     /* Clean up the database */
     db_shutdown ();

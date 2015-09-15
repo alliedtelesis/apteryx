@@ -136,6 +136,11 @@ void rpc_connect_ref (ProtobufCService *service);
 void rpc_connect_deref (ProtobufCService *service);
 rpc_socket rpc_socket_current (void);
 void rpc_socket_current_set (rpc_socket sock);
+ProtobufCService *rpc_client_get (const char *url);
+ProtobufCService *rpc_client_get_service (const char *url, const ProtobufCService *service);
+void rpc_client_abandon (const char *url);
+bool remove_rpc_client (gpointer key, gpointer value, gpointer empty);
+void rpc_client_shutdown (void);
 
 /* Apteryx configuration */
 void config_init (void);
