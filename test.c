@@ -2610,14 +2610,37 @@ test_tcp_con_req_resp_disc_latency ()
 }
 
 static int
+apteryxd_memory (void)
+{
+    int memory;
+    FILE* file = popen ("ps -C apteryxd -O rss | gawk '{ count ++; sum += $2 }; END {count --; print sum;};'", "r");
+    if (!file || fscanf (file, "%d", &memory) != 1)
+    {
+        memory = 0;
+    }
+    pclose (file);
+    return memory;
+}
+
+static struct rusage before;
+static long apteryxd_before;
+
+static int
 suite_init (void)
 {
+    getrusage (RUSAGE_SELF, &before);
+    apteryxd_before = apteryxd_memory ();
     return 0;
 }
 
 static int
 suite_clean (void)
 {
+    struct rusage after;
+    getrusage (RUSAGE_SELF, &after);
+    printf ("\n[Memory Used: Client:%ldkB Server:%ldkB]",
+            after.ru_maxrss - before.ru_maxrss,
+            apteryxd_memory () - apteryxd_before);
     return 0;
 }
 
@@ -2663,7 +2686,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
     { "watch one level path", test_watch_one_level_path },
     { "watch_one_level_path_prune", test_watch_one_level_path_prune},
-    { "watch wildcard", test_watch_wildpath },
+    { "watch wildpath", test_watch_wildpath },
     { "watch wildcard", test_watch_wildcard },
     { "watch wildcard not last", test_watch_wildcard_not_last },
     { "watch wildcard miss", test_watch_wildcard_miss },
@@ -2801,7 +2824,8 @@ run_unit_tests (const char *filter)
         CU_pSuite pSuite = CU_add_suite(suite->pName, suite->pInitFunc, suite->pCleanupFunc);
         if (pSuite == NULL)
         {
-            fprintf (stderr, "suite registration failed - %s\n", CU_get_error_msg ());
+            fprintf (stderr, "suite registration failed (%s) - %s\n",
+                    suite->pName, CU_get_error_msg ());
             exit (EXIT_FAILURE);
         }
         CU_TestInfo *test = &suite->pTests[0];
@@ -2811,7 +2835,8 @@ run_unit_tests (const char *filter)
             {
                 if (CU_add_test(pSuite, test->pName, test->pTestFunc) == NULL)
                 {
-                    fprintf (stderr, "test registration failed - %s\n", CU_get_error_msg ());
+                    fprintf (stderr, "test registration failed (%s) - %s\n",
+                            test->pName, CU_get_error_msg ());
                     exit (EXIT_FAILURE);
                 }
             }
