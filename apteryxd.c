@@ -705,10 +705,15 @@ apteryx__set (Apteryx__Server_Service *service,
 
         /* Check proxy first */
         proxy_result = proxy_set (path, value);
-        if (proxy_result <= 0)
+        if (proxy_result == 0)
         {
-            DEBUG ("SET: %s = %s proxied (result=%d)\n",
-                    path, value, proxy_result);
+            /*  Result success */
+            DEBUG ("SET: %s = %s proxied\n", path, value);
+            /* Validation is done on remote unit. */
+            continue;
+        }
+        else if (proxy_result < 0)
+        {
             result.result = proxy_result;
             goto exit;
         }
@@ -734,7 +739,8 @@ apteryx__set (Apteryx__Server_Service *service,
     result.result = 0;
 
 exit:
-    if (validation_result >= 0)
+    /* Currently assumes all failed or all succeeded */
+    if (validation_result >= 0 && result.result == 0)
     {
         /* Notify watchers for each Path Value in the set*/
         for (i=0; i<set->n_sets; i++)
