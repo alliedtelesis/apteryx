@@ -253,6 +253,7 @@ rpc_service_bind_url (rpc_service s, const char *guid, const char *url)
         return false;
     }
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    setsockopt(fd, IPPROTO_IP, IP_FREEBIND, &on, sizeof(on));
     if (bind (fd, (struct sockaddr *)&sock->address, sock->address_len) < 0)
     {
         ERROR ("RPC: Socket(%s) error binding: %s\n", url, strerror (errno));
