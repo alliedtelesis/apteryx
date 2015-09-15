@@ -123,6 +123,7 @@ finished:
     g_list_free (sock->in_queue);
     sock->in_queue = NULL;
     pthread_mutex_unlock (&sock->in_lock);
+    rpc_socket_deref (sock);
 
     return 0;
 }
@@ -235,8 +236,15 @@ rpc_socket_die (rpc_socket sock)
     pthread_mutex_lock (&sock->in_lock);
     close (sock->sock);
     pthread_mutex_unlock (&sock->in_lock);
-    pthread_cancel (sock->thread);
-    pthread_join (sock->thread, NULL);
+    if (!pthread_equal (pthread_self (), sock->thread))
+    {
+        pthread_cancel (sock->thread);
+        pthread_join (sock->thread, NULL);
+    }
+    else
+    {
+        pthread_detach (sock->thread);
+    }
     pthread_mutex_lock (&sock->in_lock);
     for (GList *itr = sock->in_queue; itr; itr = itr->next)
     {
@@ -256,6 +264,13 @@ rpc_socket_die (rpc_socket sock)
     pthread_mutex_destroy (&sock->in_lock);
     pthread_mutex_destroy (&sock->out_lock);
     pthread_mutex_destroy (&sock->lock);
+    rpc_server s = rpc_socket_parent_get (sock);
+    if (s)
+    {
+        pthread_mutex_lock (&s->lock);
+        s->clients = g_list_remove (s->clients, sock);
+        pthread_mutex_unlock (&s->lock);
+    }
     free (sock);
     return true;
 }
