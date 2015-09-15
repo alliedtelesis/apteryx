@@ -125,7 +125,7 @@ GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
 
 /* RPC API */
-#define RPC_TIMEOUT_US 10000000
+#define RPC_TIMEOUT_US 1000000
 bool rpc_init ();
 bool rpc_provide_service (const char *url, ProtobufCService *service, int stopfd);
 bool rpc_bind_url (const char *guid, const char *url);
