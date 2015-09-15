@@ -1435,7 +1435,8 @@ test_validate_conflicting_callback(const char *path, const char *value)
 static bool
 test_validate_test_watch_callback (const char *path, const char *value)
 {
-    usleep (900000);
+    /* Block long enough to serialise the 2nd validate, avoiding RPC timeout */
+    usleep (RPC_TIMEOUT_US - 10000);
     already_set++;
     return true;
 }

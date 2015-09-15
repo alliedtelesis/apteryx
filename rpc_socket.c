@@ -139,9 +139,10 @@ rpc_socket_recv (rpc_socket sock, rpc_id id, void **data, size_t *len, uint64_t 
     if (waitUS)
     {
         gettimeofday (&now, NULL);
-
-        waitUntil.tv_sec = now.tv_sec + (waitUS/1000000);
-        waitUntil.tv_nsec = 0;
+        waitUntil.tv_sec = now.tv_sec + (waitUS / (1000UL * 1000UL));
+        waitUntil.tv_nsec = (now.tv_usec + (waitUS % (1000UL * 1000UL))) * 1000UL;
+        waitUntil.tv_sec += waitUntil.tv_nsec / (1000UL * 1000UL * 1000UL);
+        waitUntil.tv_nsec %= (1000UL * 1000UL * 1000UL);
     }
 
     pthread_mutex_lock (&sock->in_lock);
