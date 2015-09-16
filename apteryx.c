@@ -480,7 +480,7 @@ apteryx_set (const char *path, const char *value)
     rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
     if (!rpc_client)
     {
-        ERROR ("SET: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("SET: Failed to connect to server: %s\n", strerror (errno));
         free (url);
         return false;
     }
@@ -599,28 +599,25 @@ apteryx_get (const char *path)
     }
 
     /* IPC */
-    while (tries < 2 && (rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service)) != NULL)
-    {
-        get.path = (char *) path;
-        apteryx__server__get (rpc_client, &get, handle_get_response, &data);
-        rpc_connect_deref (rpc_client);
-        if (!data.done)
-        {
-            ERROR ("GET: No response\n");
-            rpc_client_abandon (url);
-            tries++;
-        }
-        else
-        {
-            value = data.value;
-            break;
-        }
-    }
+    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
     if (!rpc_client)
     {
-        ERROR ("GET: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("GET: Failed to connect to server: %s\n", strerror (errno));
         free (url);
         return NULL;
+    }
+    get.path = (char *) path;
+    apteryx__server__get (rpc_client, &get, handle_get_response, &data);
+    rpc_connect_deref (rpc_client);
+    if (!data.done)
+    {
+        ERROR ("GET: No response\n");
+        rpc_client_abandon (url);
+        tries++;
+    }
+    else
+    {
+        value = data.value;
     }
     free (url);
 
