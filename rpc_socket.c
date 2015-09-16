@@ -123,7 +123,8 @@ finished:
     g_list_free (sock->in_queue);
     sock->in_queue = NULL;
     pthread_mutex_unlock (&sock->in_lock);
-    rpc_socket_deref (sock);
+    if (sock->parent)
+        rpc_socket_deref (sock);
 
     return 0;
 }

@@ -407,16 +407,38 @@ rpc_connect_deref (ProtobufCService *service)
 ProtobufCService *
 rpc_client_get_service (const char *url, const ProtobufCService *service)
 {
+    ProtobufCService *rpc_client = NULL;
+    char *name = NULL;
+
     if (url == NULL)
     {
         return NULL;
     }
+
+    /* Protect the cache */
     pthread_mutex_lock (&connection_cache_lock);
+
+    /* Create the hash table if we have not already */
     if (connection_cache == NULL)
     {
         connection_cache = g_hash_table_new (g_str_hash, g_str_equal);
     }
-    ProtobufCService *rpc_client = (ProtobufCService *) g_hash_table_lookup (connection_cache, url);
+
+    /* Find an existing client */
+    if (g_hash_table_lookup_extended (connection_cache, url, (void **)&name, (void **)&rpc_client))
+    {
+        /* Check the attached socket is still valid */
+        rpc_client_t *client = (rpc_client_t *) rpc_client;
+        if (client->sock == NULL || client->sock->dead)
+        {
+            g_hash_table_remove (connection_cache, url);
+            free (name);
+            rpc_connect_deref (rpc_client);
+            rpc_client = NULL;
+        }
+    }
+
+    /* Create a new service if required */
     if (!rpc_client)
     {
         rpc_client = rpc_connect_service (url, &apteryx__server__descriptor, service);
@@ -425,8 +447,11 @@ rpc_client_get_service (const char *url, const ProtobufCService *service)
             g_hash_table_insert (connection_cache, strdup (url), rpc_client);
         }
     }
+
+    /* Unlock the cache */
     pthread_mutex_unlock (&connection_cache_lock);
 
+    /* Up the refcount */
     if (rpc_client)
     {
         rpc_connect_ref (rpc_client);
