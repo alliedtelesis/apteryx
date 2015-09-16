@@ -674,6 +674,19 @@ apteryx_get_int (const char *path, const char *key)
     return value;
 }
 
+bool
+apteryx_exists (const char *path)
+{
+    char *value = NULL;
+    value = apteryx_get (path);
+    if (value)
+    {
+        free (value);
+        return true;
+    }
+    return false;
+}
+
 static inline gboolean
 _node_free (GNode *node, gpointer data)
 {
