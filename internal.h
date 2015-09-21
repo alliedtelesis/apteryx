@@ -137,6 +137,8 @@ void rpc_connect_ref (ProtobufCService *service);
 void rpc_connect_deref (ProtobufCService *service);
 rpc_socket rpc_socket_current (void);
 void rpc_socket_current_set (rpc_socket sock);
+void rpc_socket_ref (rpc_socket sock);
+void rpc_socket_deref (rpc_socket sock);
 ProtobufCService *rpc_client_get (const char *url);
 ProtobufCService *rpc_client_get_service (const char *url, const ProtobufCService *service);
 void rpc_client_abandon (const char *url);

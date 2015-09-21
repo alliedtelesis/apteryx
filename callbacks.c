@@ -61,6 +61,8 @@ cb_free (gpointer data, void *param)
         free ((void *) cb->path);
     if (cb->uri)
         free ((void *) cb->uri);
+    if (cb->sock)
+        rpc_socket_deref (cb->sock);
     free (cb);
 }
 

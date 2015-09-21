@@ -361,6 +361,7 @@ rpc_connect_service_sock (rpc_socket sock, const ProtobufCServiceDescriptor *des
 {
     if (!sock || sock->dead)
     {
+        DEBUG ("RPC: socket dead, not connecting");
         return NULL;
     }
 
