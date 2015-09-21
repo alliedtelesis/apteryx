@@ -18,6 +18,8 @@
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
 #include "internal.h"
+#include "rpc_transport.h"
+
 #ifdef TEST
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
@@ -61,6 +63,8 @@ cb_free (gpointer data, void *param)
         free ((void *) cb->path);
     if (cb->uri)
         free ((void *) cb->uri);
+    if (cb->sock)
+        rpc_socket_deref (cb->sock);
     free (cb);
 }
 

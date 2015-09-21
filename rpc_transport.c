@@ -86,6 +86,17 @@ accept_thread (void *p)
             DEBUG ("RPC: New client (%i)\n", new_fd);
             rpc_socket r = rpc_socket_create (new_fd, s->request_cb, s);
             pthread_mutex_lock (&s->lock);
+            GList *iter = NULL;
+            /* This may be a reused fd, so close the old ones */
+            for (iter = s->clients; iter; iter = g_list_next(iter))
+            {
+                rpc_socket extant = iter->data;
+                if (extant->sock == new_fd)
+                {
+                    DEBUG ("RPC: Closing reused socket");
+                    extant->dead = true;
+                }
+            }
             s->clients = g_list_append (s->clients, r);
             pthread_mutex_unlock (&s->lock);
         }
