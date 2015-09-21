@@ -105,6 +105,7 @@ handle_indexers_set (const char *path, const char *value, rpc_socket sock)
     cb = update_callback (&index_list, guid, value);
     if (cb)
     {
+        rpc_socket_ref (sock);
         cb->sock = sock;
     }
     cb_release (cb);
@@ -122,6 +123,7 @@ handle_watchers_set (const char *path, const char *value, rpc_socket sock)
     cb = update_callback (&watch_list, guid, value);
     if (cb)
     {
+        rpc_socket_ref (sock);
         cb->sock = sock;
     }
     cb_release (cb);
@@ -139,6 +141,7 @@ handle_providers_set (const char *path, const char *value, rpc_socket sock)
     cb = update_callback (&provide_list, guid, value);
     if (cb)
     {
+        rpc_socket_ref (sock);
         cb->sock = sock;
     }
     cb_release (cb);
@@ -156,6 +159,7 @@ handle_validators_set (const char *path, const char *value, rpc_socket sock)
     cb = update_callback (&validation_list, guid, value);
     if (cb)
     {
+        rpc_socket_ref (sock);
         cb->sock = sock;
     }
     cb_release (cb);
