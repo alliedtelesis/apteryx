@@ -34,7 +34,14 @@ listen_thread (void *p)
                 {
                     continue;
                 }
-                ERROR ("RPC[%i]: Recv error: %s", fd, strerror (errno));
+                else if (errno == ECONNRESET)
+                {
+                    DEBUG ("RPC[%i]: Recv header: %s\n", fd, strerror (errno));
+                }
+                else
+                {
+                    ERROR ("RPC[%i]: Recv header error: %s\n", fd, strerror (errno));
+                }
             }
             if (r <= 0)
             {
@@ -52,25 +59,29 @@ listen_thread (void *p)
         while (recvd < len)
         {
             ssize_t r = recv (fd, data + recvd, len - recvd, 0);
-            if (r == 0)
-            {
-                /* Shutdown */
-                DEBUG ("RPC[%i]: Shutdown\n", fd);
-                free (data);
-                goto finished;
-            }
             if (r < 0)
             {
                 if (errno == EINTR || errno == EAGAIN)
                 {
                     continue;
                 }
-                ERROR ("RPC[%i]: Recv error: %s", fd, strerror (errno));
+                else if (errno == ECONNRESET)
+                {
+                    DEBUG ("RPC[%i]: Recv data: %s\n", fd, strerror (errno));
+                }
+                else
+                {
+                    ERROR ("RPC[%i]: Recv data error: %s\n", fd, strerror (errno));
+                }
             }
-            else
+            if (r <= 0)
             {
-                recvd += r;
+                /* Shutdown */
+                DEBUG ("RPC[%i]: Shutdown\n", fd);
+                free (data);
+                goto finished;
             }
+            recvd += r;
         }
 
         if (ntohl (hdr.mode) == MODE_RESPONSE)
