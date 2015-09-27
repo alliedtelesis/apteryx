@@ -113,30 +113,24 @@ listen_thread (void *p)
             free (data);
             goto finished;
         }
-    } while (1);
+    } while (!sock->dead);
 
 finished:
-    close (sock->sock);
-    pthread_mutex_lock (&sock->in_lock);
+    /* Socket is no longer useful */
     sock->dead = true;
-    while (sock->waiting)
-    {
-        pthread_cond_broadcast (&sock->in_cond);
-        pthread_mutex_unlock (&sock->in_lock);
-        pthread_mutex_lock (&sock->in_lock);
-    }
-    for (GList *itr = sock->in_queue; itr; itr = itr->next)
-    {
-        struct msg_s *m = (struct msg_s *)itr->data;
-        free (m->data);
-        free (m);
-    }
-    g_list_free (sock->in_queue);
-    sock->in_queue = NULL;
-    pthread_mutex_unlock (&sock->in_lock);
-    if (sock->parent)
-        rpc_socket_deref (sock);
 
+    /* Check if we are referenced on the server list */
+    rpc_server s = rpc_socket_parent_get (sock);
+    if (s)
+    {
+        pthread_mutex_lock (&s->lock);
+        if (g_list_find (s->clients, sock) != NULL)
+        {
+            s->clients = g_list_remove (s->clients, sock);
+            rpc_socket_deref (sock);
+        }
+        pthread_mutex_unlock (&s->lock);
+    }
     return 0;
 }
 
@@ -216,6 +210,12 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
     pthread_mutex_init (&sock->out_lock, NULL);
     pthread_mutex_init (&sock->lock, NULL);
     pthread_cond_init (&sock->in_cond, NULL);
+    return sock;
+}
+
+void
+rpc_socket_process (rpc_socket sock)
+{
     int ret = pthread_create (&sock->thread, NULL, listen_thread, sock);
     if (ret != 0)
     {
@@ -224,9 +224,7 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
     char tname[16];
     snprintf ((char *)&tname, 16, "rpc.%i", sock->sock);
     pthread_setname_np (sock->thread, tname);
-    return sock;
 }
-
 
 void *
 rpc_socket_priv_get (rpc_socket sock)
@@ -248,6 +246,7 @@ rpc_socket_die (rpc_socket sock)
     pthread_mutex_unlock (&sock->lock);
     pthread_mutex_lock (&sock->in_lock);
     close (sock->sock);
+    usleep (1000);
     pthread_mutex_unlock (&sock->in_lock);
     if (!pthread_equal (pthread_self (), sock->thread))
     {
@@ -277,13 +276,7 @@ rpc_socket_die (rpc_socket sock)
     pthread_mutex_destroy (&sock->in_lock);
     pthread_mutex_destroy (&sock->out_lock);
     pthread_mutex_destroy (&sock->lock);
-    rpc_server s = rpc_socket_parent_get (sock);
-    if (s)
-    {
-        pthread_mutex_lock (&s->lock);
-        s->clients = g_list_remove (s->clients, sock);
-        pthread_mutex_unlock (&s->lock);
-    }
+    DEBUG ("RPC[%i]: Socket Dead\n", sock->sock);
     free (sock);
     return true;
 }

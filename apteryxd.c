@@ -34,7 +34,10 @@ bool debug = false;
 
 /* Run while true */
 static bool running = true;
-static int stopfd = -1;
+
+/* RPC Service */
+rpc_instance rpc = NULL;
+rpc_instance proxy_rpc = NULL;
 
 /* Statistics and debug */
 counters_t counters = {};
@@ -197,7 +200,7 @@ index_get (const char *path, GList **result)
                 indexer->path, indexer->id, indexer->cb);
 
         /* Setup IPC */
-        rpc_client = rpc_connect_service_sock (indexer->sock, &apteryx__client__descriptor);
+        rpc_client = rpc_client_connect (rpc, indexer->uri);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -217,10 +220,12 @@ index_get (const char *path, GList **result)
         {
             INC_COUNTER (counters.indexed_timeout);
             ERROR ("No response from indexer for path \"%s\"\n", (char *)path);
+            rpc_client_release (rpc, rpc_client, false);
         }
-
-        /* Destroy the service */
-        rpc_connect_deref (rpc_client);
+        else
+        {
+            rpc_client_release (rpc, rpc_client, true);
+        }
 
         /* Result */
         INC_COUNTER (counters.indexed);
@@ -274,7 +279,7 @@ validate_set (const char *path, const char *value)
                  validator->path, value, validator->id, validator->cb);
 
         /* Setup IPC */
-        rpc_client = rpc_connect_service_sock (validator->sock, &apteryx__client__descriptor);
+        rpc_client = rpc_client_connect (rpc, validator->uri);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -291,14 +296,17 @@ validate_set (const char *path, const char *value)
         validate.id = validator->id;
         validate.cb = validator->cb;
         apteryx__client__validate (rpc_client, &validate, handle_validate_response, &result);
-        /* Destroy the service */
-        rpc_connect_deref (rpc_client);
         if (result < 0)
         {
             DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n",
                     (char *)path, (char*)value, validator->id, result);
             INC_COUNTER (counters.validated_timeout);
+            rpc_client_release (rpc, rpc_client, false);
             break;
+        }
+        else
+        {
+            rpc_client_release (rpc, rpc_client, true);
         }
 
         INC_COUNTER (counters.validated);
@@ -310,7 +318,7 @@ validate_set (const char *path, const char *value)
 }
 
 static void
-notify_watchers (const char *path, rpc_socket sock)
+notify_watchers (const char *path)
 {
     GList *watchers = NULL;
     GList *iter = NULL;
@@ -339,18 +347,18 @@ notify_watchers (const char *path, rpc_socket sock)
         /* Check for local watcher */
         if (watcher->id == getpid ())
         {
-            apteryx_internal_watch_callback cb = (apteryx_internal_watch_callback) (long) watcher->cb;
+            apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
             DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
                     watcher->path, watcher->id, watcher->cb);
-            cb (path, value, sock);
+            cb (path, value);
             continue;
         }
 
-        DEBUG ("WATCH CB %s = %s (%s 0x%"PRIx64",0x%"PRIx64")\n",
-                path, value, watcher->path, watcher->id, watcher->cb);
+        DEBUG ("WATCH CB %s = %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
+                path, value, watcher->path, watcher->id, watcher->cb, watcher->uri);
 
         /* Setup IPC */
-        rpc_client = rpc_connect_service_sock (watcher->sock, &apteryx__client__descriptor);
+        rpc_client = rpc_client_connect (rpc, watcher->uri);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -371,10 +379,13 @@ notify_watchers (const char *path, rpc_socket sock)
         {
             INC_COUNTER (counters.watched_timeout);
             ERROR ("Failed to notify watcher for path \"%s\"\n", (char *)path);
+            rpc_client_release (rpc, rpc_client, false);
+        }
+        else
+        {
+            rpc_client_release (rpc, rpc_client, true);
         }
 
-        /* Destroy the service */
-        rpc_connect_deref (rpc_client);
         INC_COUNTER (counters.watched);
         INC_COUNTER (watcher->count);
     }
@@ -420,7 +431,7 @@ provide_get (const char *path)
                provider->path, provider->id, provider->cb);
 
         /* Setup IPC */
-        rpc_client = rpc_connect_service_sock (provider->sock, &apteryx__client__descriptor);
+        rpc_client = rpc_client_connect (rpc, provider->uri);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
@@ -440,10 +451,12 @@ provide_get (const char *path)
         {
             INC_COUNTER (counters.provided_timeout);
             ERROR ("No response from provider for path \"%s\"\n", (char *)path);
+            rpc_client_release (rpc, rpc_client, false);
         }
-
-        /* Destroy the service */
-        rpc_connect_deref (rpc_client);
+        else
+        {
+            rpc_client_release (rpc, rpc_client, true);
+        }
 
         /* Result */
         INC_COUNTER (counters.provided);
@@ -481,7 +494,7 @@ find_proxy (const char **path, cb_info_t **proxy_pt)
         int len = strlen (proxy->path);
 
         /* Setup IPC */
-        rpc_client = rpc_client_get (proxy->uri);
+        rpc_client = rpc_client_connect (proxy_rpc, proxy->uri);
         if (!rpc_client)
         {
             ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
@@ -530,12 +543,15 @@ proxy_set (const char *path, const char *value)
     set.n_sets = 1;
     set.sets = pv;
     apteryx__server__set (rpc_client, &set, handle_set_response, &result);
-    rpc_connect_deref (rpc_client);
     if (result != 0)
     {
         /* We got some form of error.  Kill the socket. */
         ERROR ("PROXY SET: Error or no response:%s\n", strerror (errno));
-        rpc_client_abandon (proxy->uri);
+        rpc_client_release (rpc, rpc_client, false);
+    }
+    else
+    {
+        rpc_client_release (rpc, rpc_client, true);
     }
     return result;
 }
@@ -557,15 +573,15 @@ proxy_get (const char *path)
     /* Do remote get */
     get.path = (char *) path;
     apteryx__server__get (rpc_client, &get, handle_get_response, &data);
-    rpc_connect_deref (rpc_client);
     if (!data.done)
     {
         INC_COUNTER (counters.proxied_timeout);
         ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
-        rpc_client_abandon (proxy->uri);
+        rpc_client_release (rpc, rpc_client, false);
     }
     else
     {
+        rpc_client_release (rpc, rpc_client, true);
         value = data.value;
     }
 
@@ -589,15 +605,15 @@ proxy_search (const char *path)
     /* Do remote search */
     search.path = (char *) path;
     apteryx__server__search (rpc_client, &search, handle_search_response, &data);
-    rpc_connect_deref (rpc_client);
     if (!data.done)
     {
         INC_COUNTER (counters.proxied_timeout);
         ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
-        rpc_client_abandon (proxy->uri);
+        rpc_client_release (rpc, rpc_client, false);
     }
     else
     {
+        rpc_client_release (rpc, rpc_client, true);
         /* Prepend local path to start of all search results */
         size_t path_len = path - in_path;
         char *local_path = calloc (path_len + 1, sizeof (char));
@@ -634,13 +650,13 @@ proxy_prune (const char *path)
     /* Do remote prune */
     prune.path = (char *) path;
     apteryx__server__prune (rpc_client, &prune, handle_ok_response, &is_done);
-    rpc_connect_deref (rpc_client);
     if (!is_done)
     {
         ERROR ("PROXY PRUNE: No response\n");
-        rpc_client_abandon (proxy->uri);
+        rpc_client_release (rpc, rpc_client, false);
         return false;
     }
+    rpc_client_release (rpc, rpc_client, true);
 
     return true;
 }
@@ -661,13 +677,14 @@ proxy_timestamp (const char *path)
     /* Do remote timestamp */
     get.path = (char *) path;
     apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
-    rpc_connect_deref (rpc_client);
     if (!value)
     {
         INC_COUNTER (counters.proxied_timeout);
         ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
-        rpc_client_abandon (proxy->uri);
+        rpc_client_release (rpc, rpc_client, false);
+        return value;
     }
+    rpc_client_release (rpc, rpc_client, true);
 
     return value;
 }
@@ -748,7 +765,7 @@ exit:
         /* Notify watchers for each Path Value in the set*/
         for (i=0; i<set->n_sets; i++)
         {
-            notify_watchers (set->sets[i]->path, rpc_socket_current ());
+            notify_watchers (set->sets[i]->path);
         }
     }
 
@@ -1057,7 +1074,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     /* Call watchers for each pruned path */
     for (iter = paths; iter; iter = g_list_next (iter))
     {
-        notify_watchers ((const char *)iter->data, rpc_socket_current ());
+        notify_watchers ((const char *)iter->data);
     }
 
     g_list_free_full (paths, free);
@@ -1098,15 +1115,12 @@ apteryx__timestamp (Apteryx__Server_Service *service,
     return;
 }
 
-static Apteryx__Server_Service apteryx_service = APTERYX__SERVER__INIT (apteryx__);
+static Apteryx__Server_Service apteryx_server_service = APTERYX__SERVER__INIT (apteryx__);
 
 void
 termination_handler (void)
 {
-    uint8_t dummy = 1;
     running = false;
-    if (write (stopfd, &dummy, 1) !=1)
-        ERROR ("Failed to stop server %s\n", strerror (errno));
 }
 
 void
@@ -1126,7 +1140,6 @@ main (int argc, char **argv)
     const char *pid_file = APTERYX_PID;
     const char *url = APTERYX_SERVER;
     bool background = false;
-    int pipefd[2];
     FILE *fp;
     int i;
 
@@ -1191,35 +1204,50 @@ main (int argc, char **argv)
     /* Create a lock for currently-validating */
     pthread_mutex_init (&validating, NULL);
 
-    /* Init the RPC */
-    rpc_init ();
-
-    /* Create fd to stop server */
-    if (pipe (pipefd) != 0)
+    /* Init the RPC for the server instance */
+    rpc = rpc_init ((ProtobufCService *)&apteryx_server_service, &apteryx__client__descriptor, RPC_TIMEOUT_US);
+    if (rpc == NULL)
     {
-        ERROR ("Failed to create pipe\n");
+        ERROR ("Failed to initialise RPC service\n");
         goto exit;
     }
-    stopfd = pipefd[1];
 
     /* Create server and process requests */
-    if (!rpc_provide_service (url, (ProtobufCService *)&apteryx_service, pipefd[0]))
+    if (!rpc_server_bind (rpc, url, url))
     {
         ERROR ("Failed to start rpc service\n");
+        goto exit;
+    }
+
+    /* Init the RPC for the proxy client */
+    proxy_rpc = rpc_init (NULL, &apteryx__server__descriptor, RPC_TIMEOUT_US);
+    if (proxy_rpc == NULL)
+    {
+        ERROR ("Failed to initialise proxy RPC service\n");
+        goto exit;
+    }
+
+    /* Loop while running */
+    while (running)
+    {
+        pause ();
     }
 
 exit:
     DEBUG ("Exiting\n");
 
-    /* Close the pipe */
-    close (pipefd[0]);
-    close (pipefd[1]);
-
     /* Cleanup callbacks */
-    rpc_client_shutdown ();
     cb_shutdown ();
-    /* Clean up the database */
     db_shutdown ();
+    if (proxy_rpc)
+    {
+        rpc_shutdown (proxy_rpc);
+    }
+    if (rpc)
+    {
+        rpc_server_release (rpc, url);
+        rpc_shutdown (rpc);
+    }
 
     /* Remove the pid file */
     if (background)

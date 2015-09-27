@@ -35,8 +35,6 @@
 #include <protobuf-c/protobuf-c.h>
 #include "common.h"
 
-typedef struct rpc_socket_s *rpc_socket;
-
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
 /* Default PID file */
@@ -71,7 +69,6 @@ typedef struct _cb_info_t
     GList **list;
     int refcnt;
     uint32_t count;
-    rpc_socket sock;
 } cb_info_t;
 
 #define X_FIELDS \
@@ -126,31 +123,18 @@ uint64_t db_timestamp (const char *path);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
-bool rpc_init (void);
-bool rpc_shutdown (void);
-bool rpc_provide_service (const char *url, ProtobufCService *service, int stopfd);
-bool rpc_bind_url (const char *guid, const char *url);
-bool rpc_unbind_url (const char *guid, const char *url);
-ProtobufCService *rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor, const ProtobufCService *descriptor2);
-ProtobufCService *rpc_connect_service_sock (rpc_socket sock, const ProtobufCServiceDescriptor *descriptor);
-void rpc_connect_ref (ProtobufCService *service);
-void rpc_connect_deref (ProtobufCService *service);
-rpc_socket rpc_socket_current (void);
-void rpc_socket_current_set (rpc_socket sock);
-void rpc_socket_ref (rpc_socket sock);
-void rpc_socket_deref (rpc_socket sock);
-ProtobufCService *rpc_client_get (const char *url);
-ProtobufCService *rpc_client_get_service (const char *url, const ProtobufCService *service);
-void rpc_client_abandon (const char *url);
-bool remove_rpc_client (gpointer key, gpointer value, gpointer empty);
-void rpc_client_shutdown (void);
+typedef struct rpc_instance_s *rpc_instance;
+rpc_instance rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descriptor, int timeout);
+void rpc_shutdown (rpc_instance rpc);
+bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
+bool rpc_server_release (rpc_instance rpc, const char *guid);
+ProtobufCService *rpc_client_connect (rpc_instance rpc, const char *url);
+void rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep);
 
 /* Apteryx configuration */
 void config_init (void);
 
 /* Callbacks to clients */
-typedef bool (*apteryx_internal_watch_callback) (const char *path, const char *value, rpc_socket sock);
-
 extern GList *watch_list;
 extern GList *validation_list;
 extern GList *provide_list;
