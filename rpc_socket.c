@@ -216,6 +216,12 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
     pthread_mutex_init (&sock->out_lock, NULL);
     pthread_mutex_init (&sock->lock, NULL);
     pthread_cond_init (&sock->in_cond, NULL);
+    return sock;
+}
+
+void
+rpc_socket_process (rpc_socket sock)
+{
     int ret = pthread_create (&sock->thread, NULL, listen_thread, sock);
     if (ret != 0)
     {
@@ -224,9 +230,7 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
     char tname[16];
     snprintf ((char *)&tname, 16, "rpc.%i", sock->sock);
     pthread_setname_np (sock->thread, tname);
-    return sock;
 }
-
 
 void *
 rpc_socket_priv_get (rpc_socket sock)
@@ -248,6 +252,7 @@ rpc_socket_die (rpc_socket sock)
     pthread_mutex_unlock (&sock->lock);
     pthread_mutex_lock (&sock->in_lock);
     close (sock->sock);
+    usleep (1000);
     pthread_mutex_unlock (&sock->in_lock);
     if (!pthread_equal (pthread_self (), sock->thread))
     {

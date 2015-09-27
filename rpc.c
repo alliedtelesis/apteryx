@@ -1,16 +1,54 @@
+/**
+ * @file rpc.c
+ * RPC implementation for for Apteryx.
+ *
+ * Copyright 2015, Allied Telesis Labs New Zealand, Ltd
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this library. If not, see <http://www.gnu.org/licenses/>
+ */
 #include "internal.h"
-
-#include <errno.h>
-#include <sys/un.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include "apteryx.pb-c.h"
-
 #include "rpc_transport.h"
 
-static rpc_service Service;
-static GHashTable *connection_cache = NULL;
-static pthread_mutex_t connection_cache_lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
+/* An RPC instance.
+ * Provides the service, service
+ * Connects to the remote service using the descriptor
+ */
+struct rpc_instance_s {
+    /* Protect the instance */
+    pthread_mutex_t lock;
+
+    /* General settings */
+    int timeout;
+
+    /* Single service */
+    ProtobufCService *service;
+    rpc_service server;
+    GThreadPool *workers;
+
+    /* Clients */
+    const ProtobufCServiceDescriptor *descriptor;
+    GHashTable *clients;
+};
+
+/* Client object */
+typedef struct rpc_client_t
+{
+    ProtobufCService service;
+    pthread_mutex_t lock;
+    rpc_socket sock;
+    uint32_t refcount;
+} rpc_client_t;
 
 /* Message header */
 #define RPC_HEADER_LENGTH (2 * sizeof (uint32_t))
@@ -21,6 +59,13 @@ typedef struct rpc_message_t
     uint32_t method_index;
     uint32_t message_length;
 } rpc_message_t;
+
+/* Server work */
+struct rpc_work_s {
+    ProtobufCService *service;
+    rpc_message_t msg;
+    ProtobufCMessage *message;
+};
 
 static inline void unpack_header (unsigned char *b, rpc_message_t *h)
 {
@@ -33,203 +78,6 @@ static inline void pack_header (rpc_message_t *h, unsigned char *b)
     ((uint32_t*)b)[0] = htol32(h->method_index);
     ((uint32_t*)b)[1] = htol32(h->message_length);
 }
-
-__thread rpc_socket this_sock = NULL;
-
-rpc_socket
-rpc_socket_current ()
-{
-    return this_sock;
-}
-
-void
-rpc_socket_current_set (rpc_socket sock)
-{
-    this_sock = sock;
-}
-
-static void
-server_connection_response_closure (const ProtobufCMessage *message,
-        void *closure_data)
-{
-    rpc_message_t *msg = (rpc_message_t *)closure_data;
-    rpc_socket sock = msg->sock;
-    uint8_t buffer_slab[512];
-    ProtobufCBufferSimple buffer  = PROTOBUF_C_BUFFER_SIMPLE_INIT (buffer_slab);
-    uint8_t buf[RPC_SOCKET_HDR_SIZE + RPC_HEADER_LENGTH] = {0}; //TEMP - stupid status
-
-    DEBUG ("RPC[%d]: Closure\n", sock->sock);
-
-    msg->message_length = protobuf_c_message_get_packed_size (message);
-    pack_header (msg, &buf[RPC_SOCKET_HDR_SIZE]);
-    buffer.base.append ((ProtobufCBuffer *)&buffer, RPC_SOCKET_HDR_SIZE + RPC_HEADER_LENGTH, buf);
-    if (protobuf_c_message_pack_to_buffer (message, (ProtobufCBuffer *)&buffer)
-            != msg->message_length)
-    {
-        ERROR ("RPC[%d]: error serializing the response\n", sock->sock);
-        return;
-    }
-
-    rpc_socket_send_response (sock, msg->id, buffer.data, buffer.len - RPC_SOCKET_HDR_SIZE);
-    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
-    return;
-}
-
-static GThreadPool *rpc_workers = NULL;
-struct rpc_work_s {
-    ProtobufCService *service;
-    rpc_message_t msg;
-    ProtobufCMessage *message;
-};
-
-static void
-worker_func (gpointer a, gpointer b)
-{
-    struct rpc_work_s *work = (struct rpc_work_s *)a;
-    if (work)
-    {
-        rpc_socket_current_set (work->msg.sock);
-        /* Invoke service (note that it may call back immediately) */
-        work->service->invoke (work->service, work->msg.method_index, work->message,
-                               server_connection_response_closure, (void*)&work->msg);
-
-        if (work->message)
-        {
-            protobuf_c_message_free_unpacked (work->message, NULL);
-        }
-
-        rpc_socket_deref (work->msg.sock);
-        free (work);
-    }
-}
-
-bool
-rpc_init (void)
-{
-    if (!rpc_workers)
-    {
-        rpc_workers = g_thread_pool_new ((GFunc)worker_func, NULL, 8, FALSE, NULL);
-        DEBUG ("RPC: Create workers\n");
-    }
-    return true;
-}
-
-bool
-rpc_shutdown (void)
-{
-    if (rpc_workers)
-    {
-        int i;
-        DEBUG ("RPC: Destroy workers\n");
-        /* Need to wait until all threads are cleaned up */
-        for (i=0; i<10; i++)
-        {
-            g_thread_pool_stop_unused_threads ();
-            if (g_thread_pool_unprocessed (rpc_workers) == 0 &&
-                g_thread_pool_get_num_threads (rpc_workers) == 0 &&
-                g_thread_pool_get_num_unused_threads () == 0)
-                break;
-            g_usleep (G_USEC_PER_SEC / 10);
-        }
-        g_thread_pool_free (rpc_workers, FALSE, TRUE);
-        rpc_workers = NULL;
-    }
-    return true;
-}
-
-void
-request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
-{
-    ProtobufCService *service = (ProtobufCService *)
-                                rpc_service_priv_get (
-                                    rpc_server_parent_get (rpc_socket_parent_get (sock)));
-
-    if (service == NULL)
-    {
-        service = (ProtobufCService *) rpc_socket_priv_get (sock);
-    }
-
-    uint8_t buffer_slab[512];
-    ProtobufCBufferSimple buffer = PROTOBUF_C_BUFFER_SIMPLE_INIT (buffer_slab);
-
-    buffer.base.append ((ProtobufCBuffer*)&buffer, len, data);
-
-    struct rpc_work_s *work = calloc (1, sizeof(*work));
-    work->service = service;
-
-    const ProtobufCMessageDescriptor *desc = NULL;
-
-    work->msg.sock = sock;
-    rpc_socket_ref (sock);
-    work->msg.id = id;
-    unpack_header (buffer.data, &work->msg);
-
-    DEBUG ("RPC[%i]: (request) Method=%d Length=%zd\n", sock->sock,
-            work->msg.method_index, len);
-
-    if (work->msg.method_index >= service->descriptor->n_methods)
-    {
-        ERROR ("RPC: bad method_index %u\n", work->msg.method_index);
-        goto error;
-    }
-
-    desc = service->descriptor->methods[work->msg.method_index].input;
-    work->message = protobuf_c_message_unpack (desc, NULL, work->msg.message_length,
-            (const uint8_t *)buffer.data + RPC_HEADER_LENGTH);
-    if (work->message == NULL)
-    {
-        ERROR ("RPC: unable to unpack message (%d)\n", work->msg.method_index);
-        goto error;
-    }
-
-    g_thread_pool_push (rpc_workers, work, NULL);
-
-    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
-
-    return;
-
-error:
-    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
-    free (work);
-    rpc_socket_deref (sock);
-    return;
-}
-
-bool rpc_provide_service (const char *url, ProtobufCService *service, int stopfd)
-{
-    rpc_service s = rpc_service_init (request_cb, service);
-
-    Service = s;
-
-    /* Create a thread for the default port */
-    rpc_bind_url (url, url);
-
-    rpc_service_run (s, stopfd);
-
-    Service = NULL;
-    /* Stop all of the servers */
-    rpc_service_die (s);
-    return true;
-}
-
-bool rpc_bind_url (const char *guid, const char *url)
-{
-    return rpc_service_bind_url (Service, guid, url);
-}
-
-bool rpc_unbind_url (const char *guid, const char *url)
-{
-    return rpc_service_unbind_url (Service, guid);
-}
-
-
-typedef struct rpc_client_t
-{
-    ProtobufCService service;
-    rpc_socket sock;
-    pthread_mutex_t lock;
-    uint32_t refcount;
-} rpc_client_t;
 
 static void
 invoke_client_service (ProtobufCService *service,
@@ -316,7 +164,6 @@ static void
 destroy_client_service (ProtobufCService *service)
 {
     rpc_client_t *client = (rpc_client_t *)service;
-    DEBUG ("RPC: destroy_client_service\n");
     rpc_socket_deref (client->sock);
     pthread_mutex_lock (&client->lock);
     assert (client->refcount == 0);
@@ -324,18 +171,257 @@ destroy_client_service (ProtobufCService *service)
     free (client);
 }
 
-ProtobufCService *
-rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor, const ProtobufCService *service)
+static void
+server_connection_response_closure (const ProtobufCMessage *message,
+        void *closure_data)
 {
-    rpc_socket sock = rpc_socket_connect_service (url, request_cb);
+    rpc_message_t *msg = (rpc_message_t *)closure_data;
+    rpc_socket sock = msg->sock;
+    uint8_t buffer_slab[512];
+    ProtobufCBufferSimple buffer  = PROTOBUF_C_BUFFER_SIMPLE_INIT (buffer_slab);
+    uint8_t buf[RPC_SOCKET_HDR_SIZE + RPC_HEADER_LENGTH] = {0}; //TEMP - stupid status
 
-    if (sock == NULL)
+    DEBUG ("RPC[%d]: Closure\n", sock->sock);
+
+    msg->message_length = protobuf_c_message_get_packed_size (message);
+    pack_header (msg, &buf[RPC_SOCKET_HDR_SIZE]);
+    buffer.base.append ((ProtobufCBuffer *)&buffer, RPC_SOCKET_HDR_SIZE + RPC_HEADER_LENGTH, buf);
+    if (protobuf_c_message_pack_to_buffer (message, (ProtobufCBuffer *)&buffer)
+            != msg->message_length)
     {
-        ERROR ("RPC: Failed to create socket to %s\n", url);
+        ERROR ("RPC[%d]: error serializing the response\n", sock->sock);
+        return;
+    }
+
+    rpc_socket_send_response (sock, msg->id, buffer.data, buffer.len - RPC_SOCKET_HDR_SIZE);
+    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
+    return;
+}
+
+static void
+worker_func (gpointer a, gpointer b)
+{
+    struct rpc_work_s *work = (struct rpc_work_s *)a;
+    if (work)
+    {
+        /* Invoke service (note that it may call back immediately) */
+        work->service->invoke (work->service, work->msg.method_index, work->message,
+                               server_connection_response_closure, (void*)&work->msg);
+
+        if (work->message)
+        {
+            protobuf_c_message_free_unpacked (work->message, NULL);
+        }
+
+        rpc_socket_deref (work->msg.sock);
+        free (work);
+    }
+}
+
+static void
+request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
+{
+    ProtobufCService *service;
+    rpc_instance rpc = (rpc_instance) rpc_socket_priv_get (sock);
+    if (rpc == NULL || rpc->service == NULL)
+    {
+        ERROR ("RPC: bad service (skt:%p instance:%p)\n", sock, rpc);
+        return;
+    }
+    service = rpc->service;
+
+    uint8_t buffer_slab[512];
+    ProtobufCBufferSimple buffer = PROTOBUF_C_BUFFER_SIMPLE_INIT (buffer_slab);
+
+    buffer.base.append ((ProtobufCBuffer*)&buffer, len, data);
+
+    struct rpc_work_s *work = calloc (1, sizeof(*work));
+    work->service = service;
+
+    const ProtobufCMessageDescriptor *desc = NULL;
+
+    work->msg.sock = sock;
+    rpc_socket_ref (sock);
+    work->msg.id = id;
+    unpack_header (buffer.data, &work->msg);
+
+    DEBUG ("RPC[%i]: (request) Method=%d Length=%zd\n", sock->sock,
+            work->msg.method_index, len);
+
+    if (work->msg.method_index >= service->descriptor->n_methods)
+    {
+        ERROR ("RPC: bad method_index %u\n", work->msg.method_index);
+        goto error;
+    }
+
+    desc = service->descriptor->methods[work->msg.method_index].input;
+    work->message = protobuf_c_message_unpack (desc, NULL, work->msg.message_length,
+            (const uint8_t *)buffer.data + RPC_HEADER_LENGTH);
+    if (work->message == NULL)
+    {
+        ERROR ("RPC: unable to unpack message (%d)\n", work->msg.method_index);
+        goto error;
+    }
+
+    g_thread_pool_push (rpc->workers, work, NULL);
+
+    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
+    return;
+
+error:
+    PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
+    free (work);
+    rpc_socket_deref (sock);
+    return;
+}
+
+rpc_instance
+rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descriptor, int timeout)
+{
+    assert (descriptor);
+    assert (timeout > 0);
+
+    /* Malloc memory for the new service */
+    rpc_instance rpc = (rpc_instance) calloc (1, sizeof(*rpc));
+
+    /* Create the server */
+    rpc_service server = rpc_service_init (request_cb, rpc);
+    if (server == NULL)
+    {
+        ERROR ("RPC: Failed to initialise server\n");
+        free ((void*)rpc);
         return NULL;
     }
 
-    rpc_client_t *client;
+    /* Create a new RPC instance */
+    pthread_mutex_init (&rpc->lock, NULL);
+    rpc->timeout = timeout;
+    rpc->service = service;
+    rpc->server = server;
+    rpc->descriptor = descriptor;
+    rpc->clients = g_hash_table_new (g_str_hash, g_str_equal);
+    rpc->workers = g_thread_pool_new ((GFunc)worker_func, NULL, 8, FALSE, NULL);
+
+    DEBUG ("RPC: New Instance (%p)\n", rpc);
+    return rpc;
+}
+
+static bool
+destroy_rpc_client (gpointer key, gpointer value, gpointer rpc)
+{
+    rpc_client_t *client = (rpc_client_t *) value;
+
+    DEBUG ("RPC: Destroy client to %s\n", (const char *)key);
+
+    /* Release the socket and free the client */
+    rpc_socket_deref (client->sock);
+    free ((void*) client);
+    free (key);
+
+    return true;
+}
+
+void
+rpc_shutdown (rpc_instance rpc)
+{
+    int i;
+
+    assert (rpc);
+
+    DEBUG ("RPC: Shutdown Instance (%p)\n", rpc);
+
+    /* Need to wait until all threads are cleaned up */
+    for (i=0; i<10; i++)
+    {
+        g_thread_pool_stop_unused_threads ();
+        if (g_thread_pool_unprocessed (rpc->workers) == 0 &&
+            g_thread_pool_get_num_threads (rpc->workers) == 0 &&
+            g_thread_pool_get_num_unused_threads () == 0)
+            break;
+        g_usleep (G_USEC_PER_SEC / 10);
+    }
+    g_thread_pool_free (rpc->workers, FALSE, TRUE);
+
+    /* Stop the server */
+    rpc_service_die (rpc->server);
+
+    /* Remove all clients */
+    g_hash_table_foreach_remove (rpc->clients, (GHRFunc)destroy_rpc_client, rpc);
+    g_hash_table_destroy (rpc->clients);
+
+    /* Free instance */
+    free ((void*) rpc);
+}
+
+bool
+rpc_server_bind (rpc_instance rpc, const char *guid, const char *url)
+{
+    assert (rpc);
+    assert (url);
+
+    /* Bind to the URL */
+    return rpc_service_bind_url (rpc->server, guid, url);
+}
+
+bool
+rpc_server_release (rpc_instance rpc, const char *guid)
+{
+    assert (rpc);
+    assert (guid);
+
+    /* Unbind from the URL */
+    return rpc_service_unbind_url (rpc->server, guid);
+}
+
+ProtobufCService *
+rpc_client_connect (rpc_instance rpc, const char *url)
+{
+    rpc_client_t *client = NULL;
+    char *name = NULL;
+    uint64_t pid;
+
+    assert (rpc);
+    assert (url);
+
+    /* Protect the instance */
+    pthread_mutex_lock (&rpc->lock);
+
+    /* Check for PID based URL */
+    if (sscanf (url, "pid://%"PRIu64, &pid) == 1)
+    {
+        DEBUG ("RPC: No existing client for pid:%"PRIu64"\n", pid);
+        return NULL;
+    }
+    /* Find an existing client */
+    else if (g_hash_table_lookup_extended (rpc->clients, url, (void **)&name, (void **)&client))
+    {
+        /* Check the attached socket is still valid */
+        if (client->sock == NULL || client->sock->dead)
+        {
+            DEBUG ("RPC: Pruning dead socket for %s\n", url);
+            g_hash_table_remove (rpc->clients, url);
+            free (name);
+            /* Release the socket and free the client */
+            rpc_socket_deref (client->sock);
+            free ((void*) client);
+        }
+        else
+        {
+            client->refcount++;
+            pthread_mutex_unlock (&rpc->lock);
+            return (ProtobufCService *)client;
+        }
+    }
+
+    /* Create a new socket */
+    rpc_socket sock = rpc_socket_connect_service (url, request_cb);
+    if (sock == NULL)
+    {
+        ERROR ("RPC: Failed to create socket to %s\n", url);
+        pthread_mutex_unlock (&rpc->lock);
+        return NULL;
+    }
+    sock->priv = (void*)rpc;
 
     /* Create client */
     client = calloc (1, sizeof (rpc_client_t));
@@ -343,175 +429,61 @@ rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descript
     {
         ERROR ("RPC: Failed to allocate memory for client service\n");
         rpc_socket_deref (sock);
+        pthread_mutex_unlock (&rpc->lock);
         return NULL;
     }
-    client->service.descriptor = descriptor;
+    client->service.descriptor = rpc->descriptor;
     client->service.invoke = invoke_client_service;
     client->service.destroy = destroy_client_service;
     client->sock = sock;
-    sock->priv = (void *)service;
     pthread_mutex_init (&client->lock, NULL);
-    client->refcount = 1;
+    client->refcount = 2;
 
-    return (ProtobufCService *)client;
-}
+    DEBUG ("RPC: New client to %s\n", url);
 
-ProtobufCService *
-rpc_connect_service_sock (rpc_socket sock, const ProtobufCServiceDescriptor *descriptor)
-{
-    if (!sock || sock->dead)
-    {
-        DEBUG ("RPC: socket dead, not connecting");
-        return NULL;
-    }
+    /* Add it to the list of clients */
+    g_hash_table_insert (rpc->clients, strdup (url), client);
 
-    /* Create client */
-    rpc_client_t *client = calloc (1, sizeof (rpc_client_t));
-    if (!client)
-    {
-        ERROR ("RPC: Failed to allocate memory for client service\n");
-        return NULL;
-    }
-    client->service.descriptor = descriptor;
-    client->service.invoke = invoke_client_service;
-    client->service.destroy = destroy_client_service;
-    client->sock = sock;
-    rpc_socket_ref (sock);
-    pthread_mutex_init (&client->lock, NULL);
-    client->refcount = 1;
+    /* Start processing this socket */
+    rpc_socket_process (sock);
+    pthread_mutex_unlock (&rpc->lock);
     return (ProtobufCService *)client;
 }
 
 void
-rpc_connect_ref (ProtobufCService *service)
+rpc_client_release (rpc_instance rpc, const char *url)
 {
-    rpc_client_t *client = (rpc_client_t *) service;
-    pthread_mutex_lock (&client->lock);
-    client->refcount++;
-    pthread_mutex_unlock (&client->lock);
-}
-
-void
-rpc_connect_deref (ProtobufCService *service)
-{
-    rpc_client_t *client = (rpc_client_t *) service;
-    pthread_mutex_lock (&client->lock);
-    client->refcount--;
-    bool done = (client->refcount == 0);
-    pthread_mutex_unlock (&client->lock);
-    if (done)
-    {
-        destroy_client_service (service);
-    }
-}
-
-ProtobufCService *
-rpc_client_get_service (const char *url, const ProtobufCService *service)
-{
-    ProtobufCService *rpc_client = NULL;
+    rpc_client_t *client = NULL;
     char *name = NULL;
 
-    if (url == NULL)
-    {
-        return NULL;
-    }
+    assert (rpc);
+    assert (url);
 
-    /* Protect the cache */
-    pthread_mutex_lock (&connection_cache_lock);
+    /* Protect the instance */
+    pthread_mutex_lock (&rpc->lock);
 
-    /* Create the hash table if we have not already */
-    if (connection_cache == NULL)
+    /* Find the client */
+    if (g_hash_table_lookup_extended (rpc->clients, url, (void **)&name, (void **)&client))
     {
-        connection_cache = g_hash_table_new (g_str_hash, g_str_equal);
-    }
-
-    /* Find an existing client */
-    if (g_hash_table_lookup_extended (connection_cache, url, (void **)&name, (void **)&rpc_client))
-    {
-        /* Check the attached socket is still valid */
-        rpc_client_t *client = (rpc_client_t *) rpc_client;
-        if (client->sock == NULL || client->sock->dead)
+        /* Release the client */
+        pthread_mutex_lock (&client->lock);
+        client->refcount--;
+        bool done = (client->refcount == 0);
+        pthread_mutex_unlock (&client->lock);
+        if (done)
         {
-            g_hash_table_remove (connection_cache, url);
+            DEBUG ("RPC: Release client to %s\n", url);
+            /* Remove from the list and free */
+            g_hash_table_remove (rpc->clients, url);
             free (name);
-            rpc_connect_deref (rpc_client);
-            rpc_client = NULL;
+            /* Release the socket and free the client */
+            rpc_socket_deref (client->sock);
+            free ((void*) client);
         }
     }
 
-    /* Create a new service if required */
-    if (!rpc_client)
-    {
-        rpc_client = rpc_connect_service (url, &apteryx__server__descriptor, service);
-        if (rpc_client)
-        {
-            g_hash_table_insert (connection_cache, strdup (url), rpc_client);
-        }
-    }
-
-    /* Unlock the cache */
-    pthread_mutex_unlock (&connection_cache_lock);
-
-    /* Up the refcount */
-    if (rpc_client)
-    {
-        rpc_connect_ref (rpc_client);
-    }
-
-    return rpc_client;
-}
-
-ProtobufCService *
-rpc_client_get (const char *url)
-{
-    return rpc_client_get_service (url, NULL);
-}
-
-void
-rpc_client_abandon (const char *url)
-{
-    if (url == NULL || connection_cache == NULL)
-    {
-        return;
-    }
-    char *name = NULL;
-    ProtobufCService *rpc_client = NULL;
-
-    pthread_mutex_lock (&connection_cache_lock);
-    if (g_hash_table_lookup_extended (connection_cache, url, (void **)&name, (void **)&rpc_client))
-    {
-        g_hash_table_remove (connection_cache, url);
-        free (name);
-        rpc_connect_deref (rpc_client);
-    }
-    pthread_mutex_unlock (&connection_cache_lock);
+    /* Unlock the instance */
+    pthread_mutex_unlock (&rpc->lock);
 
     return;
-}
-
-bool
-remove_rpc_client (gpointer key, gpointer value, gpointer empty)
-{
-    ProtobufCService * service = (ProtobufCService *) value;
-    if (service)
-    {
-        rpc_connect_deref (service);
-    }
-    if (key)
-    {
-        free (key);
-    }
-
-    return true;
-}
-
-void
-rpc_client_shutdown ()
-{
-    pthread_mutex_lock (&connection_cache_lock);
-    if (connection_cache)
-    {
-        g_hash_table_foreach_remove (connection_cache, (GHRFunc)remove_rpc_client, NULL);
-    }
-    pthread_mutex_unlock (&connection_cache_lock);
 }

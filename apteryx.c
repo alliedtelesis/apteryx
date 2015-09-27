@@ -40,6 +40,7 @@ bool debug = false;                      /* Debug enabled */
 static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
+static rpc_instance rpc = NULL;         /* RPC Service */
 
 static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
@@ -236,7 +237,7 @@ apteryx__provide (Apteryx__Client_Service *service,
     return;
 }
 
-static Apteryx__Client_Service server_service = APTERYX__CLIENT__INIT (apteryx__);
+static Apteryx__Client_Service apteryx_client_service = APTERYX__CLIENT__INIT (apteryx__);
 
 static void
 handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
@@ -310,7 +311,32 @@ apteryx_init (bool debug_enabled)
     debug |= debug_enabled;
     if (ref_count == 1)
     {
-        rpc_init ();
+        char * uri = NULL;
+
+        /* Create RPC instance */
+        rpc = rpc_init ((ProtobufCService *)&apteryx_client_service, &apteryx__server__descriptor, RPC_TIMEOUT_US);
+        if (rpc == NULL)
+        {
+            ERROR ("Init: Failed to initialise RPC service\n");
+            ref_count--;
+            pthread_mutex_unlock (&lock);
+            return false;
+        }
+
+        /* Bind to the default uri for this client */
+        if (asprintf((char **)&uri, APTERYX_SERVER".%"PRIu64, (uint64_t)getpid ()) <= 0)
+            return false;
+        if (!rpc_server_bind (rpc, uri, uri))
+        {
+            ERROR ("Failed to bind to default rpc service\n");
+            ref_count--;
+            free ((void*) uri);
+            pthread_mutex_unlock (&lock);
+            return false;
+        }
+        free ((void*) uri);
+
+        /* Initialise the watch thread */
         watch_pool_init ();
     }
     pthread_mutex_unlock (&lock);
@@ -324,6 +350,8 @@ apteryx_init (bool debug_enabled)
 bool
 apteryx_shutdown (void)
 {
+    char *uri = NULL;
+
     /* Check if already shutdown */
     if (ref_count <= 0)
     {
@@ -345,8 +373,10 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("Shutdown: Shutting down\n");
-    rpc_client_shutdown ();
-    rpc_shutdown ();
+    if (asprintf((char **)&uri, APTERYX_SERVER".%"PRIu64, (uint64_t)getpid ()) > 0)
+        rpc_server_release (rpc, uri);
+    free (uri);
+    rpc_shutdown (rpc);
     watch_pool_shutdown ();
     DEBUG ("Shutdown: Shutdown\n");
     return true;
@@ -394,7 +424,7 @@ apteryx_prune (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("PRUNE: Falied to connect to server: %s\n", strerror (errno));
@@ -403,11 +433,11 @@ apteryx_prune (const char *path)
     }
     prune.path = (char *) path;
     apteryx__server__prune (rpc_client, &prune, handle_ok_response, &is_done);
-    rpc_connect_deref (rpc_client);
+    rpc_client_release (rpc, url);
     if (!is_done)
     {
         ERROR ("PRUNE: No response\n");
-        rpc_client_abandon (url);
+        rpc_client_release (rpc, url);
         free (url);
         return false;
     }
@@ -477,7 +507,7 @@ apteryx_set (const char *path, const char *value)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("SET: Failed to connect to server: %s\n", strerror (errno));
@@ -489,11 +519,11 @@ apteryx_set (const char *path, const char *value)
     set.n_sets = 1;
     set.sets = pv;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
-    rpc_connect_deref (rpc_client);
+    rpc_client_release (rpc, url);
     if (!is_done)
     {
         DEBUG ("SET: Failed %s\n", strerror(errno));
-        rpc_client_abandon (url);
+        rpc_client_release (rpc, url);
         free (url);
         return false;
     }
@@ -599,7 +629,7 @@ apteryx_get (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("GET: Failed to connect to server: %s\n", strerror (errno));
@@ -608,11 +638,11 @@ apteryx_get (const char *path)
     }
     get.path = (char *) path;
     apteryx__server__get (rpc_client, &get, handle_get_response, &data);
-    rpc_connect_deref (rpc_client);
+    rpc_client_release (rpc, url);
     if (!data.done)
     {
         ERROR ("GET: No response\n");
-        rpc_client_abandon (url);
+        rpc_client_release (rpc, url);
         tries++;
     }
     else
@@ -772,8 +802,7 @@ apteryx_set_tree (GNode* root)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
-    free (url);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("SET_TREE: Falied to connect to server: %s\n", strerror (errno));
@@ -786,12 +815,13 @@ apteryx_set_tree (GNode* root)
     set.n_sets = 0;
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &set);
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
-    rpc_connect_deref (rpc_client);
+    rpc_client_release (rpc, url);
     if (!is_done)
     {
         DEBUG ("SET_TREE: Failed %s\n", strerror(errno));
         rc = false;
     }
+    free (url);
 
     /* Cleanup message */
     for (i=0; i<set.n_sets; i++)
@@ -892,6 +922,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
 GNode*
 apteryx_get_tree (const char *path)
 {
+    char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
     traverse_data_t data = {0};
@@ -907,31 +938,36 @@ apteryx_get_tree (const char *path)
     }
 
     /* Check path */
-    if (path[0] != '/' || path[strlen(path)-1] == '/')
+    path = validate_path (path, &url);
+    if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("GET_TREE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
+        assert (!debug || path);
+        free (url);
         return false;
     }
 
     /* IPC */
-    rpc_client = rpc_client_get_service (APTERYX_SERVER, (const ProtobufCService *) &server_service);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return false;
     }
     traverse.path = (char *) path;
     data.root = g_node_new (strdup (path));
     apteryx__server__traverse (rpc_client, &traverse, handle_traverse_response, &data);
-    rpc_connect_deref (rpc_client);
+    rpc_client_release (rpc, url);
     if (!data.done)
     {
         ERROR ("TRAVERSE: No response\n");
         apteryx_free_tree (data.root);
         data.root = NULL;
+        free (url);
         return NULL;
     }
+    free (url);
     return data.root;
 }
 
@@ -1009,7 +1045,7 @@ apteryx_search (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("SEARCH: Falied to connect to server: %s\n", strerror (errno));
@@ -1018,11 +1054,11 @@ apteryx_search (const char *path)
     }
     search.path = (char *) path;
     apteryx__server__search (rpc_client, &search, handle_search_response, &data);
-    rpc_connect_deref (rpc_client);
+    rpc_client_release (rpc, url);
     if (!data.done)
     {
         ERROR ("SEARCH: No response\n");
-        rpc_client_abandon (url);
+        rpc_client_release (rpc, url);
         free (url);
         return NULL;
     }
@@ -1176,16 +1212,17 @@ apteryx_timestamp (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
-    free (url);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("TIMESTAMP: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return 0;
     }
     get.path = (char *) path;
     apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
-    rpc_connect_deref (rpc_client);
+    rpc_client_release (rpc, url);
+    free (url);
 
     DEBUG ("    = %"PRIu64"\n", value);
     return value;

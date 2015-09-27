@@ -39,6 +39,8 @@ cb_create (GList **list, const char *guid, const char *path,
     cb->guid = strdup (guid);
     cb->path = strdup (path);
     cb->id = id;
+    if (asprintf((char **)&cb->uri, APTERYX_SERVER".%"PRIu64, cb->id) <= 0)
+        return NULL;
     cb->cb = callback;
     cb->list = list;
     cb->refcnt = 1;
@@ -61,8 +63,6 @@ cb_free (gpointer data, void *param)
         free ((void *) cb->path);
     if (cb->uri)
         free ((void *) cb->uri);
-    if (cb->sock)
-        rpc_socket_deref (cb->sock);
     free (cb);
 }
 
