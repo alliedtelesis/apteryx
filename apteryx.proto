@@ -108,3 +108,13 @@ service client
     rpc provide (Provide) returns (GetResult);
     rpc validate (Validate) returns (ValidateResult);
 }
+
+message Ping
+{
+    required string value = 1;
+};
+
+service test
+{
+    rpc ping (Ping) returns (Ping);
+}
