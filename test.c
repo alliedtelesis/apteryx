@@ -31,6 +31,7 @@
 #include <CUnit/Basic.h>
 #include "apteryx.h"
 #include "internal.h"
+#include "apteryx.pb-c.h"
 
 #define TEST_PATH           "/test"
 #define TEST_ITERATIONS     1000
@@ -249,6 +250,7 @@ test_process_multi_write ()
         {
             apteryx_init (debug);
             _multi_write_thread ((void *) i);
+            apteryx_shutdown ();
             exit (0);
         }
     }
@@ -898,15 +900,14 @@ test_watch_fork ()
         apteryx_init (debug);
         usleep (TEST_SLEEP_TIMEOUT);
         apteryx_set_string (path, NULL, "down");
-        while (1);
+        apteryx_shutdown ();
+        exit (0);
     }
     else if (pid > 0)
     {
         apteryx_init (debug);
-        //CU_ASSERT (apteryx_set_string (path, NULL, "up"));
         CU_ASSERT (apteryx_watch (path, test_watch_callback));
         usleep (TEST_SLEEP_TIMEOUT * 2);
-        kill (pid, 15);
         waitpid (pid, &status, 0);
         CU_ASSERT (WEXITSTATUS (status) == 0);
     }
@@ -1307,6 +1308,31 @@ test_watch_when_busy ()
     _watch_cleanup ();
 }
 
+void
+test_watch_rpc_restart ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (apteryx_watch (path, test_watch_callback));
+    apteryx_shutdown ();
+    apteryx_init (debug);
+    CU_ASSERT (apteryx_set_string (path, NULL, "down"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "down") == 0);
+    apteryx_shutdown ();
+    apteryx_init (debug);
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "up") == 0);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_cleanup ();
+}
+
 static pthread_mutex_t watch_lock;
 static bool
 test_perf_watch_callback (const char *path, const char *value)
@@ -1611,6 +1637,7 @@ test_provide_different_process ()
         CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
         usleep (RPC_TIMEOUT_US);
         apteryx_unprovide (path, test_provide_callback_up);
+        apteryx_shutdown ();
         exit (0);
     }
     else if (pid > 0)
@@ -2559,6 +2586,8 @@ exit:
     CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=0 > /dev/null 2>&1") == 0);
     kill (pid, 9);
     waitpid (pid, &status, 0);
+    if (family == AF_UNIX)
+        unlink (TEST_RPC_PATH);
 }
 
 void
@@ -2607,6 +2636,149 @@ void
 test_tcp_con_req_resp_disc_latency ()
 {
     test_socket_latency (AF_INET, true, true, true);
+}
+
+static void
+apteryx__ping (Apteryx__Test_Service *service,
+              const Apteryx__Ping *ping,
+              Apteryx__Ping_Closure closure, void *closure_data)
+{
+    closure (ping, closure_data);
+    return;
+}
+
+static Apteryx__Test_Service test_service = APTERYX__TEST__INIT (apteryx__);
+
+typedef struct _ping_data_t
+{
+    char *value;
+    bool done;
+} ping_data_t;
+
+static void
+handle_ping_response (const Apteryx__Ping *result, void *closure_data)
+{
+    ping_data_t *data = (ping_data_t *)closure_data;
+    data->done = false;
+    if (result == NULL)
+    {
+        ERROR ("PING: Error processing request.\n");
+        errno = -ETIMEDOUT;
+    }
+    else
+    {
+        data->done = true;
+        if (result->value && result->value[0] != '\0')
+        {
+            data->value = strdup (result->value);
+        }
+    }
+}
+
+void
+test_rpc_init ()
+{
+    rpc_instance rpc;
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_bind ()
+{
+    char *url = APTERYX_SERVER".test";
+    rpc_instance rpc;
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_connect ()
+{
+    char *url = APTERYX_SERVER".test";
+    ProtobufCService *rpc_client;
+    rpc_instance rpc;
+
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
+    rpc_client_release (rpc, rpc_client);
+    rpc_client_abandon (rpc, url);
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_ping ()
+{
+    Apteryx__Ping ping = APTERYX__PING__INIT;
+    char *test_string = "testing123...";
+    char *url = APTERYX_SERVER".test";
+    ProtobufCService *rpc_client;
+    rpc_instance rpc;
+    ping_data_t data = {0};
+
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
+    ping.value = test_string;
+    apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
+    CU_ASSERT (data.done);
+    CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
+    free (data.value);
+    rpc_client_release (rpc, rpc_client);
+    rpc_client_abandon (rpc, url);
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_double_bind ()
+{
+    char *url = APTERYX_SERVER".test";
+    rpc_instance rpc;
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT (!rpc_server_bind (rpc,  url, url));
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_perf ()
+{
+    Apteryx__Ping ping = APTERYX__PING__INIT;
+    char *test_string = "testing123...";
+    char *url = APTERYX_SERVER".test";
+    ProtobufCService *rpc_client;
+    rpc_instance rpc;
+    uint64_t start;
+    int i;
+
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
+
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        ping_data_t data = {0};
+        ping.value = test_string;
+        apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
+        CU_ASSERT (data.done);
+        CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
+        free (data.value);
+        if (!data.done || !data.value)
+            goto exit;
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    rpc_client_release (rpc, rpc_client);
+    rpc_client_abandon (rpc, url);
+    rpc_server_release (rpc, url);
+    rpc_shutdown (rpc);
 }
 
 static int
@@ -2663,7 +2835,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
     { "watch one level path", test_watch_one_level_path },
     { "watch_one_level_path_prune", test_watch_one_level_path_prune},
-    { "watch wildcard", test_watch_wildpath },
+    { "watch wildpath", test_watch_wildpath },
     { "watch wildcard", test_watch_wildcard },
     { "watch wildcard not last", test_watch_wildcard_not_last },
     { "watch wildcard miss", test_watch_wildcard_miss },
@@ -2674,6 +2846,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch adds / removes watches", test_watch_adds_watch },
     { "watch removes multiple watches", test_watch_removes_all_watches },
     { "watch when busy", test_watch_when_busy },
+    { "watch rpc restart", test_watch_rpc_restart },
     CU_TEST_INFO_NULL,
 };
 
@@ -2747,7 +2920,7 @@ static CU_TestInfo tests_performance[] = {
     CU_TEST_INFO_NULL,
 };
 
-CU_TestInfo tests_sockets[] = {
+CU_TestInfo tests_rpc[] = {
     { "unix req", test_unix_req_latency },
     { "unix req/resp", test_unix_req_resp_latency },
     { "unix con/disc", test_unix_con_disc_latency },
@@ -2756,6 +2929,12 @@ CU_TestInfo tests_sockets[] = {
     { "tcp req/resp", test_tcp_req_resp_latency },
     { "tcp con/disc", test_tcp_con_disc_latency },
     { "tcp c/r/r/d", test_tcp_con_req_resp_disc_latency},
+    { "rpc init", test_rpc_init },
+    { "rpc bind", test_rpc_bind },
+    { "rpc connect", test_rpc_connect },
+    { "rpc ping", test_rpc_ping },
+    { "rpc double bind", test_rpc_double_bind },
+    { "rpc perf", test_rpc_perf },
     CU_TEST_INFO_NULL,
 };
 
@@ -2767,7 +2946,7 @@ static CU_SuiteInfo suites[] = {
     { "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
-    { "Sockets", suite_init, suite_clean, tests_sockets },
+    { "RPC", suite_init, suite_clean, tests_rpc },
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
     { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },

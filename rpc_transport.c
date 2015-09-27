@@ -85,6 +85,7 @@ accept_thread (void *p)
         {
             DEBUG ("RPC: New client (%i)\n", new_fd);
             rpc_socket r = rpc_socket_create (new_fd, s->request_cb, s);
+            r->priv = s->parent->priv;
             pthread_mutex_lock (&s->lock);
             GList *iter = NULL;
             /* This may be a reused fd, so close the old ones */
@@ -98,6 +99,7 @@ accept_thread (void *p)
                 }
             }
             s->clients = g_list_append (s->clients, r);
+            rpc_socket_process (r);
             pthread_mutex_unlock (&s->lock);
         }
     }
@@ -135,6 +137,7 @@ bool
 rpc_server_die (rpc_server s)
 {
     close (s->sock);
+    usleep (1000);
     pthread_mutex_lock (&s->lock);
     pthread_cancel (s->thread);
     pthread_join (s->thread, NULL);
@@ -234,6 +237,7 @@ rpc_service_die (rpc_service s)
     }
     pthread_mutex_unlock (&s->lock);
     g_list_free (s->servers);
+    free ((void*)s);
     return true;
 }
 
@@ -297,7 +301,7 @@ rpc_service_unbind_url (rpc_service s, const char *guid)
     }
     rpc_service_remove_server (s, serv);
     rpc_server_die (serv);
-    return false;
+    return true;
 }
 
 rpc_socket
