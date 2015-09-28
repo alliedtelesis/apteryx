@@ -2084,7 +2084,7 @@ test_perf_get_tree ()
     start = get_time_us ();
     for (i = 0; i < (TEST_ITERATIONS/10); i++)
     {
-        root = apteryx_get_tree (path);
+        CU_ASSERT ((root = apteryx_get_tree (path)) != NULL);
         if (!root)
             goto exit;
         apteryx_free_tree (root);
@@ -2112,7 +2112,7 @@ test_perf_get_tree_5000 ()
         CU_ASSERT (apteryx_set_string (path, value, value));
     }
     start = get_time_us ();
-    root = apteryx_get_tree (path);
+    CU_ASSERT ((root = apteryx_get_tree (path)) != NULL)
     if (!root)
         goto exit;
     time = (get_time_us () - start);
