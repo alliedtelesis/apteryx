@@ -90,10 +90,10 @@ cb_info_t *
 cb_find (GList **list, const char *guid)
 {
     GList *iter = NULL;
-    cb_info_t *cb;
+    cb_info_t *cb = NULL;
 
     pthread_mutex_lock (&list_lock);
-    for (iter = *list; iter; iter = iter->next)
+    for (iter = *list; iter; iter = g_list_next (iter))
     {
         cb = (cb_info_t *) iter->data;
         if (cb->active && cb->guid && strcmp (cb->guid, guid) == 0)
