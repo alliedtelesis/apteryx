@@ -773,10 +773,10 @@ apteryx_set_tree (GNode* root)
 
     /* IPC */
     rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
-    free (url);
     if (!rpc_client)
     {
         ERROR ("SET_TREE: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return false;
     }
 
@@ -792,6 +792,7 @@ apteryx_set_tree (GNode* root)
         DEBUG ("SET_TREE: Failed %s\n", strerror(errno));
         rc = false;
     }
+    free (url);
 
     /* Cleanup message */
     for (i=0; i<set.n_sets; i++)
@@ -856,6 +857,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
     const char *path = APTERYX_NAME (data->root);
     int i;
 
+    data->done = false;
     if (result == NULL)
     {
         ERROR ("TRAVERSE: Error processing request.\n");
@@ -868,6 +870,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
         DEBUG ("    = (null)\n");
         apteryx_free_tree (data->root);
         data->root = NULL;
+        data->done = true;
     }
     else if (result->n_pv == 1 &&
         strcmp (path, result->pv[0]->path) == 0)
@@ -875,6 +878,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
         Apteryx__PathValue *pv = result->pv[0];
         DEBUG ("  %s = %s\n", pv->path, pv->value);
         g_node_append_data (data->root, (gpointer)strdup (pv->value));
+        data->done = true;
     }
     else if (result->n_pv != 0)
     {
@@ -885,13 +889,14 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
             DEBUG ("  %s = %s\n", pv->path + slen, pv->value);
             path_to_node (data->root, pv->path + slen, pv->value);
         }
+        data->done = true;
     }
-    data->done = true;
 }
 
 GNode*
 apteryx_get_tree (const char *path)
 {
+    char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
     traverse_data_t data = {0};
@@ -907,10 +912,12 @@ apteryx_get_tree (const char *path)
     }
 
     /* Check path */
-    if (path[0] != '/' || path[strlen(path)-1] == '/')
+    path = validate_path (path, &url);
+    if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("GET_TREE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
+        assert (!debug || path);
+        free (url);
         return false;
     }
 
@@ -919,6 +926,7 @@ apteryx_get_tree (const char *path)
     if (!rpc_client)
     {
         ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return false;
     }
     traverse.path = (char *) path;
@@ -930,8 +938,10 @@ apteryx_get_tree (const char *path)
         ERROR ("TRAVERSE: No response\n");
         apteryx_free_tree (data.root);
         data.root = NULL;
+        free (url);
         return NULL;
     }
+    free (url);
     return data.root;
 }
 
@@ -946,14 +956,18 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
 {
     search_data_t *data = (search_data_t *)closure_data;
     int i;
+
+    data->done = false;
     data->paths = NULL;
     if (result == NULL)
     {
         ERROR ("SEARCH: Error processing request.\n");
+        errno = -ETIMEDOUT;
     }
     else if (result->paths == NULL)
     {
         DEBUG ("    = (null)\n");
+        data->done = true;
     }
     else if (result->n_paths != 0)
     {
@@ -963,8 +977,8 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
             data->paths = g_list_append (data->paths,
                               (gpointer) strdup (result->paths[i]));
         }
+        data->done = true;
     }
-    data->done = true;
 }
 
 GList *
@@ -1143,9 +1157,11 @@ static void
 handle_timestamp_response (const Apteryx__TimeStampResult *result, void *closure_data)
 {
     uint64_t *data = (uint64_t *)closure_data;
+
     if (result == NULL)
     {
         ERROR ("TIMESTAMP: Error processing request.\n");
+        errno = -ETIMEDOUT;
     }
     else
     {
@@ -1177,15 +1193,16 @@ apteryx_timestamp (const char *path)
 
     /* IPC */
     rpc_client = rpc_client_get_service (url, (const ProtobufCService *) &server_service);
-    free (url);
     if (!rpc_client)
     {
         ERROR ("TIMESTAMP: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return 0;
     }
     get.path = (char *) path;
     apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
     rpc_connect_deref (rpc_client);
+    free (url);
 
     DEBUG ("    = %"PRIu64"\n", value);
     return value;
