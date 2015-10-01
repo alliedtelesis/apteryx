@@ -34,13 +34,12 @@ cb_info_t *
 cb_create (GList **list, const char *guid, const char *path,
         uint64_t id, uint64_t callback)
 {
-    cb_info_t *cb = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    cb_info_t *cb = (cb_info_t *) g_malloc0 (sizeof (cb_info_t));
     cb->active = true;
-    cb->guid = strdup (guid);
-    cb->path = strdup (path);
+    cb->guid = g_strdup (guid);
+    cb->path = g_strdup (path);
     cb->id = id;
-    if (asprintf((char **)&cb->uri, APTERYX_SERVER".%"PRIu64, cb->id) <= 0)
-        return NULL;
+    cb->uri = g_strdup_printf (APTERYX_SERVER".%"PRIu64, cb->id);
     cb->cb = callback;
     cb->list = list;
     cb->refcnt = 1;
@@ -58,12 +57,12 @@ cb_free (gpointer data, void *param)
     if (cb->list)
         *cb->list = g_list_remove (*cb->list, cb);
     if (cb->guid)
-        free ((void *) cb->guid);
+        g_free ((void *) cb->guid);
     if (cb->path)
-        free ((void *) cb->path);
+        g_free ((void *) cb->path);
     if (cb->uri)
-        free ((void *) cb->uri);
-    free (cb);
+        g_free ((void *) cb->uri);
+    g_free (cb);
 }
 
 void

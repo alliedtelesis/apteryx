@@ -169,8 +169,8 @@ handle_proxies_set (const char *path, const char *value)
         }
         path = strrchr (value, ':') + 1;
         if (cb->uri)
-            free ((void *) cb->uri);
-        cb->uri = strndup (value, strlen (value) - strlen (path) - 1);
+            g_free ((void *) cb->uri);
+        cb->uri = g_strndup (value, strlen (value) - strlen (path) - 1);
         strcpy ((char*)cb->path, path);
         DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
     }
