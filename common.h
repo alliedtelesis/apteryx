@@ -60,6 +60,7 @@ static inline uint32_t htol32 (uint32_t v)
         printf ("[%"PRIu64":%d] ", get_time_us (), getpid ()); \
         printf (fmt, ## args); \
     }
+
 #define ERROR(fmt, args...) \
     { \
         syslog (LOG_ERR, fmt, ## args); \
@@ -69,6 +70,19 @@ static inline uint32_t htol32 (uint32_t v)
             fprintf (stderr, "ERROR: "); \
             fprintf (stderr, fmt, ## args); \
         } \
+    }
+
+#define ASSERT(assertion, rcode, fmt, args...) \
+    if (!(assertion)) \
+    { \
+        syslog (LOG_ERR, fmt, ## args); \
+        if (debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ASSERT: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+        rcode; \
     }
 
 #define FATAL(fmt, args...) \
