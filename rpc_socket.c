@@ -55,7 +55,7 @@ listen_thread (void *p)
         //DEBUG ("RPC[%i]: New message (%zi:%zi)\n", sock, id, len);
         /* Get the message */
         ssize_t recvd = 0;
-        void *data = malloc (len);
+        void *data = g_malloc (len);
         while (recvd < len)
         {
             ssize_t r = recv (fd, data + recvd, len - recvd, 0);
@@ -78,7 +78,7 @@ listen_thread (void *p)
             {
                 /* Shutdown */
                 DEBUG ("RPC[%i]: Shutdown\n", fd);
-                free (data);
+                g_free (data);
                 goto finished;
             }
             recvd += r;
@@ -86,7 +86,7 @@ listen_thread (void *p)
 
         if (ntohl (hdr.mode) == MODE_RESPONSE)
         {
-            struct msg_s *m = calloc (1, sizeof (*m));
+            struct msg_s *m = g_malloc0 (sizeof (*m));
             m->id = id;
             m->data = data;
             m->len = len;
@@ -105,12 +105,12 @@ listen_thread (void *p)
             {
                 sock->request_cb (sock, id, data, len);
             }
-            free (data);
+            g_free (data);
         }
         else
         {
             ERROR ("Unknown message type %x", ntohl(hdr.mode));
-            free (data);
+            g_free (data);
             goto finished;
         }
     } while (!sock->dead);
@@ -188,7 +188,7 @@ rpc_socket_recv (rpc_socket sock, rpc_id id, void **data, size_t *len, uint64_t 
         sock->in_queue = g_list_remove (sock->in_queue, m);
         *data = m->data;
         *len = m->len;
-        free (m);
+        g_free (m);
     }
     pthread_mutex_unlock (&sock->in_lock);
     return m != NULL;
@@ -197,7 +197,7 @@ rpc_socket_recv (rpc_socket sock, rpc_id id, void **data, size_t *len, uint64_t 
 rpc_socket
 rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
 {
-    rpc_socket sock = calloc (1, sizeof(*sock));
+    rpc_socket sock = g_malloc0 (sizeof(*sock));
     sock->refcount = 1;
     sock->sock = fd;
     int flag = 1;
@@ -261,8 +261,8 @@ rpc_socket_die (rpc_socket sock)
     for (GList *itr = sock->in_queue; itr; itr = itr->next)
     {
         struct msg_s *m = (struct msg_s *)itr->data;
-        free (m->data);
-        free (m);
+        g_free (m->data);
+        g_free (m);
     }
     g_list_free (sock->in_queue);
     sock->in_queue = NULL;
@@ -277,7 +277,7 @@ rpc_socket_die (rpc_socket sock)
     pthread_mutex_destroy (&sock->out_lock);
     pthread_mutex_destroy (&sock->lock);
     DEBUG ("RPC[%i]: Socket Dead\n", sock->sock);
-    free (sock);
+    g_free (sock);
     return true;
 }
 

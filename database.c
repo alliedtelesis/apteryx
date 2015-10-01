@@ -69,26 +69,25 @@ db_node_to_path (struct database_node *node, char **buf)
     char end = 0;
     if (!*buf)
     {
-        *buf = strdup ("");
+        *buf = g_strdup ("");
         end = 1;
     }
 
     if (node && node->parent)
         db_node_to_path (node->parent, buf);
 
-    char *tmp = NULL;
-    if (asprintf (&tmp, "%s%s%s", *buf ? : "", node ? node->key : "/", end ? "" : "/") > 0)
-    {
-        free (*buf);
-        *buf = tmp;
-    }
+    char *tmp = g_strdup_printf ("%s%s%s",
+            *buf ? : "", node ? node->key : "/", end ? "" : "/");
+    g_free (*buf);
+    *buf = tmp;
+
     return tmp;
 }
 
 static struct database_node *
 db_path_to_node (const char *path, uint64_t timestamp)
 {
-    char *key = strdup (path);
+    char *key = g_strdup (path);
     char *start = key;
     int path_length;
     struct database_node *node = NULL;
@@ -136,7 +135,7 @@ db_path_to_node (const char *path, uint64_t timestamp)
     if (node && timestamp)
         node->timestamp = timestamp;
 
-    free (start);
+    g_free (start);
     return node;
 }
 
@@ -172,13 +171,13 @@ db_node_delete (struct database_node *node)
             node->children = NULL;
             g_list_free (children);
         }
-        free (node->value);
+        g_free (node->value);
         node->value = NULL;
-        free (node->key);
+        g_free (node->key);
         node->key = NULL;
         if (node == root)
             root = NULL;
-        free (node);
+        g_free (node);
     }
     else
     {
@@ -190,8 +189,8 @@ db_node_delete (struct database_node *node)
 static struct database_node *
 db_node_add (struct database_node *parent, const char *key)
 {
-    struct database_node *new_node = calloc (1, sizeof (struct database_node));
-    new_node->key = strdup (key);
+    struct database_node *new_node = g_malloc0 (sizeof (struct database_node));
+    new_node->key = g_strdup (key);
     new_node->parent = parent;
     if (parent)
     {
@@ -228,10 +227,14 @@ db_init (void)
 void
 db_shutdown (void)
 {
-    GList *iter, *paths = db_search ("");
-    for (iter = paths; iter; iter = g_list_next (iter))
-        printf ("DB ERROR: path still set %s\n", (char*)iter->data);
-    g_list_free_full (paths, free);
+    GList *paths = db_search ("");
+    if (paths)
+    {
+        GList *iter;
+        for (iter = paths; iter; iter = g_list_next (iter))
+            printf ("DB ERROR: path still set %s\n", (char*)iter->data);
+        g_list_free_full (paths, g_free);
+    }
 
     pthread_rwlock_wrlock (&db_lock);
     if (root)
@@ -244,13 +247,13 @@ static struct database_node *
 db_parent_get (const char *path)
 {
     struct database_node *node = NULL;
-    char *parent = strdup (path);
+    char *parent = g_strdup (path);
 
     if (strlen (parent) == 0)
     {
         /* found the root node */
         root = db_node_add (NULL, "");
-        free (parent);
+        g_free (parent);
         return NULL;
     }
     if (strchr (parent, '/') != NULL)
@@ -261,7 +264,7 @@ db_parent_get (const char *path)
         db_add_no_lock (parent, NULL, 0);
         node = db_path_to_node (parent, 0);
     }
-    free (parent);
+    g_free (parent);
     return node;
 }
 
@@ -297,11 +300,11 @@ db_add_no_lock (const char *path, const unsigned char *value, size_t length)
         new_value = db_node_add (parent, key);
         new_value->timestamp = timestamp;
     }
-    free (new_value->value);
+    g_free (new_value->value);
     new_value->value = NULL;
     if (length > 0)
     {
-        new_value->value = malloc (length);
+        new_value->value = g_malloc (length);
         memcpy (new_value->value, value, length);
     }
     new_value->length = length;
@@ -340,7 +343,7 @@ db_get (const char *path, unsigned char **value, size_t *length)
         pthread_rwlock_unlock (&db_lock);
         return false;
     }
-    *value = malloc (node->length);
+    *value = g_malloc (node->length);
     memcpy (*value, node->value, node->length);
     *length = node->length;
     pthread_rwlock_unlock (&db_lock);
@@ -401,11 +404,11 @@ test_db_node_to_path ()
     char *path = NULL;
     db_node_to_path (node, &path);
     CU_ASSERT (strcmp (path, "test_node") == 0);
-    free (path);
+    g_free (path);
     path = NULL;
     db_node_to_path (three, &path);
     CU_ASSERT (strcmp (path, "/one/two/three") == 0);
-    free (path);
+    g_free (path);
     db_node_delete (three);
     db_node_delete (node);
 }
@@ -471,15 +474,14 @@ test_db_add_delete_perf ()
 
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
-        CU_ASSERT (asprintf (&path, "/database/test%d/test%d", i, i) > 0);
+        path = g_strdup_printf ("/database/test%d/test%d", i, i);
         CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
-        free (path);
+        g_free (path);
     }
 
     start = get_time_us ();
-    CU_ASSERT (asprintf
-               (&path, "/database/test%d/test%d", TEST_DB_MAX_ENTRIES - 1,
-                TEST_DB_MAX_ENTRIES - 1) > 0);
+    path = g_strdup_printf ("/database/test%d/test%d",
+            TEST_DB_MAX_ENTRIES - 1, TEST_DB_MAX_ENTRIES - 1);
     for (i = 0; i < TEST_DB_MAX_ITERATIONS; i++)
     {
         CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
@@ -487,12 +489,12 @@ test_db_add_delete_perf ()
     }
     printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
 
-    free (path);
+    g_free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
-        CU_ASSERT (asprintf (&path, "/database/test%d/test%d", i, i) > 0);
+        path = g_strdup_printf ("/database/test%d/test%d", i, i);
         CU_ASSERT (db_delete (path));
-        free (path);
+        g_free (path);
     }
     db_delete ("");
 }
@@ -505,12 +507,12 @@ test_db_long_path ()
     size_t length;
     int i;
 
-    CU_ASSERT (asprintf (&path, "%s", "/database/test"));
+    path = g_strdup_printf ("%s", "/database/test");
     for (i=0; i<1024; i++)
     {
         char *old = path;
-        CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
-        free (old);
+        path = g_strdup_printf ("%s/%08x", old, rand ());
+        g_free (old);
     }
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
@@ -519,9 +521,9 @@ test_db_long_path ()
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test") + 1));
     CU_ASSERT (value && strcmp (value, "test") == 0);
-    free ((void *) value);
+    g_free ((void *) value);
     CU_ASSERT (db_delete (path));
-    free ((void *) path);
+    g_free ((void *) path);
     db_shutdown ();
 }
 
@@ -533,12 +535,12 @@ _path_perf (int path_length, bool full)
     uint64_t start;
     int i;
 
-    CU_ASSERT (asprintf (&path, "%s", "/database"));
+    path = g_strdup_printf ("%s", "/database");
     for (i=0; i<(path_length - 1); i++)
     {
         char *old = path;
-        CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
-        free (old);
+        path = g_strdup_printf ("%s/%08x", old, rand ());
+        g_free (old);
     }
     db_init ();
     if (!full)
@@ -558,7 +560,7 @@ _path_perf (int path_length, bool full)
         path[strlen (path) - 1]--;
         db_delete (path);
     }
-    free (path);
+    g_free (path);
     db_shutdown ();
 }
 
@@ -589,7 +591,7 @@ test_db_large_value ()
     char *value = NULL;
     size_t length;
 
-    large = calloc (1, len);
+    large = g_malloc0 (len);
     memset (large, 'a', len-1);
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
@@ -598,9 +600,9 @@ test_db_large_value ()
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == len);
     CU_ASSERT (value && strcmp (value, large) == 0);
-    free ((void *) value);
+    g_free ((void *) value);
     CU_ASSERT (db_delete (path));
-    free ((void *) large);
+    g_free ((void *) large);
     db_shutdown ();
 }
 
@@ -617,7 +619,7 @@ test_db_get ()
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test") + 1));
     CU_ASSERT (value && strcmp (value, "test") == 0);
-    free ((void *) value);
+    g_free ((void *) value);
     CU_ASSERT (db_delete (path));
     db_shutdown ();
 }
@@ -635,31 +637,30 @@ test_db_get_perf ()
     db_init ();
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
-        CU_ASSERT (asprintf (&path, "/database/test%d/test%d", i, i) > 0);
+        path = g_strdup_printf ("/database/test%d/test%d", i, i);
         CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
-        free (path);
+        g_free (path);
     }
 
     start = get_time_us ();
-    CU_ASSERT (asprintf
-               (&path, "/database/test%d/test%d", TEST_DB_MAX_ENTRIES - 1,
-                TEST_DB_MAX_ENTRIES - 1) > 0);
+    path = g_strdup_printf ("/database/test%d/test%d",
+            TEST_DB_MAX_ENTRIES - 1, TEST_DB_MAX_ENTRIES - 1);
     for (i = 0; i < TEST_DB_MAX_ITERATIONS; i++)
     {
         CU_ASSERT ((res = db_get (path, (unsigned char **) &value, &length)) == true);
         CU_ASSERT (value != NULL);
         if (!res || !value)
             goto exit;
-        free ((void *) value);
+        g_free ((void *) value);
     }
     printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
   exit:
-    free (path);
+    g_free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
-        CU_ASSERT (asprintf (&path, "/database/test%d/test%d", i, i) > 0);
+        path = g_strdup_printf ("/database/test%d/test%d", i, i);
         CU_ASSERT (db_delete (path));
-        free (path);
+        g_free (path);
     }
     db_shutdown ();
 }
@@ -682,7 +683,7 @@ test_db_replace ()
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test9") + 1));
     CU_ASSERT (value && strcmp (value, "test9") == 0);
-    free ((void *) value);
+    g_free ((void *) value);
     CU_ASSERT (db_delete (path));
     db_shutdown ();
 }
@@ -697,7 +698,7 @@ test_db_search ()
     CU_ASSERT ((paths = db_search ("/database/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 1);
     CU_ASSERT (g_list_find_custom (paths, "/database/test", (GCompareFunc) strcmp) != NULL);
-    g_list_free_full (paths, free);
+    g_list_free_full (paths, g_free);
     CU_ASSERT (db_delete (path));
     db_shutdown ();
 }
@@ -713,29 +714,29 @@ test_db_search_perf ()
 
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
-        CU_ASSERT (asprintf (&path, "/database/test%d/test%d", i, i) > 0);
+        path = g_strdup_printf ("/database/test%d/test%d", i, i);
         CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
-        free (path);
+        g_free (path);
     }
 
     start = get_time_us ();
-    CU_ASSERT (asprintf (&path, "/database/test%d/", TEST_DB_MAX_ENTRIES - 1) > 0);
+    path = g_strdup_printf ("/database/test%d/", TEST_DB_MAX_ENTRIES - 1);
     for (i = 0; i < TEST_DB_MAX_ITERATIONS; i++)
     {
         CU_ASSERT ((paths = db_search (path)) != NULL);
         CU_ASSERT (g_list_length (paths) == 1);
         if (g_list_length (paths) != 1)
             goto exit;
-        g_list_free_full (paths, free);
+        g_list_free_full (paths, g_free);
     }
     printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
   exit:
-    free (path);
+  g_free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
-        CU_ASSERT (asprintf (&path, "/database/test%d/test%d", i, i) > 0);
+        path = g_strdup_printf ("/database/test%d/test%d", i, i);
         CU_ASSERT (db_delete (path));
-        free (path);
+        g_free (path);
     }
     db_shutdown ();
 }

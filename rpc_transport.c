@@ -8,7 +8,7 @@
 static socket_info
 parse_url (const char *url)
 {
-    socket_info sock = calloc (1, sizeof (*sock));
+    socket_info sock = g_malloc0 (sizeof (*sock));
     char host[INET6_ADDRSTRLEN];
     int port = 9999;
 
@@ -34,7 +34,7 @@ parse_url (const char *url)
         if (inet_pton (AF_INET, host, &sock->address.addr_in.sin_addr) != 1)
         {
             ERROR ("RPC: Invalid IPv4 address: %s\n", host);
-            free (sock);
+            g_free (sock);
             return NULL;
         }
         sock->family = AF_INET;
@@ -51,7 +51,7 @@ parse_url (const char *url)
         if (inet_pton (AF_INET6, host, &sock->address.addr_in6.sin6_addr) != 1)
         {
             ERROR ("RPC: Invalid IPv6 address: %s\n", host);
-            free (sock);
+            g_free (sock);
             return NULL;
         }
         sock->family = AF_INET6;
@@ -65,7 +65,7 @@ parse_url (const char *url)
     else
     {
         ERROR ("RPC: Invalid URL: %s\n", url);
-        free (sock);
+        g_free (sock);
         return NULL;
     }
 
@@ -110,11 +110,11 @@ rpc_server
 create_rpc_server_with_listener (const char *guid, const char *url, int fd, rpc_callback cb,
                                  rpc_service parent, socket_info sock)
 {
-    rpc_server s = calloc (1, sizeof (*s));
+    rpc_server s = g_malloc0 (sizeof (*s));
     s->sock = fd;
     fcntl(fd, F_SETFD, FD_CLOEXEC);
-    s->url = strdup (url);
-    s->guid = strdup (guid);
+    s->url = g_strdup (url);
+    s->guid = g_strdup (guid);
     s->request_cb = cb;
     s->parent = parent;
     s->sockinfo = sock;
@@ -153,17 +153,17 @@ rpc_server_die (rpc_server s)
     {
         unlink (s->sockinfo->address.addr_un.sun_path);
     }
-    free (s->sockinfo);
-    free (s->url);
-    free (s->guid);
-    free (s);
+    g_free (s->sockinfo);
+    g_free (s->url);
+    g_free (s->guid);
+    g_free (s);
     return true;
 }
 
 rpc_service
 rpc_service_init (rpc_callback cb, void *priv)
 {
-    rpc_service s = calloc (1, sizeof (*s));
+    rpc_service s = g_malloc0 (sizeof (*s));
     pthread_mutex_init (&s->lock, NULL);
     s->request_cb = cb;
     s->priv = priv;
@@ -237,7 +237,7 @@ rpc_service_die (rpc_service s)
     }
     pthread_mutex_unlock (&s->lock);
     g_list_free (s->servers);
-    free ((void*)s);
+    g_free ((void*)s);
     return true;
 }
 
@@ -264,7 +264,7 @@ rpc_service_bind_url (rpc_service s, const char *guid, const char *url)
     if (fd < 0)
     {
         ERROR ("RPC: Socket(%s) failed: %s\n", url, strerror (errno));
-        free (sock);
+        g_free (sock);
         return false;
     }
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
@@ -273,14 +273,14 @@ rpc_service_bind_url (rpc_service s, const char *guid, const char *url)
     {
         ERROR ("RPC: Socket(%s) error binding: %s\n", url, strerror (errno));
         close (fd);
-        free (sock);
+        g_free (sock);
         return false;
     }
     if (listen (fd, 255) < 0)
     {
         ERROR ("RPC: Socket(%s) listen failed: %s\n", url, strerror (errno));
         close (fd);
-        free (sock);
+        g_free (sock);
         return false;
     }
     DEBUG ("RPC: New Socket (%d:%s)\n", fd, url);
@@ -323,7 +323,7 @@ rpc_socket_connect_service (const char *url, rpc_callback cb)
     if (fd < 0)
     {
         ERROR ("RPC: socket() failed: %s\n", strerror (errno));
-        free (sock);
+        g_free (sock);
         return NULL;
     }
     if (connect (fd, (struct sockaddr *) &sock->address, sock->address_len) < 0
@@ -331,14 +331,14 @@ rpc_socket_connect_service (const char *url, rpc_callback cb)
     {
         ERROR ("RPC: error connecting to remote host: %s\n", strerror (errno));
         close (fd);
-        free (sock);
+        g_free (sock);
         return NULL;
     }
     DEBUG ("RPC[%d]: Connected to Server\n", fd);
 
     /* Create client */
     client = rpc_socket_create (fd, cb, NULL);
-    free (sock);
+    g_free (sock);
 
     return client;
 }

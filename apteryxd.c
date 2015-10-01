@@ -79,7 +79,7 @@ handle_get_response (const Apteryx__GetResult *result, void *closure_data)
         data->done = true;
         if (result->value && result->value[0] != '\0')
         {
-            data->value = strdup (result->value);
+            data->value = g_strdup (result->value);
         }
     }
 }
@@ -112,7 +112,7 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
         for (i = 0; i < result->n_paths; i++)
         {
             data->paths = g_list_append (data->paths,
-                              (gpointer) strdup (result->paths[i]));
+                              (gpointer) g_strdup (result->paths[i]));
         }
         data->done = true;
     }
@@ -393,7 +393,7 @@ notify_watchers (const char *path)
 
     /* Free memory if allocated */
     if (value)
-        free (value);
+        g_free (value);
 }
 
 static char *
@@ -616,19 +616,16 @@ proxy_search (const char *path)
         rpc_client_release (rpc, rpc_client, true);
         /* Prepend local path to start of all search results */
         size_t path_len = path - in_path;
-        char *local_path = calloc (path_len + 1, sizeof (char));
+        char *local_path = g_malloc0 (path_len + 1);
         strncpy (local_path, in_path, path_len);
         GList *itr = data.paths;
         for (; itr; itr = itr->next)
         {
-            char *tmp = NULL;
-            if (asprintf (&tmp, "%s%s", local_path, (char *)itr->data) >= 0)
-            {
-                free (itr->data);
-                itr->data = tmp;
-            }
+            char *tmp = g_strdup_printf ("%s%s", local_path, (char *)itr->data);
+            g_free (itr->data);
+            itr->data = tmp;
         }
-        free (local_path);
+        g_free (local_path);
     }
 
     return data.paths;
@@ -824,7 +821,7 @@ apteryx__get (Apteryx__Server_Service *service,
     result.value = value;
     closure (&result, closure_data);
     if (value)
-        free (value);
+        g_free (value);
     return;
 }
 
@@ -872,13 +869,13 @@ apteryx__search (Apteryx__Server_Service *service,
             {
                 cb_info_t *provider = iter->data;
                 int len = strlen (search->path);
-                char *ptr, *path = strdup (provider->path);
+                char *ptr, *path = g_strdup (provider->path);
                 if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
                     *ptr = '\0';
                 if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
                     results = g_list_append (results, path);
                 else
-                    free (path);
+                    g_free (path);
             }
             g_list_free_full (providers, (GDestroyNotify) cb_release);
         }
@@ -888,7 +885,7 @@ apteryx__search (Apteryx__Server_Service *service,
     result.n_paths = g_list_length (results);
     if (result.n_paths > 0)
     {
-        result.paths = (char **) malloc (result.n_paths * sizeof (char *));
+        result.paths = (char **) g_malloc (result.n_paths * sizeof (char *));
         for (i = 0, iter = results; iter; iter = g_list_next (iter), i++)
         {
             DEBUG ("         = %s\n", (char *) iter->data);
@@ -898,9 +895,9 @@ apteryx__search (Apteryx__Server_Service *service,
 
     /* Send result */
     closure (&result, closure_data);
-    g_list_free_full (results, free);
+    g_list_free_full (results, g_free);
     if (result.paths)
-        free (result.paths);
+        g_free (result.paths);
     return;
 }
 
@@ -922,9 +919,9 @@ _traverse_paths (GList **pvlist, const char *path)
         Apteryx__PathValue *pv = NULL;
 
         /* Allocate a new pv */
-        pv = calloc (1, sizeof (Apteryx__PathValue));
+        pv = g_malloc0 (sizeof (Apteryx__PathValue));
         pv->base.descriptor = &apteryx__path_value__descriptor;
-        pv->path = strdup (path);
+        pv->path = g_strdup (path);
         pv->value = value;
 
         /* Add to the list */
@@ -949,13 +946,13 @@ _traverse_paths (GList **pvlist, const char *path)
             if (strcmp (provider->path, path) == 0)
                 continue;
 
-            ppath = strdup (provider->path);
+            ppath = g_strdup (provider->path);
             if ((ptr = strchr (&ppath[len+1], '/')) != 0)
                    *ptr = '\0';
             if (!g_list_find_custom (children, ppath, (GCompareFunc) strcmp))
                 children = g_list_append (children, ppath);
             else
-                free (ppath);
+                g_free (ppath);
         }
         g_list_free_full (providers, (GDestroyNotify) cb_release);
     }
@@ -963,7 +960,7 @@ _traverse_paths (GList **pvlist, const char *path)
     {
         _traverse_paths (pvlist, (const char *) iter->data);
     }
-    g_list_free_full (children, free);
+    g_list_free_full (children, g_free);
 }
 
 static void
@@ -992,7 +989,7 @@ apteryx__traverse (Apteryx__Server_Service *service,
     if (pvlist)
     {
         result.n_pv = 0;
-        result.pv = malloc (g_list_length (pvlist) * sizeof (Apteryx__PathValue *));
+        result.pv = g_malloc (g_list_length (pvlist) * sizeof (Apteryx__PathValue *));
         for (iter = pvlist; iter; iter = g_list_next (iter))
         {
             Apteryx__PathValue *pv = (Apteryx__PathValue *) iter->data;
@@ -1008,11 +1005,11 @@ apteryx__traverse (Apteryx__Server_Service *service,
         for (iter = pvlist; iter; iter = g_list_next (iter))
         {
             Apteryx__PathValue *pv = (Apteryx__PathValue *) iter->data;
-            free (pv->path);
-            free (pv->value);
-            free (pv);
+            g_free (pv->path);
+            g_free (pv->value);
+            g_free (pv);
         }
-        free (result.pv);
+        g_free (result.pv);
         g_list_free (pvlist);
     }
     return;
@@ -1062,7 +1059,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     }
 
     /* Collect the list of deleted paths for notification */
-    paths = g_list_append(paths, strdup(prune->path));
+    paths = g_list_append(paths, g_strdup(prune->path));
     _search_paths (&paths, prune->path);
 
     /* Prune from database */
@@ -1077,7 +1074,7 @@ apteryx__prune (Apteryx__Server_Service *service,
         notify_watchers ((const char *)iter->data);
     }
 
-    g_list_free_full (paths, free);
+    g_list_free_full (paths, g_free);
     return;
 }
 
@@ -1130,6 +1127,7 @@ help (void)
             "  -h   show this help\n"
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
+            "  -m   memory profiling\n"
             "  -p   use <pidfile> (defaults to "APTERYX_PID")\n"
             "  -l   listen on URL <url> (defaults to "APTERYX_SERVER")\n");
 }
@@ -1144,7 +1142,7 @@ main (int argc, char **argv)
     int i;
 
     /* Parse options */
-    while ((i = getopt (argc, argv, "hdbp:l:")) != -1)
+    while ((i = getopt (argc, argv, "hdmbp:l:")) != -1)
     {
         switch (i)
         {
@@ -1160,6 +1158,9 @@ main (int argc, char **argv)
             break;
         case 'l':
             url = optarg;
+            break;
+        case 'm':
+            g_mem_set_vtable (glib_mem_profiler_table);
             break;
         case '?':
         case 'h':
@@ -1252,6 +1253,9 @@ exit:
     /* Remove the pid file */
     if (background)
         unlink (pid_file);
+
+    /* Memory profiling */
+    g_mem_profile ();
 
     return 0;
 }

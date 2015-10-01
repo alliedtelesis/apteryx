@@ -128,7 +128,7 @@ invoke_client_service (ProtobufCService *service,
     }
 
     rx_buffer.base.append ((ProtobufCBuffer*)&rx_buffer, len, data);
-    free (data);
+    g_free (data);
     unpack_header (rx_buffer.data, &msg);
 
     /* Unpack message */
@@ -203,7 +203,7 @@ worker_func (gpointer a, gpointer b)
         }
 
         rpc_socket_deref (work->msg.sock);
-        free (work);
+        g_free (work);
     }
 }
 
@@ -224,7 +224,7 @@ request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
 
     buffer.base.append ((ProtobufCBuffer*)&buffer, len, data);
 
-    struct rpc_work_s *work = calloc (1, sizeof(*work));
+    struct rpc_work_s *work = g_malloc0 (sizeof(*work));
     work->service = service;
 
     const ProtobufCMessageDescriptor *desc = NULL;
@@ -259,7 +259,7 @@ request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
 
 error:
     PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
-    free (work);
+    g_free (work);
     rpc_socket_deref (sock);
     return;
 }
@@ -271,14 +271,14 @@ rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descripto
     assert (timeout > 0);
 
     /* Malloc memory for the new service */
-    rpc_instance rpc = (rpc_instance) calloc (1, sizeof(*rpc));
+    rpc_instance rpc = (rpc_instance) g_malloc0 (sizeof(*rpc));
 
     /* Create the server */
     rpc_service server = rpc_service_init (request_cb, rpc);
     if (server == NULL)
     {
         ERROR ("RPC: Failed to initialise server\n");
-        free ((void*)rpc);
+        g_free ((void*)rpc);
         return NULL;
     }
 
@@ -304,9 +304,9 @@ destroy_rpc_client (gpointer key, gpointer value, gpointer rpc)
 
     /* Release the socket and free the client */
     rpc_socket_deref (client->sock);
-    free (client->url);
-    free (client);
-    free (key);
+    g_free (client->url);
+    g_free (client);
+    g_free (key);
 
     return true;
 }
@@ -346,7 +346,7 @@ rpc_shutdown (rpc_instance rpc)
     g_hash_table_destroy (rpc->clients);
 
     /* Free instance */
-    free ((void*) rpc);
+    g_free ((void*) rpc);
 }
 
 bool
@@ -387,7 +387,7 @@ client_release (rpc_instance rpc, rpc_client_t *client, bool keep)
             DEBUG ("RPC[%d]: Abandon client to %s\n", client->sock->sock, client->url);
             /* Release the client and remove it from the list */
             g_hash_table_remove (rpc->clients, client->url);
-            free (name);
+            g_free (name);
             client->refcount--;
         }
     }
@@ -400,8 +400,8 @@ client_release (rpc_instance rpc, rpc_client_t *client, bool keep)
         DEBUG ("RPC[%d]: Release client\n", client->sock->sock);
         /* Release the socket and free the client */
         rpc_socket_deref (client->sock);
-        free (client->url);
-        free (client);
+        g_free (client->url);
+        g_free (client);
     }
 
     return;
@@ -449,7 +449,7 @@ rpc_client_connect (rpc_instance rpc, const char *url)
     sock->priv = (void*)rpc;
 
     /* Create client */
-    client = calloc (1, sizeof (rpc_client_t));
+    client = g_malloc0 (sizeof (rpc_client_t));
     if (!client)
     {
         ERROR ("RPC: Failed to allocate memory for client service\n");
@@ -461,12 +461,12 @@ rpc_client_connect (rpc_instance rpc, const char *url)
     client->service.invoke = invoke_client_service;
     client->sock = sock;
     client->refcount = 1;
-    client->url = strdup (url);
+    client->url = g_strdup (url);
 
     DEBUG ("RPC[%d]: New client to %s\n", sock->sock, url);
 
     /* Add it to the list of clients */
-    g_hash_table_insert (rpc->clients, strdup (url), client);
+    g_hash_table_insert (rpc->clients, g_strdup (url), client);
     client->refcount++;
 
     /* Start processing this socket */
