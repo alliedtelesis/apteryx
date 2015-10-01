@@ -283,7 +283,7 @@ watch_pool_init ()
     }
 }
 
-bool
+static bool
 watch_pool_shutdown (void)
 {
     if (watch_pool)
@@ -355,12 +355,7 @@ apteryx_shutdown (void)
 {
     char *uri = NULL;
 
-    /* Check if already shutdown */
-    if (ref_count <= 0)
-    {
-        ERROR ("Shutdown: Already shutdown\n");
-        return false;
-    }
+    ASSERT ((ref_count > 0), return false, "SHUTDOWN: Not initialised\n");
 
     /* Decrement ref count */
     pthread_mutex_lock (&lock);
@@ -370,18 +365,18 @@ apteryx_shutdown (void)
     /* Check if there are still other users */
     if (ref_count > 0)
     {
-        DEBUG ("Shutdown: More users (refcount=%d)\n", ref_count);
+        DEBUG ("SHUTDOWN: More users (refcount=%d)\n", ref_count);
         return true;
     }
 
     /* Shutdown */
-    DEBUG ("Shutdown: Shutting down\n");
+    DEBUG ("SHUTDOWN: Shutting down\n");
     if (asprintf((char **)&uri, APTERYX_SERVER".%"PRIu64, (uint64_t)getpid ()) > 0)
         rpc_server_release (rpc, uri);
     free (uri);
     rpc_shutdown (rpc);
     watch_pool_shutdown ();
-    DEBUG ("Shutdown: Shutdown\n");
+    DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
 }
 
@@ -389,6 +384,11 @@ bool
 apteryx_bind (const char *url)
 {
     char path[PATH_MAX];
+
+    ASSERT ((ref_count > 0), return false, "BIND: Not initialised\n");
+    ASSERT (url, return false, "BIND: Invalid parameters\n");
+
+    DEBUG ("BIND: %s\n", url);
 
     if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
@@ -400,6 +400,11 @@ bool
 apteryx_unbind (const char *url)
 {
     char path[PATH_MAX];
+
+    ASSERT ((ref_count > 0), return false, "UNBIND: Not initialised\n");
+    ASSERT (url, return false, "UNBIND: Invalid parameters\n");
+
+    DEBUG ("UNBIND: %s\n", url);
 
     if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
@@ -414,6 +419,9 @@ apteryx_prune (const char *path)
     ProtobufCService *rpc_client;
     Apteryx__Prune prune = APTERYX__PRUNE__INIT;
     protobuf_c_boolean is_done = 0;
+
+    ASSERT ((ref_count > 0), return false, "PRUNE: Not initialised\n");
+    ASSERT (path, return false, "PRUNE: Invalid parameters\n");
 
     DEBUG ("PRUNE: %s\n", path);
 
@@ -454,6 +462,10 @@ bool
 apteryx_dump (const char *path, FILE *fp)
 {
     char *value = NULL;
+
+    ASSERT ((ref_count > 0), return false, "DUMP: Not initialised\n");
+    ASSERT (path, return false, "DUMP: Invalid parameters\n");
+    ASSERT (fp, return false, "DUMP: Invalid parameters\n");
 
     DEBUG ("DUMP: %s\n", path);
 
@@ -496,6 +508,9 @@ apteryx_set (const char *path, const char *value)
     Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
     Apteryx__PathValue *pv[1] = {&_pv};
     protobuf_c_boolean is_done = 0;
+
+    ASSERT ((ref_count > 0), return false, "SET: Not initialised\n");
+    ASSERT (path, return false, "SET: Invalid parameters\n");
 
     DEBUG ("SET: %s = %s\n", path, value);
 
@@ -617,6 +632,9 @@ apteryx_get (const char *path)
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
     get_data_t data = {0};
+
+    ASSERT ((ref_count > 0), return NULL, "GET: Not initialised\n");
+    ASSERT (path, return NULL, "GET: Invalid parameters\n");
 
     DEBUG ("GET: %s\n", path);
 
@@ -784,13 +802,10 @@ apteryx_set_tree (GNode* root)
     bool rc = true;
     int i;
 
-    /* Check initialised */
-    if (ref_count <= 0)
-    {
-        ERROR ("SET_TREE: not initialised!\n");
-        assert(ref_count > 0);
-        return false;
-    }
+    ASSERT ((ref_count > 0), return false, "SET_TREE: Not initialised\n");
+    ASSERT (root, return false, "SET_TREE: Invalid parameters\n");
+
+    DEBUG ("SET_TREE: %d paths\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
@@ -936,15 +951,10 @@ apteryx_get_tree (const char *path)
     Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
     traverse_data_t data = {0};
 
-    DEBUG ("GET_TREE: %s\n", path);
+    ASSERT ((ref_count > 0), return NULL, "GET_TREE: Not initialised\n");
+    ASSERT (path, return NULL, "GET_TREE: Invalid parameters\n");
 
-    /* Check initialised */
-    if (ref_count <= 0)
-    {
-        ERROR ("GET_TREE: not initialised!\n");
-        assert(ref_count > 0);
-        return false;
-    }
+    DEBUG ("GET_TREE: %s\n", path);
 
     /* Check path */
     path = validate_path (path, &url);
@@ -1025,6 +1035,9 @@ apteryx_search (const char *path)
     Apteryx__Search search = APTERYX__SEARCH__INIT;
     search_data_t data = {0};
 
+    ASSERT ((ref_count > 0), return NULL, "SEARCH: Not initialised\n");
+    ASSERT (path, return NULL, "SEARCH: Invalid parameters\n");
+
     DEBUG ("SEARCH: %s\n", path);
 
     /* Check path */
@@ -1088,6 +1101,11 @@ add_callback (const char *type, const char *path, void *cb)
     size_t pid = getpid ();
     char _path[PATH_MAX];
 
+    ASSERT ((ref_count > 0), return false, "ADD_CB: Not initialised\n");
+    ASSERT (type, return false, "ADD_CB: Invalid type\n");
+    ASSERT (path, return false, "ADD_CB: Invalid path\n");
+    ASSERT (cb, return false, "ADD_CB: Invalid callback\n");
+
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
@@ -1101,6 +1119,11 @@ delete_callback (const char *type, const char *path,  void *cb)
 {
     char _path[PATH_MAX];
 
+    ASSERT ((ref_count > 0), return false, "DEL_CB: Not initialised\n");
+    ASSERT (type, return false, "DEL_CB: Invalid type\n");
+    ASSERT (path, return false, "DEL_CB: Invalid path\n");
+    ASSERT (cb, return false, "DEL_CB: Invalid callback\n");
+
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
@@ -1112,7 +1135,6 @@ delete_callback (const char *type, const char *path,  void *cb)
 bool
 apteryx_index (const char *path, apteryx_index_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unindex
     return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb);
 }
 
@@ -1125,7 +1147,6 @@ apteryx_unindex (const char *path, apteryx_index_callback cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unwatch
     return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
@@ -1138,7 +1159,6 @@ apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unvalidate
     return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb);
 }
 
@@ -1151,7 +1171,6 @@ apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 bool
 apteryx_provide (const char *path, apteryx_provide_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unprovide
     return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
 }
 
@@ -1166,7 +1185,7 @@ apteryx_proxy (const char *path, const char *url)
 {
     bool res = false;
     char *value = NULL;
-    assert (url != NULL);
+
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = add_callback (APTERYX_PROXIES_PATH, value,
@@ -1180,7 +1199,7 @@ apteryx_unproxy (const char *path, const char *url)
 {
     bool res = false;
     char *value = NULL;
-    assert (url != NULL);
+
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = delete_callback (APTERYX_PROXIES_PATH, value,
@@ -1212,6 +1231,9 @@ apteryx_timestamp (const char *path)
     uint64_t value = 0;
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
+
+    ASSERT ((ref_count > 0), return 0, "TIMESTAMP: Not initialised\n");
+    ASSERT (path, return 0, "TIMESTAMP: Invalid parameters\n");
 
     DEBUG ("TIMESTAMP: %s\n", path);
 
