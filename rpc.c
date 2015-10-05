@@ -252,6 +252,9 @@ request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
         goto error;
     }
 
+    if (!rpc->workers)
+        goto error;
+
     g_thread_pool_push (rpc->workers, work, NULL);
 
     PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
@@ -259,7 +262,12 @@ request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
 
 error:
     PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
-    g_free (work);
+    if (work)
+    {
+        if (work->message)
+            protobuf_c_message_free_unpacked (work->message, NULL);
+        g_free (work);
+    }
     rpc_socket_deref (sock);
     return;
 }
@@ -337,6 +345,7 @@ rpc_shutdown (rpc_instance rpc)
         g_usleep (G_USEC_PER_SEC / 10);
     }
     g_thread_pool_free (rpc->workers, FALSE, TRUE);
+    rpc->workers = NULL;
 
     /* Stop the server */
     rpc_service_die (rpc->server);

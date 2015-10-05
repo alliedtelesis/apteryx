@@ -151,7 +151,7 @@ apteryx__watch (Apteryx__Client_Service *service,
     closure (&result, closure_data);
 
     /* Queue watch callback for processing */
-    if (watch->cb)
+    if (watch->cb && watch_pool)
     {
         struct watch_data *w = calloc(1, sizeof(*w));
         w->path = strdup(watch->path);
@@ -296,7 +296,13 @@ watch_pool_shutdown (void)
             if (g_thread_pool_unprocessed (watch_pool) == 0 &&
                 g_thread_pool_get_num_threads (watch_pool) == 0 &&
                 g_thread_pool_get_num_unused_threads () == 0)
+            {
                 break;
+            }
+            else if (i >= 9)
+            {
+                ERROR ("Shutdown: Watcher threads not shutting down\n");
+            }
             g_usleep (G_USEC_PER_SEC / 10);
         }
         g_thread_pool_free (watch_pool, FALSE, TRUE);
@@ -353,8 +359,6 @@ apteryx_init (bool debug_enabled)
 bool
 apteryx_shutdown (void)
 {
-    char *uri = NULL;
-
     ASSERT ((ref_count > 0), return false, "SHUTDOWN: Not initialised\n");
 
     /* Decrement ref count */
@@ -371,11 +375,8 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
-    if (asprintf((char **)&uri, APTERYX_SERVER".%"PRIu64, (uint64_t)getpid ()) > 0)
-        rpc_server_release (rpc, uri);
-    free (uri);
-    rpc_shutdown (rpc);
     watch_pool_shutdown ();
+    rpc_shutdown (rpc);
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
 }
