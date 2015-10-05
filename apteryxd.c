@@ -925,7 +925,7 @@ _traverse_paths (GList **pvlist, const char *path)
         pv->value = value;
 
         /* Add to the list */
-        *pvlist = g_list_append (*pvlist, pv);
+        *pvlist = g_list_prepend (*pvlist, pv);
     }
 
     /* Check for children - index first */
@@ -950,7 +950,7 @@ _traverse_paths (GList **pvlist, const char *path)
             if ((ptr = strchr (&ppath[len+1], '/')) != 0)
                    *ptr = '\0';
             if (!g_list_find_custom (children, ppath, (GCompareFunc) strcmp))
-                children = g_list_append (children, ppath);
+                children = g_list_prepend (children, ppath);
             else
                 g_free (ppath);
         }

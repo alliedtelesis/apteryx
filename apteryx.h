@@ -159,9 +159,9 @@ int32_t apteryx_get_int (const char *path, const char *key);
     g_node_destroy (root);
  */
 #define APTERYX_NODE(p,n) \
-    (p ? (g_node_append_data (p, (gpointer)n)) : (g_node_new (n)))
+    (p ? (g_node_prepend_data (p, (gpointer)n)) : (g_node_new (n)))
 #define APTERYX_LEAF(p,n,v) \
-    (g_node_append_data (g_node_append_data (p, (gpointer)n), (gpointer)v))
+    (g_node_prepend_data (g_node_prepend_data (p, (gpointer)n), (gpointer)v))
 #define APTERYX_NUM_NODES(p) \
     (g_node_n_nodes (p, G_TRAVERSE_NON_LEAVES))
 #define APTERYX_NAME(n) \

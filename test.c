@@ -1765,6 +1765,7 @@ void
 test_tree_nodes ()
 {
     GNode* root;
+    GNode* node;
 
     root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
     APTERYX_LEAF (root, "state", "up");
@@ -1774,15 +1775,27 @@ test_tree_nodes ()
     CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 3);
     CU_ASSERT (g_node_n_children (root) == 3);
     CU_ASSERT (!APTERYX_HAS_VALUE(root));
-    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 0)), "state") == 0);
-    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 0)));
-    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 0)), "up") == 0);
-    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 1)), "speed") == 0);
-    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 1)));
-    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 1)), "1000") == 0);
-    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 2)), "duplex") == 0);
-    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 2)));
-    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 2)), "full") == 0);
+    node = root ? g_node_first_child (root) : NULL;
+    while (node)
+    {
+        if (strcmp (APTERYX_NAME (node), "state") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "up") == 0);
+        }
+        else if (strcmp (APTERYX_NAME (node), "speed") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "1000") == 0);
+        }
+        else if (strcmp (APTERYX_NAME (node), "duplex") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "full") == 0);
+        }
+        else
+        {
+            CU_ASSERT (node == NULL);
+        }
+        node = node->next;
+    }
     g_node_destroy (root);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1819,8 +1832,8 @@ test_tree_nodes_deep ()
 void
 test_tree_nodes_wide ()
 {
-    GNode *root, *node;
-    char *name, *value, *path;
+    GNode *root;
+    char *name, *value;
     int i;
 
     CU_ASSERT ((name = strdup (TEST_PATH"/root")) != NULL);
@@ -1832,14 +1845,6 @@ test_tree_nodes_wide ()
         CU_ASSERT (asprintf (&value, "%d", i));
         APTERYX_LEAF (root, name, value);
     }
-    CU_ASSERT ((node = g_node_first_child (root)) != NULL);
-    path = apteryx_node_path (node);
-    CU_ASSERT (strlen (path) == 12);
-    free (path);
-    CU_ASSERT ((node = g_node_last_child (root)) != NULL);
-    path = apteryx_node_path (node);
-    CU_ASSERT (strlen (path) == 15);
-    free (path);
     CU_ASSERT (APTERYX_NUM_NODES (root) == 1025);
     CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_ALL) == 2049);
     CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAVES) == 1024);
