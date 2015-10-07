@@ -28,11 +28,15 @@ ifneq ($(HAVE_LUA),no)
 LUAVERSION := $(shell $(PKG_CONFIG) --exists lua && echo lua || ($(PKG_CONFIG) --exists lua5.2 && echo lua5.2 || echo none))
 ifneq ($(LUAVERSION),none)
 EXTRA_CFLAGS += -DHAVE_LUA $(shell $(PKG_CONFIG) --cflags $(LUAVERSION))
-EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION))
+EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION)) -ldl
 endif
+endif
+ifneq ($(HAVE_XML2),no)
+EXTRA_CFLAGS += -DHAVE_LIBXML2 -I/usr/include/libxml2
+EXTRA_LDFLAGS += -L/usr/include/libxml2 -lxml2
 endif
 
-all: libapteryx.so apteryx apteryxd apteryx-sync
+all: libapteryx.so apteryx apteryxd apteryx-sync apteryx-action
 
 libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Creating library "$@""
@@ -56,6 +60,10 @@ apteryx: apteryxc.c database.c callbacks.c test.c libapteryx.so
 apteryx-sync: syncer.c libapteryx.so
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
+
+apteryx-action: action.c libapteryx.so
+	@echo "Building $@"
+	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
@@ -87,9 +95,10 @@ install: all
 	@install -d $(DESTDIR)/$(PREFIX)/lib/pkgconfig
 	@install -D apteryx.pc $(DESTDIR)/$(PREFIX)/lib/pkgconfig/
 	@install -D apteryx-sync $(DESTDIR)/$(PREFIX)/bin/
+	@install -D apteryx-action $(DESTDIR)/$(PREFIX)/bin/
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx.so apteryx apteryxd apteryx-sync *.o *.pb-c.c *.pb-c.h
+	@rm -f libapteryx.so apteryx apteryxd apteryx-sync apteryx-action *.o *.pb-c.c *.pb-c.h
 
 .PHONY: all clean
