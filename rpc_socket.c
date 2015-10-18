@@ -16,6 +16,41 @@ struct msg_s {
     size_t len;
 };
 
+static bool
+recv_data (int fd, void *data, size_t len)
+{
+    ssize_t recvd = 0;
+    while (recvd < len)
+    {
+        ssize_t r = recv (fd, data + recvd, len - recvd, 0);
+        if (r < 0)
+        {
+            if (errno == EINTR || errno == EAGAIN)
+            {
+                continue;
+            }
+            else if (errno == ECONNRESET)
+            {
+                DEBUG ("RPC[%i]: Recv data: %s\n", fd, strerror (errno));
+            }
+            else
+            {
+                ERROR ("RPC[%i]: Recv data error: %s\n", fd, strerror (errno));
+            }
+        }
+        if (r <= 0)
+        {
+            /* Shutdown */
+            DEBUG ("RPC[%i]: Shutdown\n", fd);
+            goto finished;
+        }
+        recvd += r;
+    }
+    return true;
+finished:
+    return false;
+}
+
 static void *
 listen_thread (void *p)
 {
@@ -25,63 +60,23 @@ listen_thread (void *p)
     {
         int fd = sock->sock;
         struct rpc_hdr_s hdr;
-        ssize_t r;
-        while ((r = recv (fd, &hdr, sizeof (hdr), 0)) <= 0)
+        size_t len;
+        rpc_id id;
+
+        /* Get the header */
+        if (!recv_data (fd, &hdr, sizeof (hdr)))
         {
-            if (r < 0)
-            {
-                if (errno == EINTR || errno == EAGAIN)
-                {
-                    continue;
-                }
-                else if (errno == ECONNRESET)
-                {
-                    DEBUG ("RPC[%i]: Recv header: %s\n", fd, strerror (errno));
-                }
-                else
-                {
-                    ERROR ("RPC[%i]: Recv header error: %s\n", fd, strerror (errno));
-                }
-            }
-            if (r <= 0)
-            {
-                /* Shutdown */
-                DEBUG ("RPC[%i]: Shutdown\n", fd);
-                goto finished;
-            }
+            goto finished;
         }
-        size_t len = ntohl (hdr.len);
-        rpc_id id = ntohl (hdr.id);
-        //DEBUG ("RPC[%i]: New message (%zi:%zi)\n", sock, id, len);
+        len = ntohl (hdr.len);
+        id = ntohl (hdr.id);
+
         /* Get the message */
-        ssize_t recvd = 0;
         void *data = g_malloc (len);
-        while (recvd < len)
+        if (!recv_data (fd, data, len))
         {
-            ssize_t r = recv (fd, data + recvd, len - recvd, 0);
-            if (r < 0)
-            {
-                if (errno == EINTR || errno == EAGAIN)
-                {
-                    continue;
-                }
-                else if (errno == ECONNRESET)
-                {
-                    DEBUG ("RPC[%i]: Recv data: %s\n", fd, strerror (errno));
-                }
-                else
-                {
-                    ERROR ("RPC[%i]: Recv data error: %s\n", fd, strerror (errno));
-                }
-            }
-            if (r <= 0)
-            {
-                /* Shutdown */
-                DEBUG ("RPC[%i]: Shutdown\n", fd);
-                g_free (data);
-                goto finished;
-            }
-            recvd += r;
+            g_free (data);
+            goto finished;
         }
 
         if (ntohl (hdr.mode) == MODE_RESPONSE)
