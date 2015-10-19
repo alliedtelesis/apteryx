@@ -2376,18 +2376,19 @@ test_deadlock ()
         free (path);
     }
     CU_ASSERT (apteryx_prune(TEST_PATH));
-    usleep(1000);
-    apteryx_shutdown();
-    apteryx_init(false);
+    usleep (1000);
+    apteryx_shutdown ();
+    apteryx_init (false);
 
+    usleep (5 * 1000 * 1000);
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH"/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune(TEST_PATH));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -2417,6 +2418,7 @@ test_deadlock2 ()
     apteryx_shutdown ();
     apteryx_init (false);
 
+    usleep (5 * 1000 * 1000);
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
