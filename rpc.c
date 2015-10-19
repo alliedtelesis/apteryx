@@ -30,6 +30,7 @@ struct rpc_instance_s {
 
     /* General settings */
     int timeout;
+    uint64_t gc_time;
 
     /* Single service */
     ProtobufCService *service;
@@ -40,6 +41,9 @@ struct rpc_instance_s {
     const ProtobufCServiceDescriptor *descriptor;
     GHashTable *clients;
 };
+
+/* Garbage collection timer */
+#define RPC_GC_TIMEOUT_US (10 * RPC_TIMEOUT_US)
 
 /* Client object */
 typedef struct rpc_client_t
@@ -293,6 +297,7 @@ rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descripto
     /* Create a new RPC instance */
     pthread_mutex_init (&rpc->lock, NULL);
     rpc->timeout = timeout;
+    rpc->gc_time = get_time_us ();
     rpc->service = service;
     rpc->server = server;
     rpc->descriptor = descriptor;
@@ -416,6 +421,43 @@ client_release (rpc_instance rpc, rpc_client_t *client, bool keep)
     return;
 }
 
+static void
+gc_clients (rpc_instance rpc)
+{
+    GHashTableIter hiter;
+    const char *url;
+    rpc_client_t *client;
+    GList *dead = NULL;
+    GList *iter = NULL;
+
+    /* Minimum timeout between collections */
+    if (get_time_us () > rpc->gc_time + RPC_GC_TIMEOUT_US)
+    {
+        /* Iterate over all clients */
+        g_hash_table_iter_init (&hiter, rpc->clients);
+        while (g_hash_table_iter_next (&hiter, (void **)&url, (void **)&client))
+        {
+            if (client->sock && client->sock->dead)
+                dead = g_list_append (dead, client);
+        }
+
+        /* Cleanup any dead clients */
+        for (iter = dead; iter; iter = g_list_next (iter))
+        {
+            client = (rpc_client_t *) iter->data;
+            DEBUG ("RPC[%d]: Collecting dead socket for %s\n", client->sock->sock, client->url);
+            if (client->refcount < 2)
+                client_release (rpc, client, false);
+            else
+                client->refcount--;
+        }
+        g_list_free (dead);
+
+        /* Wait another timeout */
+        rpc->gc_time = get_time_us ();
+    }
+}
+
 ProtobufCService *
 rpc_client_connect (rpc_instance rpc, const char *url)
 {
@@ -427,6 +469,9 @@ rpc_client_connect (rpc_instance rpc, const char *url)
 
     /* Protect the instance */
     pthread_mutex_lock (&rpc->lock);
+
+    /* Garbage collect any stale clients */
+    gc_clients (rpc);
 
     /* Find an existing client */
     if (g_hash_table_lookup_extended (rpc->clients, url, (void **)&name, (void **)&client))
