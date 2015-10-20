@@ -263,7 +263,14 @@ do_watch (void *w, void *d)
 {
     struct watch_data *watch = w;
     if (watch->cb)
+    {
+#ifdef HAVE_LUA
+        /* Check for LUA callback first */
+        if (!lua_do_watch (watch->cb, watch->path, watch->value))
+#endif
+        /* Process C callback */
         ((apteryx_watch_callback) (long) watch->cb) (watch->path, watch->value);
+    }
     free (watch->value);
     free (watch->path);
     free (watch);

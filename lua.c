@@ -34,8 +34,44 @@
 #include <string.h>
 #include <glib.h>
 #include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
 #include "apteryx.h"
 #include "internal.h"
+
+lua_State *g_L = NULL;
+
+#if 0
+static void
+_dump_stack (lua_State *L)
+{
+    int n = lua_gettop (L);
+    for (int i=1; i <= n; i++)
+    {
+        const char *type = lua_typename (L, lua_type (L, i));
+        const char *value = lua_tostring (L, i);
+        printf ("%d: [%s] %s\n", i, type, value ? value : "");
+    }
+    return;
+}
+
+static void
+_dump_table (lua_State *L, int index)
+{
+    lua_pushvalue (L, index);
+    lua_pushnil (L);
+    while (lua_next(L, -2))
+    {
+        lua_pushvalue(L, -2);
+        const char *key = lua_tostring(L, -1);
+        const char *type = lua_typename (L, lua_type (L, -2));
+        const char *value = lua_tostring(L, -2);
+        printf("%s => [%s] %s\n", key, type, value ? value : "");
+        lua_pop(L, 2);
+    }
+    lua_pop(L, 1);
+}
+#endif
 
 static int
 lua_apteryx_init (lua_State *L)
@@ -143,9 +179,120 @@ lua_apteryx_search (lua_State *L)
     return num;
 }
 
+#define APTERYX_CB_TABLE_REGISTRY_INDEX "apteryx_cb_table"
+
+static int
+find_callback (lua_State *L, int index)
+{
+    int ref = 0;
+    luaL_checktype (L, -1, LUA_TTABLE);
+    lua_pushvalue (L, -1);
+    lua_pushnil (L);
+    while (lua_next (L, -2))
+    {
+        lua_pushvalue (L, -2);
+        if (lua_rawequal (L, index, -2))
+        {
+            ref = lua_tonumber (L, -1);
+            lua_pop (L, 2);
+            break;
+        }
+        lua_pop(L, 2);
+    }
+    lua_pop(L, 1);
+    return ref;
+}
+
+static int
+ref_callback (lua_State* L, int index)
+{
+    luaL_checktype (L, index, LUA_TFUNCTION);
+    lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+    lua_gettable (L, LUA_REGISTRYINDEX);
+    if (lua_isnil (L, -1))
+    {
+        lua_pop (L, 1); /* pop nil */
+        lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+        lua_newtable (L);
+        lua_settable (L, LUA_REGISTRYINDEX);
+        lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+        lua_gettable (L, LUA_REGISTRYINDEX);
+    }
+    int ref = find_callback (L, index);
+    if (ref == 0)
+    {
+        lua_pushvalue (L, index);
+        ref = luaL_ref (L, -2);
+    }
+    lua_pop (L, 1); /* pop table */
+    return ref;
+}
+
+bool
+lua_do_watch (size_t cb, const char *path, const char *value)
+{
+    lua_State* L = g_L;
+    if (L == NULL)
+        return false;
+    lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+    lua_gettable (L, LUA_REGISTRYINDEX);
+    if (lua_isnil (L, -1))
+    {
+        lua_pop (L, 1); /* pop nil */
+        return false;
+    }
+    lua_rawgeti (L, -1, cb);
+    if (!lua_isfunction (L, -1))
+    {
+        lua_pop (L, 1);
+        return false;
+    }
+    lua_pushstring (L, path);
+    lua_pushstring (L, value);
+    lua_pcall (L, 2, 0, 0);
+    lua_pop (L, 1); /* pop table */
+    return true;
+}
+
+static int
+lua_apteryx_watch (lua_State *L)
+{
+    luaL_checktype (L, 1, LUA_TSTRING);
+    luaL_checktype (L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    int cb = ref_callback (L, 2);
+    if (!apteryx_watch (path, (apteryx_watch_callback) (size_t) cb))
+    {
+        ERROR ("Failed to register watch\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_apteryx_unwatch (lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TSTRING);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    int cb = ref_callback (L, 2);
+    if (!apteryx_unwatch (path, (apteryx_watch_callback) (size_t) cb))
+    {
+        ERROR ("Failed to unregister watch\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+    lua_pushboolean (L, true);
+    return 1;
+}
+
 int
 luaopen_libapteryx(lua_State *L)
 {
+    g_L = L;
     lua_register (L, "apteryx_init", lua_apteryx_init);
     lua_register (L, "apteryx_shutdown", lua_apteryx_shutdown);
     lua_register (L, "apteryx_prune", lua_apteryx_prune);
@@ -153,6 +300,8 @@ luaopen_libapteryx(lua_State *L)
     lua_register (L, "apteryx_get", lua_apteryx_get);
     lua_register (L, "apteryx_get_int", lua_apteryx_get_int);
     lua_register (L, "apteryx_search", lua_apteryx_search);
+    lua_register (L, "apteryx_watch", lua_apteryx_watch);
+    lua_register (L, "apteryx_unwatch", lua_apteryx_unwatch);
     return 0;
 }
 

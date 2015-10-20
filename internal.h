@@ -153,6 +153,11 @@ cb_info_t * cb_find (GList **list, const char *guid);
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
 
+#ifdef HAVE_LUA
+/* LUA callbacks */
+bool lua_do_watch (size_t cb, const char *path, const char *value);
+#endif
+
 /* Tests */
 void run_unit_tests (const char *filter);
 
