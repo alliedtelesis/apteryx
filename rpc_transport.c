@@ -75,6 +75,11 @@ parse_url (const char *url)
 static void *
 accept_thread (void *p)
 {
+    /* Mask signals */
+    sigset_t set;
+    sigfillset(&set);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+
     rpc_server s = (rpc_server) p;
     while (1)
     {
