@@ -56,6 +56,11 @@ listen_thread (void *p)
 {
     rpc_socket sock = (rpc_socket) p;
 
+    /* Mask signals */
+    sigset_t set;
+    sigfillset (&set);
+    pthread_sigmask (SIG_BLOCK, &set, NULL);
+
     do
     {
         int fd = sock->sock;
