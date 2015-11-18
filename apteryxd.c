@@ -756,18 +756,31 @@ apteryx__set (Apteryx__Server_Service *service,
     result.result = 0;
 
 exit:
-    /* Currently assumes all failed or all succeeded */
+    /* Return result and notify watchers */
     if (validation_result >= 0 && result.result == 0)
     {
+        /* Process all /apteryx paths before closure to ensure local watchers are processed */
+        for (i=0; i<set->n_sets; i++)
+        {
+            if (strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) == 0)
+                notify_watchers (set->sets[i]->path);
+        }
+
+        /* Return result */
+        closure (&result, closure_data);
+
         /* Notify watchers for each Path Value in the set*/
         for (i=0; i<set->n_sets; i++)
         {
-            notify_watchers (set->sets[i]->path);
+            if (strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) != 0)
+                notify_watchers (set->sets[i]->path);
         }
     }
-
-    /* Return result */
-    closure (&result, closure_data);
+    else
+    {
+        /* Return result */
+        closure (&result, closure_data);
+    }
 
     /* Release validation lock - this is a sensitive value */
     if (validation_result)
