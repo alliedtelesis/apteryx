@@ -696,6 +696,7 @@ apteryx__set (Apteryx__Server_Service *service,
     const char *value = NULL;
     result.result = 0;
     int validation_result = 0;
+    int validation_lock = 0;
     int proxy_result = 0;
     int i;
 
@@ -738,6 +739,8 @@ apteryx__set (Apteryx__Server_Service *service,
 
         /* Validate new data */
         validation_result = validate_set (path, value);
+        if (validation_result != 0)
+            validation_lock++;
         if (validation_result < 0)
         {
             DEBUG ("SET: %s = %s refused by validate\n", path, value);
@@ -783,10 +786,11 @@ exit:
     }
 
     /* Release validation lock - this is a sensitive value */
-    if (validation_result)
+    while (validation_lock)
     {
         DEBUG("SET: unlocking mutex\n");
         pthread_mutex_unlock (&validating);
+        validation_lock--;
     }
     return;
 }
@@ -1151,6 +1155,7 @@ main (int argc, char **argv)
     const char *pid_file = APTERYX_PID;
     const char *url = APTERYX_SERVER;
     bool background = false;
+    pthread_mutexattr_t callback_recursive;
     FILE *fp;
     int i;
 
@@ -1216,7 +1221,9 @@ main (int argc, char **argv)
     config_init ();
 
     /* Create a lock for currently-validating */
-    pthread_mutex_init (&validating, NULL);
+    pthread_mutexattr_init (&callback_recursive);
+    pthread_mutexattr_settype (&callback_recursive, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init (&validating, &callback_recursive);
 
     /* Init the RPC for the server instance */
     rpc = rpc_init ((ProtobufCService *)&apteryx_server_service, &apteryx__client__descriptor, RPC_TIMEOUT_US);
