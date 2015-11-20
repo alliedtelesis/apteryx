@@ -1508,6 +1508,31 @@ test_validate_conflicting ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_validate_tree ()
+{
+    GNode* root;
+
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/private/*", test_validate_callback));
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "4", "4");
+    APTERYX_LEAF (root, "5", "5");
+    APTERYX_LEAF (root, "6", "6");
+    APTERYX_LEAF (root, "7", "7");
+    APTERYX_LEAF (root, "8", "8");
+    APTERYX_LEAF (root, "9", "9");
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/private/*", test_validate_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_up (const char *path)
 {
@@ -2874,6 +2899,7 @@ static CU_TestInfo tests_api_validate[] = {
     { "validate wildcard", test_validate_wildcard },
     { "validate wildcard internal", test_validate_wildcard_internal },
     { "validate conflicting", test_validate_conflicting },
+    { "validate tree", test_validate_tree },
     CU_TEST_INFO_NULL,
 };
 
