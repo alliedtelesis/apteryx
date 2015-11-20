@@ -1135,24 +1135,57 @@ test_watch_set_callback_get ()
 }
 
 static bool
-test_watch_set_callback_set_cb (const char *path, const char *value)
+test_watch_set_callback_set_recursive_cb (const char *path, const char *value)
 {
     apteryx_set_string (path, NULL, "down");
     return true;
 }
 
 void
-test_watch_set_callback_set ()
+test_watch_set_callback_set_recursive ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
-    CU_ASSERT (apteryx_watch (path, test_watch_set_callback_set_cb));
+    CU_ASSERT (apteryx_watch (path, test_watch_set_callback_set_recursive_cb));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (apteryx_unwatch (path, test_watch_set_callback_set_cb));
+    CU_ASSERT (apteryx_unwatch (path, test_watch_set_callback_set_recursive_cb));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     usleep (2*RPC_TIMEOUT_US); /* At least */
     _watch_cleanup ();
+}
+
+static bool
+test_watch_set_multi_callback_set_cb (const char *path, const char *value)
+{
+    usleep (TEST_SLEEP_TIMEOUT);
+    apteryx_set_string (TEST_PATH"/entity/zones/public", "state", "down");
+    return true;
+}
+
+void
+test_watch_set_multi_callback_set ()
+{
+    GNode* root;
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_watch_set_multi_callback_set_cb));
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "4", "4");
+    APTERYX_LEAF (root, "5", "5");
+    APTERYX_LEAF (root, "6", "6");
+    APTERYX_LEAF (root, "7", "7");
+    APTERYX_LEAF (root, "8", "8");
+    APTERYX_LEAF (root, "9", "9");
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (10 * TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_watch_set_multi_callback_set_cb));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    apteryx_set_string (TEST_PATH"/entity/zones/public", "state", NULL);
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
 }
 
 static bool
@@ -2884,7 +2917,8 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch wildcard miss", test_watch_wildcard_miss },
     { "watch set callback get", test_watch_set_callback_get },
     { "watch set callback unwatch", test_watch_set_callback_unwatch },
-    { "watch set callback set recursive", test_watch_set_callback_set },
+    { "watch set callback set recursive", test_watch_set_callback_set_recursive },
+    { "watch set multi callback set", test_watch_set_multi_callback_set },
     { "watch and set from another thread", test_watch_set_thread },
     { "watch adds / removes watches", test_watch_adds_watch },
     { "watch removes multiple watches", test_watch_removes_all_watches },
