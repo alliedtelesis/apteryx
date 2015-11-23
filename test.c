@@ -1533,7 +1533,7 @@ test_validate_conflicting ()
     pthread_create (&client2, NULL, (void *) &test_validate_thread_client, "down");
     pthread_join (client1, NULL);
     pthread_join (client2, NULL);
-    CU_ASSERT (failed == -EPERM);
+    CU_ASSERT (failed == -EPERM || failed == -ETIMEDOUT);
     usleep (TEST_SLEEP_TIMEOUT);
 
     CU_ASSERT (apteryx_unvalidate (path, test_validate_conflicting_callback));
