@@ -268,6 +268,11 @@ typedef int (*apteryx_validate_callback) (const char *path, const char *value);
  * path and new value
  * examples: (using imaginary usage example)
  * - apteryx_validate("/entity/zones/red/networks/*", network_validate);
+ * WARNING: The validate callback is not processed until all watch callbacks have
+ * completed. This is to ensure local state is correct when doing the validation
+ * operation. The side effect of this is that if the validation callback is
+ * called due to a set operation from a watch callback in the same process, then
+ * the validation callback will be blocked and time out.
  * @param path path to the value to be validated
  * @param cb function to call when the value changes
  * @return true on successful registration
