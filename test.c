@@ -26,6 +26,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/un.h>
+#include <sys/poll.h>
 #include <assert.h>
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
@@ -2989,6 +2990,141 @@ exit:
     rpc_shutdown (rpc);
 }
 
+static pthread_t single_thread = -1;
+static int
+_single_thread (void *data)
+{
+    int fd = 0;
+    struct pollfd pfd;
+    uint8_t dummy = 0;
+
+    while (fd >= 0)
+    {
+        fd = apteryx_process (true);
+        CU_ASSERT (fd >= 0);
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        poll (&pfd, 1, 0);
+        if (read (fd, &dummy, 1) == 0)
+        {
+            ERROR ("Poll/Read error: %s\n", strerror (errno));
+        }
+    }
+    return 0;
+}
+
+static void
+start_single_threading ()
+{
+    CU_ASSERT (pthread_create (&single_thread, NULL, (void *) &_single_thread, (void *) NULL) == 0);
+}
+
+static void
+stop_single_threading ()
+{
+    pthread_cancel (single_thread);
+    pthread_join (single_thread, NULL);
+    CU_ASSERT (apteryx_process (false) == -1);
+}
+
+void
+test_single_index()
+{
+    start_single_threading ();
+    test_index ();
+    stop_single_threading ();
+}
+
+void
+test_single_index_no_polling ()
+{
+    char *path = TEST_PATH"/counters/";
+    GList *paths = NULL;
+
+    apteryx_process (true);
+    CU_ASSERT (apteryx_index (path, test_index_cb));
+    CU_ASSERT ((paths = apteryx_search (path)) == NULL);
+    CU_ASSERT (apteryx_unindex (path, test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
+void
+test_single_watch ()
+{
+    start_single_threading ();
+    test_watch ();
+    stop_single_threading ();
+}
+
+void
+test_single_watch_no_polling ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    apteryx_process (true);
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (apteryx_watch (path, test_watch_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "down"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (_value  == NULL);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_cleanup ();
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
+void
+test_single_validate()
+{
+    start_single_threading ();
+    test_validate ();
+    stop_single_threading ();
+}
+
+void
+test_single_validate_no_polling ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    apteryx_process (true);
+    CU_ASSERT (apteryx_validate (path, test_validate_callback));
+    CU_ASSERT (!apteryx_set_string (path, NULL, "down"));
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    CU_ASSERT (!apteryx_set_string (path, NULL, "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_callback));
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
+    apteryx_set_string (path, NULL, NULL);
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
+void
+test_single_provide()
+{
+    start_single_threading ();
+    test_provide ();
+    stop_single_threading ();
+}
+
+void
+test_single_provide_no_polling ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *value = NULL;
+    apteryx_process (true);
+    CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    apteryx_unprovide (path, test_provide_callback_up);
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
 static int
 suite_init (void)
 {
@@ -3116,6 +3252,18 @@ static CU_TestInfo tests_api_tree[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_single_threaded[] = {
+    { "single-threaded index", test_single_index },
+    { "single-threaded index no polling", test_single_index_no_polling },
+    { "single-threaded watch", test_single_watch },
+    { "single-threaded watch no polling", test_single_watch_no_polling },
+    { "single-threaded validate", test_single_validate },
+    { "single-threaded validate no polling", test_single_validate_no_polling },
+    { "single-threaded provide", test_single_provide },
+    { "single-threaded provide no polling", test_single_provide_no_polling },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_performance[] = {
     { "dummy", test_perf_dummy },
     { "set", test_perf_set },
@@ -3169,6 +3317,7 @@ static CU_SuiteInfo suites[] = {
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
     { "Apteryx API Proxy", suite_init, suite_clean, tests_api_proxy },
+    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
     { "Apteryx Performance", suite_init, suite_clean, tests_performance },
     CU_SUITE_INFO_NULL,
 };
