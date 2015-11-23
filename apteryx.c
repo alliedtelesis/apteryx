@@ -270,7 +270,7 @@ do_watch (void *w, void *d)
 
     pthread_mutex_lock (&pending_watches_lock);
     if (--pending_watch_count == 0)
-        pthread_cond_signal(&no_pending_watches);
+        pthread_cond_broadcast (&no_pending_watches);
     pthread_mutex_unlock (&pending_watches_lock);
 }
 

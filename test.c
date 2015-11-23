@@ -1566,6 +1566,139 @@ test_validate_tree ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static bool
+test_set_from_watch_cb (const char *path, const char *value)
+{
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public", "name", "public") == false);
+    CU_ASSERT (errno == -ETIMEDOUT);
+    return true;
+}
+
+void
+test_validate_from_watch_callback ()
+{
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", "link", "up"));
+    usleep (1.1 * RPC_TIMEOUT_US);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", "link", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_validate_from_many_watches ()
+{
+    GNode* root;
+
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "4", "4");
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (5 * RPC_TIMEOUT_US);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int test_validate_order_index;
+
+int
+test_validate_order_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT (index == test_validate_order_index);
+    return 0;
+}
+
+static bool
+test_validate_order_watch_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT (index == test_validate_order_index);
+    test_validate_order_index++;
+    return true;
+}
+
+void
+test_validate_ordering ()
+{
+    char *path;
+    int i;
+
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_validate_order_watch_callback));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/private/*", test_validate_order_callback));
+    test_validate_order_index = 0;
+    for (i=0; i<100; i++)
+    {
+        CU_ASSERT (asprintf (&path, TEST_PATH"/entity/zones/private/%d", i) > 0);
+        CU_ASSERT (apteryx_set_int (path, NULL, i));
+        free (path);
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/private/*", test_validate_order_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_validate_order_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_validate_order_tree_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT (index == test_validate_order_index);
+    test_validate_order_index++;
+    return 0;
+}
+
+static bool
+test_validate_order_tree_watch_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT ((index + 10) == test_validate_order_index);
+    test_validate_order_index++;
+    return true;
+}
+
+void
+test_validate_ordering_tree ()
+{
+    GNode* root;
+
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_watch_callback));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_callback));
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "9", "9");
+    APTERYX_LEAF (root, "8", "8");
+    APTERYX_LEAF (root, "7", "7");
+    APTERYX_LEAF (root, "6", "6");
+    APTERYX_LEAF (root, "5", "5");
+    APTERYX_LEAF (root, "4", "4");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "0", "0");
+    test_validate_order_index = 0;
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_up (const char *path)
 {
@@ -2934,6 +3067,10 @@ static CU_TestInfo tests_api_validate[] = {
     { "validate wildcard internal", test_validate_wildcard_internal },
     { "validate conflicting", test_validate_conflicting },
     { "validate tree", test_validate_tree },
+    { "validate from watch callback", test_validate_from_watch_callback },
+    { "validate from many watches", test_validate_from_many_watches },
+    { "validate set order", test_validate_ordering },
+    { "validate tree order", test_validate_ordering_tree },
     CU_TEST_INFO_NULL,
 };
 
