@@ -83,6 +83,29 @@ bool apteryx_init (bool debug);
 bool apteryx_shutdown (void);
 
 /**
+ * Process callback requests in client thread context.
+ * Example:
+    int fd = 0;
+    struct pollfd pfd;
+    uint8_t dummy = 0;
+    while (fd >= 0)
+    {
+        fd = apteryx_process (true);
+        CU_ASSERT (fd >= 0);
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        poll (&pfd, 1, 0);
+        if (read (fd, &dummy, 1) == 0)
+        {
+            ERROR ("Poll/Read error: %s\n", strerror (errno));
+        }
+    }
+ * @param poll enable polling and disable multi-threaded callbacks
+ * @return fd for using select for detecting there is work to process
+ */
+int apteryx_process (bool poll);
+
+/**
  * Bind the Apteryx server to accepts connections on the specified URL.
  * Can be used to enable remote access to Apteryx (e.g. for proxy).
  * @param url path to bind to

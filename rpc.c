@@ -36,6 +36,8 @@ struct rpc_instance_s {
     ProtobufCService *service;
     rpc_service server;
     GThreadPool *workers;
+    int pollfd[2];
+    GAsyncQueue *queue;
 
     /* Clients */
     const ProtobufCServiceDescriptor *descriptor;
@@ -192,6 +194,16 @@ server_connection_response_closure (const ProtobufCMessage *message,
 }
 
 static void
+work_destroy (gpointer data)
+{
+    struct rpc_work_s *work = (struct rpc_work_s *)data;
+    if (work->message)
+        protobuf_c_message_free_unpacked (work->message, NULL);
+    rpc_socket_deref (work->msg.sock);
+    g_free (work);
+}
+
+static void
 worker_func (gpointer a, gpointer b)
 {
     struct rpc_work_s *work = (struct rpc_work_s *)a;
@@ -200,14 +212,7 @@ worker_func (gpointer a, gpointer b)
         /* Invoke service (note that it may call back immediately) */
         work->service->invoke (work->service, work->msg.method_index, work->message,
                                server_connection_response_closure, (void*)&work->msg);
-
-        if (work->message)
-        {
-            protobuf_c_message_free_unpacked (work->message, NULL);
-        }
-
-        rpc_socket_deref (work->msg.sock);
-        g_free (work);
+        work_destroy (a);
     }
 }
 
@@ -256,10 +261,21 @@ request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
         goto error;
     }
 
-    if (!rpc->workers)
+    /* Check if in polling mode first */
+    if (rpc->queue)
+    {
+        uint8_t dummy = 0;
+        g_async_queue_push (rpc->queue, (gpointer) work);
+        if (write (rpc->pollfd[1], &dummy, 1) != 1)
+        {
+            ERROR ("RPC: Unable to signal client\n");
+        }
+    }
+    /* Callbacks from local Apteryx threads */
+    else if (rpc->workers)
+        g_thread_pool_push (rpc->workers, work, NULL);
+    else
         goto error;
-
-    g_thread_pool_push (rpc->workers, work, NULL);
 
     PROTOBUF_C_BUFFER_SIMPLE_CLEAR (&buffer);
     return;
@@ -381,6 +397,60 @@ rpc_server_release (rpc_instance rpc, const char *guid)
 
     /* Unbind from the URL */
     return rpc_service_unbind_url (rpc->server, guid);
+}
+
+int
+rpc_server_process (rpc_instance rpc, bool poll)
+{
+    assert (rpc);
+
+    /* Start polling if requested */
+    if (poll && rpc->queue == NULL)
+    {
+        DEBUG ("RPC: Starting Polling mode\n");
+        if (pipe (rpc->pollfd) < 0 ||
+         (rpc->queue = g_async_queue_new_full (work_destroy)) == NULL)
+        {
+            ERROR ("RPC: Failed to enable poll mode\n");
+            goto cleanup;
+        }
+    }
+
+    /* Check for work and process it if required */
+    if (poll)
+    {
+        gpointer *work = g_async_queue_try_pop (rpc->queue);
+        if (work)
+        {
+            /* Process a single work job */
+            DEBUG ("RPC: Polled processing...\n");
+            worker_func (work, NULL);
+        }
+        else
+        {
+            DEBUG ("RPC: Polling. Nothing to process\n");
+        }
+
+        /* Return the poll fd for the client to monitor */
+        return rpc->pollfd[0];
+    }
+
+    /* Disable poll mode */
+    DEBUG ("RPC: Stopping Polling mode\n");
+cleanup:
+    if (rpc->pollfd[0] != -1)
+    {
+        close (rpc->pollfd[0]);
+        rpc->pollfd[0] = -1;
+        close (rpc->pollfd[1]);
+        rpc->pollfd[1] = -1;
+    }
+    if (rpc->queue)
+    {
+        g_async_queue_unref (rpc->queue);
+        rpc->queue = NULL;
+    }
+    return -1;
 }
 
 static void

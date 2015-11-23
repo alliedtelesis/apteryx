@@ -128,6 +128,7 @@ rpc_instance rpc_init (ProtobufCService *service, const ProtobufCServiceDescript
 void rpc_shutdown (rpc_instance rpc);
 bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
 bool rpc_server_release (rpc_instance rpc, const char *guid);
+int rpc_server_process (rpc_instance rpc, bool poll);
 ProtobufCService *rpc_client_connect (rpc_instance rpc, const char *url);
 void rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep);
 

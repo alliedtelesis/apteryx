@@ -162,6 +162,8 @@ apteryx__watch (Apteryx__Client_Service *service,
     }
     else
     {
+        if (watch->cb)
+            ((apteryx_watch_callback) (long) watch->cb) (watch->path, value);
         pthread_mutex_lock (&pending_watches_lock);
         if (--pending_watch_count == 0)
             pthread_cond_signal(&no_pending_watches);
@@ -379,6 +381,17 @@ apteryx_shutdown (void)
     rpc_shutdown (rpc);
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
+}
+
+int
+apteryx_process (bool poll)
+{
+    ASSERT ((ref_count > 0), return false, "PROCESS: Not initialised\n");
+    if (poll)
+        watch_pool_shutdown ();
+    else
+        watch_pool_init ();
+    return rpc_server_process (rpc, poll);
 }
 
 bool
