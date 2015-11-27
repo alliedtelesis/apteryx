@@ -159,6 +159,14 @@ char *apteryx_get_string (const char *path, const char *key);
 int32_t apteryx_get_int (const char *path, const char *key);
 
 /**
+ * Check if a path exists in Apteryx
+ * @param path path to check that it exists
+ * @return true if the path exists
+ * @return false if the path is invalid
+ */
+bool apteryx_exists (const char *path);
+
+/**
  * Helpers for generating and parsing an Apteryx tree.
  * Can be used to set/get multiple values at once.
  * Uses GLIB's GNode based N-ary trees.
