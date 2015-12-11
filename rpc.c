@@ -178,11 +178,12 @@ server_connection_response_closure (const ProtobufCMessage *message,
 
     DEBUG ("RPC[%d]: Closure\n", sock->sock);
 
-    msg->message_length = protobuf_c_message_get_packed_size (message);
+    msg->message_length = message ? protobuf_c_message_get_packed_size (message) : 0;
     pack_header (msg, &buf[RPC_SOCKET_HDR_SIZE]);
     buffer.base.append ((ProtobufCBuffer *)&buffer, RPC_SOCKET_HDR_SIZE + RPC_HEADER_LENGTH, buf);
-    if (protobuf_c_message_pack_to_buffer (message, (ProtobufCBuffer *)&buffer)
-            != msg->message_length)
+    if (msg->message_length &&
+        protobuf_c_message_pack_to_buffer (message, (ProtobufCBuffer *)&buffer)
+                            != msg->message_length)
     {
         ERROR ("RPC[%d]: error serializing the response\n", sock->sock);
         return;
@@ -259,6 +260,14 @@ request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
     {
         ERROR ("RPC: unable to unpack message (%d)\n", work->msg.method_index);
         goto error;
+    }
+
+    /* Check for methods that require no result */
+    desc = service->descriptor->methods[work->msg.method_index].output;
+    if (desc->n_fields == 0)
+    {
+        DEBUG ("RPC[%i]: Early closure (no result required)\n", sock->sock);
+        server_connection_response_closure (NULL, (void*)&work->msg);
     }
 
     /* Check if in polling mode first */

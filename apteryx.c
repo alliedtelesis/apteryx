@@ -46,13 +46,6 @@ static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
 static int pending_watch_count = 0;
 
-static GThreadPool *watch_pool = NULL;
-struct watch_data {
-    char *path;
-    char *value;
-    long cb;
-};
-
 static const char *
 validate_path (const char *path, char **url)
 {
@@ -128,9 +121,8 @@ apteryx__index (Apteryx__Client_Service *service,
 static void
 apteryx__watch (Apteryx__Client_Service *service,
                 const Apteryx__Watch *watch,
-                Apteryx__OKResult_Closure closure, void *closure_data)
+                Apteryx__NoResult_Closure closure, void *closure_data)
 {
-    Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     (void) service;
     char *value = NULL;
 
@@ -147,28 +139,13 @@ apteryx__watch (Apteryx__Client_Service *service,
     ++pending_watch_count;
     pthread_mutex_unlock (&pending_watches_lock);
 
-    /* Return result */
-    closure (&result, closure_data);
-
-    /* Queue watch callback for processing */
-    if (watch->cb && watch_pool)
-    {
-        struct watch_data *w = calloc(1, sizeof(*w));
-        w->path = strdup(watch->path);
-        w->cb = watch->cb;
-        if (value)
-            w->value = strdup(value);
-        g_thread_pool_push (watch_pool, w, NULL);
-    }
-    else
-    {
-        if (watch->cb)
-            ((apteryx_watch_callback) (long) watch->cb) (watch->path, value);
-        pthread_mutex_lock (&pending_watches_lock);
-        if (--pending_watch_count == 0)
-            pthread_cond_signal(&no_pending_watches);
-        pthread_mutex_unlock (&pending_watches_lock);
-    }
+    /* Call callback */
+    if (watch->cb)
+        ((apteryx_watch_callback) (long) watch->cb) (watch->path, value);
+    pthread_mutex_lock (&pending_watches_lock);
+    if (--pending_watch_count == 0)
+        pthread_cond_signal(&no_pending_watches);
+    pthread_mutex_unlock (&pending_watches_lock);
 
     return;
 }
@@ -260,59 +237,6 @@ handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
     }
 }
 
-static void
-do_watch (void *w, void *d)
-{
-    struct watch_data *watch = w;
-    if (watch->cb)
-        ((apteryx_watch_callback) (long) watch->cb) (watch->path, watch->value);
-    free (watch->value);
-    free (watch->path);
-    free (watch);
-
-    pthread_mutex_lock (&pending_watches_lock);
-    if (--pending_watch_count == 0)
-        pthread_cond_broadcast (&no_pending_watches);
-    pthread_mutex_unlock (&pending_watches_lock);
-}
-
-static void
-watch_pool_init ()
-{
-    if (!watch_pool)
-    {
-        watch_pool = g_thread_pool_new (do_watch, NULL, 1, FALSE, NULL);
-    }
-}
-
-static bool
-watch_pool_shutdown (void)
-{
-    if (watch_pool)
-    {
-        int i;
-        /* Need to wait until all threads are cleaned up */
-        for (i=0; i<10; i++)
-        {
-            g_thread_pool_stop_unused_threads ();
-            if (g_thread_pool_unprocessed (watch_pool) == 0 &&
-                g_thread_pool_get_num_threads (watch_pool) == 0 &&
-                g_thread_pool_get_num_unused_threads () == 0)
-            {
-                break;
-            }
-            else if (i >= 9)
-            {
-                ERROR ("Shutdown: Watcher threads not shutting down\n");
-            }
-            g_usleep (G_USEC_PER_SEC / 10);
-        }
-        g_thread_pool_free (watch_pool, FALSE, TRUE);
-        watch_pool = NULL;
-    }
-    return true;
-}
-
 bool
 apteryx_init (bool debug_enabled)
 {
@@ -346,9 +270,6 @@ apteryx_init (bool debug_enabled)
             return false;
         }
         free ((void*) uri);
-
-        /* Initialise the watch thread */
-        watch_pool_init ();
     }
     pthread_mutex_unlock (&lock);
 
@@ -377,7 +298,6 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
-    watch_pool_shutdown ();
     rpc_shutdown (rpc);
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
@@ -387,10 +307,6 @@ int
 apteryx_process (bool poll)
 {
     ASSERT ((ref_count > 0), return false, "PROCESS: Not initialised\n");
-    if (poll)
-        watch_pool_shutdown ();
-    else
-        watch_pool_init ();
     return rpc_server_process (rpc, poll);
 }
 
