@@ -156,7 +156,7 @@ handle_validate_response (const Apteryx__ValidateResult *result, void *closure_d
 }
 
 static void
-handle_watch_response (const Apteryx__OKResult *result, void *closure_data)
+handle_watch_response (const Apteryx__NoResult *result, void *closure_data)
 {
     *(protobuf_c_boolean *) closure_data = (result != NULL);
 }

@@ -1,5 +1,9 @@
 package apteryx;
 
+message NoResult
+{
+};
+
 message PathValue
 {
     required string path = 1;
@@ -104,7 +108,7 @@ service server
 service client
 {
     rpc index (Index) returns (SearchResult);
-    rpc watch (Watch) returns (OKResult);
+    rpc watch (Watch) returns (NoResult);
     rpc provide (Provide) returns (GetResult);
     rpc validate (Validate) returns (ValidateResult);
 }

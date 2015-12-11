@@ -1382,6 +1382,42 @@ test_watch_rpc_restart ()
 }
 
 static pthread_mutex_t watch_lock;
+static int watch_count;
+
+static bool
+test_watch_block_callback (const char *path, const char *value)
+{
+    pthread_mutex_lock (&watch_lock);
+    watch_count++;
+    pthread_mutex_unlock (&watch_lock);
+    return true;
+}
+
+void
+test_watch_myself_blocked ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    int i;
+
+    pthread_mutex_init (&watch_lock, NULL);
+    pthread_mutex_lock (&watch_lock);
+    watch_count = 0;
+    CU_ASSERT (apteryx_watch (path, test_watch_block_callback));
+    for (i = 0; i < 30; i++)
+    {
+        CU_ASSERT (apteryx_set (path, "down"));
+    }
+    pthread_mutex_unlock (&watch_lock);
+    usleep (TEST_SLEEP_TIMEOUT);
+    pthread_mutex_lock (&watch_lock);
+    pthread_mutex_unlock (&watch_lock);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_count == 30);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_block_callback));
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static bool
 test_perf_watch_callback (const char *path, const char *value)
 {
@@ -3125,6 +3161,39 @@ test_single_provide_no_polling ()
     usleep (1.1 * RPC_TIMEOUT_US);
 }
 
+static bool
+test_single_watch_myself_callback (const char *path, const char *value)
+{
+    watch_count++;
+    return true;
+}
+
+void
+test_single_watch_myself ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    int count = 64;
+    int i;
+
+    apteryx_process (true);
+    watch_count = 0;
+    CU_ASSERT (apteryx_watch (path, test_single_watch_myself_callback));
+    for (i = 0; i < count; i++)
+    {
+        CU_ASSERT (apteryx_set (path, "down"));
+    }
+    for (i = 0; i < count; i++)
+    {
+        apteryx_process (true);
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_count == count);
+    CU_ASSERT (apteryx_unwatch (path, test_single_watch_myself_callback));
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+}
+
 static int
 suite_init (void)
 {
@@ -3193,6 +3262,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch removes multiple watches", test_watch_removes_all_watches },
     { "watch when busy", test_watch_when_busy },
     { "watch rpc restart", test_watch_rpc_restart },
+    { "watch myself blocked", test_watch_myself_blocked },
     CU_TEST_INFO_NULL,
 };
 
@@ -3261,6 +3331,7 @@ static CU_TestInfo tests_single_threaded[] = {
     { "single-threaded validate no polling", test_single_validate_no_polling },
     { "single-threaded provide", test_single_provide },
     { "single-threaded provide no polling", test_single_provide_no_polling },
+    { "single-threaded watch myself", test_single_watch_myself },
     CU_TEST_INFO_NULL,
 };
 
