@@ -1,0 +1,271 @@
+#!/usr/bin/lua
+
+-- XML Parser based on code by Alexander Makeev
+XmlParser = {};
+function XmlParser:FromXmlString(value)
+    value = string.gsub(value, "&#x([%x]+)%;",
+        function(h) 
+            return string.char(tonumber(h,16)) 
+        end);
+    value = string.gsub(value, "&#([0-9]+)%;",
+        function(h) 
+            return string.char(tonumber(h,10)) 
+        end);
+    value = string.gsub (value, "&quot;", "\"");
+    value = string.gsub (value, "&apos;", "'");
+    value = string.gsub (value, "&gt;", ">");
+    value = string.gsub (value, "&lt;", "<");
+    value = string.gsub (value, "&amp;", "&");
+    return value;
+end
+function XmlParser:ParseArgs(s)
+  local arg = {}
+  string.gsub(s, "(%w+)=([\"'])(.-)%2", function (w, _, a)
+        arg[w] = self:FromXmlString(a);
+    end)
+  return arg
+end
+function XmlParser:ParseXmlText(xmlText)
+  local stack = {}
+  local top = {Name=nil,Value=nil,Attributes={},ChildNodes={}}
+  table.insert(stack, top)
+  local ni,c,label,xarg, empty
+  local i, j = 1, 1
+  while true do
+    ni,j,c,label,xarg, empty = string.find(xmlText, "<(%/?)([%w:]+)(.-)(%/?)>", i)
+    if not ni then break end
+    if empty == "/" then  -- empty element tag
+      table.insert(top.ChildNodes, {Name=label,Value=nil,Attributes=self:ParseArgs(xarg),ChildNodes=nil})
+    elseif c == "" then   -- start tag
+      top = {Name=label, Value=nil, Attributes=self:ParseArgs(xarg), ChildNodes={}}
+      table.insert(stack, top)   -- new level
+    else  -- end tag
+      local toclose = table.remove(stack)  -- remove top
+      top = stack[#stack]
+      table.insert(top.ChildNodes, toclose)
+    end
+    i = j+1
+  end
+  return stack[1].ChildNodes[1];
+end
+function XmlParser:ParseXmlFile(xmlFileName)
+    local hFile,err = io.open(xmlFileName,"r");
+    if (not err) then
+        local xmlText=hFile:read("*a"); -- read file content
+        io.close(hFile);
+        return self:ParseXmlText(xmlText),nil;
+    else
+        return nil,err;
+    end
+end
+
+
+function generate_lib()
+	print(string.format([[
+#!/usr/bin/lua
+--Automatcally generated API library
+package.cpath="/usr/lib/?.so;/lib/?.so;"..package.cpath
+if os.getenv("APTERYX_PATH") ~= nil then
+	package.cpath = os.getenv("APTERYX_PATH").."/?.so;"..package.cpath
+end
+require "libapteryx"
+
+apteryx = {}
+
+local __apteryx = {
+	__index = function(self, key)
+		if self["__"..key] ~= null then
+			value = apteryx_get(self["__"..key].path)
+			if not value then
+				value = self["__"..key].default
+			end
+			if self["__"..key].values ~= null then
+				for k, v in pairs(self["__"..key].values) do
+					if v == value then
+						return k
+					end
+				end
+			end
+			return value
+		end
+	end,
+	__newindex = function(self, key, value)
+		if self["__"..key] ~= null then
+			if value and self["__"..key].values ~= null then
+				value = self["__"..key].values[value]
+			end
+			apteryx_set(self["__"..key].path, value)
+		end
+	end,
+	__call = function(self, key, value)
+		if self["__"..key] ~= nil then
+			if value == nil then
+				return true
+			end
+			if self["__"..key].values ~= nil then
+				if type(value) == "string" then
+					return self["__"..key].values[value] ~= nil
+				elseif type(value) == "table" then
+					for k,v in pairs(value) do
+						if self["__"..key].values[v] == nil then
+							return false
+						end
+					end
+					return true
+				end
+			end
+		end
+		return false
+	end
+}
+
+apteryx["valid"] = function(path,parameters,tbl)
+	if tbl == nil then tbl = apteryx end
+	local key = path:match("[^.]+")
+	path = path:sub(#key + 2)
+	for i,k in pairs(tbl) do
+		if i == key or i == "__"..key then
+			if #path == 0 then
+				return true
+			end
+			return apteryx.valid(path,parameters,tbl[i])
+		end
+	end
+	return false
+end
+
+apteryx["assert"] = function(path,parameters,tbl)
+	assert(apteryx.valid(path,parameters,tbl), "Apteryx: Invalid path \""..path.."\"")
+end
+	]]))
+end
+
+function is_leaf(tbl)
+	if tbl["ChildNodes"] == nil then
+		return true
+	else
+		for i,field in pairs(tbl["ChildNodes"]) do
+			if field["Name"] == "VALUE" then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function is_list(tbl)
+	if tbl["ChildNodes"] == nil then
+		return false
+	else
+		for i,field in pairs(tbl["ChildNodes"]) do
+			if field["Attributes"]["name"] == "*" then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function generate_defines(tbl, path, depth)
+	if not depth then depth = 0 end
+	if not path then path = "" end
+	local tab = string.rep("\t",depth)
+	if tbl["Name"] ~= "MODULE" and tbl["Attributes"] and tbl["Attributes"]["name"] then
+		local name = tbl["Attributes"]["name"]
+		path = path .. "/" .. name
+		path = path:gsub("*", "\"..name"..(depth-1).."..\"")
+		name = string.gsub(name, "-", "_")
+		if is_leaf(tbl) and name ~= "*" then
+			local line = tab.."[\"__"..name.."\"]"
+			line = line.."={path=\""..path.."\""
+			if tbl["Attributes"]["default"] then
+				line = line..",default=\""..tbl["Attributes"]["default"].."\""
+			end
+			local values = false
+			if tbl["ChildNodes"] ~= nil then
+				for i,field in pairs(tbl["ChildNodes"]) do
+					if field["Name"] == "VALUE" then
+						if not values then
+							line = line..",values={"
+						else
+							line = line..","
+						end 
+						line = line.."[\""..field["Attributes"]["name"].."\"]".."="
+						line = line.."\""..field["Attributes"]["value"].."\""
+						values = true
+					end
+				end
+			end
+			if values then
+				line = line.."}"
+			end
+			line = line.."},"
+			print(line)
+		elseif is_list(tbl) then
+			if depth == 0 then
+				print("apteryx[\""..name.."\"]=function(name"..depth..")")
+			else
+				print(tab.."[\""..name.."\"]".."=function(name"..depth..",value)")
+			end
+			print(tab.."	if name"..depth.." == nil then")
+			print(tab.."		local search = {apteryx_search(\""..path.."/\")}")
+			print(tab.."		for i,item in pairs(search) do")
+			print(tab.."			search[i] = item:sub(item:match'^.*()/'+1)")
+			print(tab.."		end")
+			print(tab.."		table.sort(search)")
+			print(tab.."		return search")
+			print(tab.."	elseif value ~= nil then")
+			print(tab.."		apteryx_set(\""..path.."/\"..name"..depth..", value)")
+			print(tab.."		return")
+			print(tab.."	end")
+			for i,field in pairs(tbl["ChildNodes"]) do
+				generate_defines(field, path, depth+1);
+			end
+			print(tab.."end"..(depth == 0 and "" or ","))
+		elseif tbl["Attributes"]["name"] == "*" then
+			if tbl["ChildNodes"] ~= nil then
+				print(tab.."return setmetatable({")
+				for i,field in pairs(tbl["ChildNodes"]) do
+					generate_defines(field, path, depth+1);
+				end
+				print(tab.."}, __apteryx)")
+			else
+			print(tab.."return apteryx_get(\""..path.."\")")
+			end
+		else
+			if depth == 0 then
+				print("apteryx[\""..name.."\"]=setmetatable({")
+			else
+				print(tab.."[\""..name.."\"]".."=setmetatable({")
+			end
+			for i,field in pairs(tbl["ChildNodes"]) do
+				generate_defines(field, path, depth+1);
+			end
+			print(tab.."}, __apteryx)"..(depth == 0 and "" or ","))
+		end
+	elseif tbl["ChildNodes"] ~= nil then
+		for i,field in pairs(tbl["ChildNodes"]) do
+			generate_defines(field, path, depth);
+		end
+	end
+end
+
+if arg[1] == nil or arg[1] == "-h" then
+	print("xml2lua [-h|-l] <xml schema file>")
+	print("  -h   show this help")
+	print("  -l   generate library functions")
+	os.exit(0)
+elseif arg[1] == "-l" then
+	generate_lib()
+	filename = arg[2]
+else
+	filename = arg[1]
+end
+if filename ~= nil then
+	local xml = XmlParser:ParseXmlFile(filename)
+	if xml == nil then
+		print("Cannot load/parse "..filename)
+		os.exit(-1)
+	end
+	generate_defines(xml)
+end
