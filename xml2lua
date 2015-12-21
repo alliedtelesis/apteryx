@@ -64,13 +64,14 @@ function generate_lib()
 	print(string.format([[
 #!/usr/bin/lua
 --Automatcally generated API library
-package.cpath="/usr/lib/?.so;/lib/?.so;"..package.cpath
 if os.getenv("APTERYX_PATH") ~= nil then
 	package.cpath = os.getenv("APTERYX_PATH").."/?.so;"..package.cpath
 end
-require "libapteryx"
-
-apteryx = {}
+require "apteryx"
+if apteryx == nil then
+	apteryx = {}
+	apteryx_init(false)
+end
 
 local __apteryx = {
 	__index = function(self, key)
