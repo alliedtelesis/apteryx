@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 static socket_info
 parse_url (const char *url)
@@ -287,6 +288,10 @@ rpc_service_bind_url (rpc_service s, const char *guid, const char *url)
         close (fd);
         g_free (sock);
         return false;
+    }
+    if (sock->family == AF_UNIX)
+    {
+        chmod (sock->address.addr_un.sun_path, 0666);
     }
     DEBUG ("RPC: New Socket (%d:%s)\n", fd, url);
 
