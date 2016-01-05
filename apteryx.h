@@ -159,6 +159,54 @@ char *apteryx_get_string (const char *path, const char *key);
 int32_t apteryx_get_int (const char *path, const char *key);
 
 /**
+ * Get the last change timestamp of a given path
+ * @param path path to get the timestamp for
+ * @return 0 if the path doesn't exist, last change timestamp otherwise
+ */
+uint64_t apteryx_timestamp (const char *path);
+
+/**
+ * Set a path/value in Apteryx, but only if the existing
+ * value has not changed since the specified timestamp.
+ * Can be used for a Compare-And-Swap operation.
+ * Example: Safely reserve the next free row in a table
+    uint32_t index = 1;
+    while (index > 0) {
+        if (apteryx_cas_int (path, key, index, 0))
+            break;
+        index++;
+    }
+ * Example: Safely updating a 32-bit bitmap
+    while (1) {
+        uint64_t ts = apteryx_timestamp (path);
+        uint32_t bitmap = 0;
+        char *value = apteryx_get (path);
+        if (value)
+        {
+            sscanf (value, "%"PRIx32, &bitmap);
+            free (value);
+        }
+        bitmap = (bitmap & ~clear) | set;
+        if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
+            bool success = apteryx_cas (path, value, ts);
+            free (value);
+            if (success || errno != -EBUSY)
+                return success;
+        }
+    }
+ * @param path path to the value to set
+ * @param value value to set at the specified path
+ * @param ts timestamp to be compared to the paths last change time
+ * @return true on a successful set
+ * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
+ */
+bool apteryx_cas (const char *path, const char *value, uint64_t ts);
+/** Helper to extend the path with the specified key */
+bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts);
+/** Helper to store a simple int at an extended path */
+bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts);
+
+/**
  * Helpers for generating and parsing an Apteryx tree.
  * Can be used to set/get multiple values at once.
  * Uses GLIB's GNode based N-ary trees.
@@ -212,6 +260,16 @@ bool apteryx_set_tree (GNode* root);
  * @return N-ary tree of nodes.
  */
 GNode* apteryx_get_tree (const char *path);
+
+/**
+ * Set a tree of multiple values in Apteryx, but only if
+ * the existing value has not changed since the specified timestamp.
+ * @param root pointer to the N-ary tree of nodes.
+ * @param ts timestamp to be compared to the paths last change time
+ * @return true on a successful set.
+ * @return false on failure.
+ */
+bool apteryx_cas_tree (GNode* root, uint64_t ts);
 
 /**
  * Search for all children that start with the root path.
@@ -338,12 +396,5 @@ bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
 bool apteryx_proxy (const char *path, const char *url);
 /** Remove the proxy for this path */
 bool apteryx_unproxy (const char *path, const char *url);
-
-/**
- * Get the last change timestamp of a given path
- * @param path path to get the timestamp for
- * @return 0 if the path doesn't exist, last change timestamp otherwise
- */
-uint64_t apteryx_timestamp (const char *path);
 
 #endif /* _APTERYX_H_ */

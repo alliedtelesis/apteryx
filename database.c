@@ -268,16 +268,24 @@ db_parent_get (const char *path)
     return node;
 }
 
-uint64_t
-db_timestamp (const char *path)
+static uint64_t
+db_timestamp_no_lock (const char *path)
 {
     uint64_t timestamp = 0;
-    pthread_rwlock_rdlock (&db_lock);
     struct database_node *new_value = db_path_to_node (path, 0);
     if (new_value)
     {
         timestamp = new_value->timestamp;
     }
+    return timestamp;
+}
+
+uint64_t
+db_timestamp (const char *path)
+{
+    uint64_t timestamp = 0;
+    pthread_rwlock_rdlock (&db_lock);
+    timestamp = db_timestamp_no_lock (path);
     pthread_rwlock_unlock (&db_lock);
     return timestamp;
 }
@@ -313,24 +321,30 @@ db_add_no_lock (const char *path, const unsigned char *value, size_t length)
 }
 
 bool
-db_add (const char *path, const unsigned char *value, size_t length)
+db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts)
 {
     bool ret = false;
     pthread_rwlock_wrlock (&db_lock);
-    ret = db_add_no_lock (path, value, length);
+    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
+        ret = db_add_no_lock (path, value, length);
     pthread_rwlock_unlock (&db_lock);
     return ret;
 }
 
 bool
-db_delete (const char *path)
+db_delete (const char *path, uint64_t ts)
 {
+    bool ret = false;
     pthread_rwlock_wrlock (&db_lock);
-    struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
-    if (node)
-        db_node_delete (node);
+    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
+    {
+        struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
+        if (node)
+            db_node_delete (node);
+        ret = true;
+    }
     pthread_rwlock_unlock (&db_lock);
-    return true;
+    return ret;
 }
 
 bool
@@ -458,8 +472,8 @@ test_db_add_delete ()
 {
     const char *path = "/database/test";
     db_init ();
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
-    CU_ASSERT (db_delete (path));
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+    CU_ASSERT (db_delete (path, UINT64_MAX));
     db_shutdown ();
 }
 
@@ -475,7 +489,7 @@ test_db_add_delete_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         g_free (path);
     }
 
@@ -484,8 +498,8 @@ test_db_add_delete_perf ()
             TEST_DB_MAX_ENTRIES - 1, TEST_DB_MAX_ENTRIES - 1);
     for (i = 0; i < TEST_DB_MAX_ITERATIONS; i++)
     {
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
-        CU_ASSERT (db_delete (path));
+        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+        CU_ASSERT (db_delete (path, UINT64_MAX));
     }
     printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
 
@@ -493,10 +507,10 @@ test_db_add_delete_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_delete (path));
+        CU_ASSERT (db_delete (path, UINT64_MAX));
         g_free (path);
     }
-    db_delete ("");
+    db_delete ("", UINT64_MAX);
 }
 
 void
@@ -516,13 +530,13 @@ test_db_long_path ()
     }
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test") + 1));
     CU_ASSERT (value && strcmp (value, "test") == 0);
     g_free ((void *) value);
-    CU_ASSERT (db_delete (path));
+    CU_ASSERT (db_delete (path, UINT64_MAX));
     g_free ((void *) path);
     db_shutdown ();
 }
@@ -545,20 +559,20 @@ _path_perf (int path_length, bool full)
     db_init ();
     if (!full)
     {
-        db_add (path, (const unsigned char *) "placeholder", strlen ("placeholder") + 1);
+        db_add (path, (const unsigned char *) "placeholder", strlen ("placeholder") + 1, UINT64_MAX);
         path[strlen (path) - 1]++;
     }
     start = get_time_us ();
     for (i = 0; i < count; i++)
     {
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
-        CU_ASSERT (db_delete (path));
+        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+        CU_ASSERT (db_delete (path, UINT64_MAX));
     }
     printf ("%d=%"PRIu64"us ", path_length, (get_time_us () - start) / count);
     if (!full)
     {
         path[strlen (path) - 1]--;
-        db_delete (path);
+        db_delete (path, UINT64_MAX);
     }
     g_free (path);
     db_shutdown ();
@@ -595,13 +609,13 @@ test_db_large_value ()
     memset (large, 'a', len-1);
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
-    CU_ASSERT (db_add (path, (const unsigned char *) large, len));
+    CU_ASSERT (db_add (path, (const unsigned char *) large, len, UINT64_MAX));
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == len);
     CU_ASSERT (value && strcmp (value, large) == 0);
     g_free ((void *) value);
-    CU_ASSERT (db_delete (path));
+    CU_ASSERT (db_delete (path, UINT64_MAX));
     g_free ((void *) large);
     db_shutdown ();
 }
@@ -614,13 +628,13 @@ test_db_get ()
     size_t length;
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test") + 1));
     CU_ASSERT (value && strcmp (value, "test") == 0);
     g_free ((void *) value);
-    CU_ASSERT (db_delete (path));
+    CU_ASSERT (db_delete (path, UINT64_MAX));
     db_shutdown ();
 }
 
@@ -638,7 +652,7 @@ test_db_get_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         g_free (path);
     }
 
@@ -659,7 +673,7 @@ test_db_get_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_delete (path));
+        CU_ASSERT (db_delete (path, UINT64_MAX));
         g_free (path);
     }
     db_shutdown ();
@@ -677,14 +691,14 @@ test_db_replace ()
     {
         char value[64];
         sprintf (value, "test%d", i);
-        CU_ASSERT (db_add (path, (const unsigned char *) value, strlen (value) + 1));
+        CU_ASSERT (db_add (path, (const unsigned char *) value, strlen (value) + 1, UINT64_MAX));
     }
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test9") + 1));
     CU_ASSERT (value && strcmp (value, "test9") == 0);
     g_free ((void *) value);
-    CU_ASSERT (db_delete (path));
+    CU_ASSERT (db_delete (path, UINT64_MAX));
     db_shutdown ();
 }
 
@@ -694,12 +708,12 @@ test_db_search ()
     const char *path = "/database/test";
     GList *paths = NULL;
     db_init ();
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
     CU_ASSERT ((paths = db_search ("/database/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 1);
     CU_ASSERT (g_list_find_custom (paths, "/database/test", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, g_free);
-    CU_ASSERT (db_delete (path));
+    CU_ASSERT (db_delete (path, UINT64_MAX));
     db_shutdown ();
 }
 
@@ -715,7 +729,7 @@ test_db_search_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1));
+        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         g_free (path);
     }
 
@@ -735,7 +749,7 @@ test_db_search_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_delete (path));
+        CU_ASSERT (db_delete (path, UINT64_MAX));
         g_free (path);
     }
     db_shutdown ();
@@ -752,21 +766,21 @@ test_db_timestamping ()
 
     db_init ();
 
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", 5));
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", 5, UINT64_MAX));
     last_ts = db_timestamp (path);
     sleep (1);
-    CU_ASSERT (db_add (path2, (const unsigned char *) "test", 5));
+    CU_ASSERT (db_add (path2, (const unsigned char *) "test", 5, UINT64_MAX));
     CU_ASSERT (db_timestamp (path2) > last_ts);
     last_ts = db_timestamp (path2);
     CU_ASSERT (db_timestamp (path) < db_timestamp (path2));
     CU_ASSERT (db_timestamp (ppath) >= db_timestamp (path2));
     CU_ASSERT (db_timestamp ("/") >= db_timestamp (ppath));
 
-    CU_ASSERT (db_delete (path2));
+    CU_ASSERT (db_delete (path2, UINT64_MAX));
     CU_ASSERT (db_timestamp (ppath) > last_ts);
     CU_ASSERT (db_timestamp ("/") >= db_timestamp (ppath));
 
-    CU_ASSERT (db_delete (path));
+    CU_ASSERT (db_delete (path, UINT64_MAX));
 
     db_shutdown ();
 }

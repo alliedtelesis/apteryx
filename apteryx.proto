@@ -23,6 +23,7 @@ message ValidateResult
 message Set
 {
     repeated PathValue sets = 1;
+    required uint64 ts = 2;
 };
 
 message Get
