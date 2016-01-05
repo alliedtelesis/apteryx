@@ -822,6 +822,125 @@ test_prune ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_cas ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/ifindex";
+    char *value;
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_cas (path, "1", 0));
+    CU_ASSERT (!apteryx_cas (path, "2", 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas (path, "3", ts));
+    CU_ASSERT (!apteryx_cas (path, "4", ts));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "3") == 0);
+    free ((void *) value);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_cas_string ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char *value;
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_cas_string (path, "ifindex", "1", 0));
+    CU_ASSERT (!apteryx_cas_string (path, "ifindex", "2", 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas_string (path, "ifindex", "3", ts));
+    CU_ASSERT (!apteryx_cas_string (path, "ifindex", "4", ts));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((value = apteryx_get_string (path, "ifindex")) != NULL);
+    CU_ASSERT (value && strcmp (value, "3") == 0);
+    free ((void *) value);
+
+    CU_ASSERT (apteryx_set_string (path, "ifindex", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_cas_int ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_cas_int (path, "ifindex", 1, 0));
+    CU_ASSERT (!apteryx_cas_int (path, "ifindex", 2, 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas_int (path, "ifindex", 3, ts));
+    CU_ASSERT (!apteryx_cas_int (path, "ifindex", 4, ts));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT (apteryx_get_int (path, "ifindex") == 3);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+#define bitmap_path TEST_PATH"/interfaces/eth0/status"
+#define bitmap_bits 32
+int
+_bitmap_thread (void *data)
+{
+    int id = (long int) data;
+    uint32_t set = (1 << id);
+    uint32_t clear = (1 << (bitmap_bits/2 + id));
+    const char *path = bitmap_path;
+
+    while (1) {
+        uint64_t ts = apteryx_timestamp (path);
+        char *value = apteryx_get (path);
+        uint32_t bitmap = 0;
+        if (value)
+        {
+            sscanf (value, "%"PRIx32, &bitmap);
+            free (value);
+        }
+        bitmap = (bitmap & ~clear) | set;
+        if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
+            bool success = apteryx_cas (path, value, ts);
+            free (value);
+            if (success || errno != -EBUSY)
+                break;
+        }
+    }
+    return 0;
+}
+
+void
+test_bitmap ()
+{
+    const char *path = bitmap_path;
+    char *value = NULL;
+    pthread_t writers[bitmap_bits];
+    uint32_t bitmap = 0;
+    long int i;
+
+    CU_ASSERT (asprintf (&value, "%"PRIx32, (uint32_t)0xFFFF0000) > 0);
+    CU_ASSERT (apteryx_set (path, value));
+    free (value);
+    for (i = 0; i < bitmap_bits/2; i++)
+    {
+        pthread_create (&writers[i], NULL, (void *) &_bitmap_thread, (void *) i);
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && sscanf (value, "%"PRIx32, &bitmap) == 1)
+    CU_ASSERT (bitmap == 0x0000FFFF)
+    free (value);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char *_path = NULL;
 static char *_value = NULL;
 static bool
@@ -2193,6 +2312,31 @@ test_get_tree_null ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_cas_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    GNode* root;
+    uint64_t ts;
+
+    root = APTERYX_NODE (NULL, (char*)path);
+    APTERYX_LEAF (root, "state", "up");
+    APTERYX_LEAF (root, "speed", "1000");
+    APTERYX_LEAF (root, "duplex", "full");
+
+    CU_ASSERT (apteryx_cas_tree (root, 0));
+    CU_ASSERT (!apteryx_cas_tree (root, 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas_tree (root, ts));
+    CU_ASSERT (!apteryx_cas_tree (root, ts));
+    CU_ASSERT (errno == -EBUSY);
+
+    CU_ASSERT (apteryx_prune (path));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_100 (const char *path)
 {
@@ -2580,6 +2724,32 @@ test_proxy_timestamp ()
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
     CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_cas ()
+{
+    const char *path = TEST_PATH"/remote/test/local";
+    char *value = NULL;
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+
+    value = g_strdup_printf ("%d", 1);
+    CU_ASSERT (apteryx_cas (path, value, 0));
+    CU_ASSERT (!apteryx_cas (path, value, 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas (path, value, ts));
+    CU_ASSERT (!apteryx_cas (path, value, ts));
+    CU_ASSERT (errno == -EBUSY);
+    g_free (value);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3224,6 +3394,10 @@ static CU_TestInfo tests_api[] = {
     { "multi threads writing to same table", test_thread_multi_write },
     { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
+    { "cas", test_cas },
+    { "cas string", test_cas_string },
+    { "cas int", test_cas_int },
+    { "bitmap", test_bitmap },
     { "shutdown deadlock", test_deadlock },
     { "shutdown deadlock 2", test_deadlock2 },
     CU_TEST_INFO_NULL,
@@ -3306,6 +3480,7 @@ static CU_TestInfo tests_api_proxy[] = {
     { "proxy search", test_proxy_search },
     { "proxy prune", test_proxy_prune },
     { "proxy timestamp", test_proxy_timestamp },
+    { "proxy cas", test_proxy_cas },
     CU_TEST_INFO_NULL,
 };
 
@@ -3319,6 +3494,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree single node", test_get_tree_single_node },
     { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
+    { "cas tree", test_cas_tree},
     CU_TEST_INFO_NULL,
 };
 

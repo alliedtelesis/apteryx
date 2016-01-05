@@ -520,7 +520,7 @@ find_proxy (const char **path, cb_info_t **proxy_pt)
 }
 
 static int
-proxy_set (const char *path, const char *value)
+proxy_set (const char *path, const char *value, uint64_t ts)
 {
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
@@ -542,15 +542,19 @@ proxy_set (const char *path, const char *value)
     pv[0]->value = (char *) value;
     set.n_sets = 1;
     set.sets = pv;
+    set.ts = ts;
     apteryx__server__set (rpc_client, &set, handle_set_response, &result);
-    if (result != 0)
+    if (result == -ETIMEDOUT)
     {
-        /* We got some form of error.  Kill the socket. */
-        ERROR ("PROXY SET: Error or no response:%s\n", strerror (errno));
+        /* We got no response. Kill the socket. */
+        ERROR ("PROXY SET: No response\n");
         rpc_client_release (rpc, rpc_client, false);
     }
     else
     {
+        /* We got some response */
+        if (result != 0)
+            DEBUG ("PROXY SET: Error response: %s\n", strerror (-result));
         rpc_client_release (rpc, rpc_client, true);
     }
     return result;
@@ -698,6 +702,7 @@ apteryx__set (Apteryx__Server_Service *service,
     int validation_result = 0;
     int validation_lock = 0;
     int proxy_result = 0;
+    bool db_result = false;
     int i;
 
     /* Check parameters */
@@ -722,7 +727,7 @@ apteryx__set (Apteryx__Server_Service *service,
         DEBUG ("SET: %s = %s\n", path, value);
 
         /* Check proxy first */
-        proxy_result = proxy_set (path, value);
+        proxy_result = proxy_set (path, value, set->ts);
         if (proxy_result == 0)
         {
             /*  Result success */
@@ -750,9 +755,15 @@ apteryx__set (Apteryx__Server_Service *service,
 
         /* Add/Delete to/from database */
         if (value)
-            db_add (path, (unsigned char*)value, strlen (value) + 1);
+            db_result = db_add (path, (unsigned char*)value, strlen (value) + 1, set->ts);
         else
-            db_delete (path);
+            db_result = db_delete (path, set->ts);
+        if (!db_result)
+        {
+            DEBUG ("SET: %s = %s refused by DB\n", path, value);
+            result.result = -EBUSY;
+            goto exit;
+        }
     }
 
     /* Set succeeded */
@@ -1080,7 +1091,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     _search_paths (&paths, prune->path);
 
     /* Prune from database */
-    db_delete (prune->path);
+    db_delete (prune->path, UINT64_MAX);
 
     /* Return result */
     closure (&result, closure_data);

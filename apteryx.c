@@ -430,14 +430,14 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_set (const char *path, const char *value)
+apteryx_cas (const char *path, const char *value, uint64_t ts)
 {
     char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
     Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
     Apteryx__PathValue *pv[1] = {&_pv};
-    protobuf_c_boolean is_done = 0;
+    protobuf_c_boolean result = 0;
 
     ASSERT ((ref_count > 0), return false, "SET: Not initialised\n");
     ASSERT (path, return false, "SET: Invalid parameters\n");
@@ -466,23 +466,34 @@ apteryx_set (const char *path, const char *value)
     pv[0]->value = (char *) value;
     set.n_sets = 1;
     set.sets = pv;
-    apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
-    if (!is_done)
+    set.ts = ts;
+    apteryx__server__set (rpc_client, &set, handle_ok_response, &result);
+    if (!result && errno == -ETIMEDOUT)
     {
-        DEBUG ("SET: Failed %s\n", strerror(errno));
+        DEBUG ("SET: No response\n");
         rpc_client_release (rpc, rpc_client, false);
         free (url);
         return false;
+    }
+    else if (!result)
+    {
+        DEBUG ("SET: Error response: %s\n", strerror (errno));
     }
     rpc_client_release (rpc, rpc_client, true);
     free (url);
 
     /* Success */
-    return true;
+    return result;
 }
 
 bool
-apteryx_set_string (const char *path, const char *key, const char *value)
+apteryx_set (const char *path, const char *value)
+{
+    return apteryx_cas (path, value, UINT64_MAX);
+}
+
+bool
+apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
 {
     char *full_path;
     size_t len;
@@ -495,14 +506,20 @@ apteryx_set_string (const char *path, const char *key, const char *value)
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_set (full_path, value);
+        res = apteryx_cas (full_path, value, ts);
         free (full_path);
     }
     return res;
 }
 
 bool
-apteryx_set_int (const char *path, const char *key, int32_t value)
+apteryx_set_string (const char *path, const char *key, const char *value)
+{
+    return apteryx_cas_string (path, key, value, UINT64_MAX);
+}
+
+bool
+apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
 {
     char *full_path;
     size_t len;
@@ -520,12 +537,18 @@ apteryx_set_int (const char *path, const char *key, int32_t value)
         len = asprintf ((char **) &v, "%d", value);
         if (len)
         {
-            res = apteryx_set (full_path, v);
+            res = apteryx_cas (full_path, v, ts);
             free ((void *) v);
         }
         free (full_path);
     }
     return res;
+}
+
+bool
+apteryx_set_int (const char *path, const char *key, int32_t value)
+{
+    return apteryx_cas_int (path, key, value, UINT64_MAX);
 }
 
 typedef struct _get_data_t
@@ -722,7 +745,7 @@ _set_multi (GNode *node, gpointer data)
 }
 
 bool
-apteryx_set_tree (GNode* root)
+apteryx_cas_tree (GNode* root, uint64_t ts)
 {
     const char *path = NULL;
     char *url = NULL;
@@ -761,6 +784,7 @@ apteryx_set_tree (GNode* root)
     set.sets = malloc (set.n_sets * sizeof (Apteryx__PathValue *));
     set.n_sets = 0;
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &set);
+    set.ts = ts;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
     if (!is_done)
     {
@@ -785,6 +809,12 @@ apteryx_set_tree (GNode* root)
 
     /* Return result */
     return rc;
+}
+
+bool
+apteryx_set_tree (GNode* root)
+{
+    return apteryx_cas_tree (root, UINT64_MAX);
 }
 
 typedef struct _traverse_data_t
