@@ -20,8 +20,11 @@ EXTRA_CFLAGS += -I. -I/usr/include/google `$(PKG_CONFIG) --cflags glib-2.0`
 EXTRA_LDFLAGS := `$(PKG_CONFIG) --libs glib-2.0` -lpthread
 EXTRA_LDFLAGS += -lrt -lprotobuf-c -lgcc_s
 ifneq ($(HAVE_LUA),no)
-EXTRA_CFLAGS += -DHAVE_LUA `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --cflags lua || $(PKG_CONFIG) --cflags lua5.2`
-EXTRA_LDFLAGS += `$(PKG_CONFIG) --exists lua && $(PKG_CONFIG) --libs lua || $(PKG_CONFIG) --libs lua5.2`
+LUAVERSION := $(shell $(PKG_CONFIG) --exists lua && echo lua || $(PKG_CONFIG) --exists lu5.2 && echo lua5.2 || echo none)
+ifneq ($(LUAVERSION),none)
+EXTRA_CFLAGS += -DHAVE_LUA $(shell $(PKG_CONFIG) --cflags $(LUAVERSION))
+EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION))
+endif
 endif
 
 all: libapteryx.so apteryx apteryxd apteryx-sync
