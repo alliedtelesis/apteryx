@@ -477,7 +477,7 @@ client_release (rpc_instance rpc, rpc_client_t *client, bool keep)
         if (g_hash_table_lookup_extended (rpc->clients, client->url, (void **)&name, (void **)&existing)
                 && existing == client)
         {
-            DEBUG ("RPC[%d]: Abandon client to %s\n", client->sock->sock, client->url);
+            DEBUG ("RPC[%d]: Abandon client to %s\n", client->sock ? client->sock->sock : -1, client->url);
             /* Release the client and remove it from the list */
             g_hash_table_remove (rpc->clients, client->url);
             g_free (name);
@@ -490,7 +490,7 @@ client_release (rpc_instance rpc, rpc_client_t *client, bool keep)
     client->refcount--;
     if (done)
     {
-        DEBUG ("RPC[%d]: Release client\n", client->sock->sock);
+        DEBUG ("RPC[%d]: Release client\n", client->sock ? client->sock->sock : -1);
         /* Release the socket and free the client */
         rpc_socket_deref (client->sock);
         g_free (client->url);
@@ -567,7 +567,7 @@ rpc_client_connect (rpc_instance rpc, const char *url)
         }
 
         /* Otherwise chuck this one away and make another */
-        DEBUG ("RPC[%d]: Pruning dead socket for %s\n", client->sock->sock, url);
+        DEBUG ("RPC[%d]: Pruning dead socket for %s\n", client->sock ? client->sock->sock : -1, url);
         client_release (rpc, client, false);
     }
 
