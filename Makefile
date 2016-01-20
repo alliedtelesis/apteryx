@@ -44,9 +44,9 @@ apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.o rpc_transport.o rpc_socket.
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
-apteryx: apteryxc.c database.c callbacks.c test.c libapteryx.so
+apteryx: apteryxc.c database.c callbacks.c test.c shell.c libapteryx.so
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
+	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit -lreadline
 
 apteryx-sync: syncer.c libapteryx.so
 	@echo "Building $@"

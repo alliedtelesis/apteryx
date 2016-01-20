@@ -53,6 +53,7 @@ typedef enum
     MODE_PRUNE,
     MODE_TIMESTAMP,
     MODE_TEST,
+    MODE_SHELL,
 } APTERYX_MODE;
 
 /* Callback */
@@ -156,5 +157,8 @@ void cb_shutdown (void);
 
 /* Tests */
 void run_unit_tests (const char *filter);
+
+/* Shell */
+void apteryx_shell (void);
 
 #endif /* _INTERNAL_H_ */

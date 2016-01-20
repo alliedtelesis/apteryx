@@ -55,7 +55,8 @@ usage ()
             "  -p   provide <value> for <path>\n"
             "  -x   proxy <path> via url <value>\n"
             "  -l   last change <path>\n"
-            "  -u   run unit tests (optionally match only tests with <filter>)\n");
+            "  -u   run unit tests (optionally match only tests with <filter>)\n"
+            "  no parameters to enter the shell\n");
     printf ("\n");
     printf ("  Internal settings\n");
     printf ("    %s\n", APTERYX_DEBUG_PATH);
@@ -88,7 +89,7 @@ int
 main (int argc, char **argv)
 {
     const char *filter = NULL;
-    APTERYX_MODE mode = -1;
+    APTERYX_MODE mode = MODE_SHELL;
     char *path = NULL;
     char *param = NULL;
     GList * _iter;
@@ -284,8 +285,11 @@ main (int argc, char **argv)
         usleep (100000);
         apteryx_shutdown ();
         break;
+    case MODE_SHELL:
     default:
-        usage ();
+        apteryx_init (debug);
+        apteryx_shell ();
+        apteryx_shutdown ();
         return 0;
     }
 
