@@ -303,6 +303,15 @@ apteryx_shutdown (void)
     return true;
 }
 
+
+bool
+apteryx_shutdown_force (void)
+{
+    while (ref_count > 0)
+        apteryx_shutdown ();
+    return true;
+}
+
 int
 apteryx_process (bool poll)
 {
