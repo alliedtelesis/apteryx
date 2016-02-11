@@ -113,10 +113,13 @@ typedef struct _counters_t
 extern counters_t counters;
 
 /* Database API */
+extern pthread_rwlock_t db_lock;
 void db_init (void);
 void db_shutdown (void);
 bool db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
 bool db_delete (const char *path, uint64_t ts);
+bool db_delete_no_lock (const char *path, uint64_t ts);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);

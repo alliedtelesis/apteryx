@@ -42,11 +42,7 @@ struct database_node
 };
 struct database_node *root = NULL;  /* The database root */
 
-static pthread_rwlock_t db_lock = PTHREAD_RWLOCK_INITIALIZER;
-
-/* This function needs to be forward declared - it is used in a recursive loop. It needs
- * to be called with db_lock (above) held for writing */
-static bool db_add_no_lock (const char *path, const unsigned char *value, size_t length);
+pthread_rwlock_t db_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static uint64_t
 db_calculate_timestamp (void)
@@ -261,7 +257,7 @@ db_parent_get (const char *path)
 
     if ((node = db_path_to_node (parent, 0)) == NULL)
     {
-        db_add_no_lock (parent, NULL, 0);
+        db_add_no_lock (parent, NULL, 0, UINT64_MAX);
         node = db_path_to_node (parent, 0);
     }
     g_free (parent);
@@ -290,10 +286,13 @@ db_timestamp (const char *path)
     return timestamp;
 }
 
-static bool
-db_add_no_lock (const char *path, const unsigned char *value, size_t length)
+bool
+db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
 {
     uint64_t timestamp = db_calculate_timestamp();
+
+    if (ts != UINT64_MAX && ts < db_timestamp_no_lock (path))
+        return false;
 
     struct database_node *new_value = db_path_to_node (path, timestamp);
     if (!new_value)
@@ -325,9 +324,22 @@ db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts
 {
     bool ret = false;
     pthread_rwlock_wrlock (&db_lock);
-    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
-        ret = db_add_no_lock (path, value, length);
+    ret = db_add_no_lock (path, value, length, ts);
     pthread_rwlock_unlock (&db_lock);
+    return ret;
+}
+
+bool
+db_delete_no_lock (const char *path, uint64_t ts)
+{
+    bool ret = false;
+    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
+    {
+        struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
+        if (node)
+            db_node_delete (node);
+        ret = true;
+    }
     return ret;
 }
 
@@ -336,13 +348,7 @@ db_delete (const char *path, uint64_t ts)
 {
     bool ret = false;
     pthread_rwlock_wrlock (&db_lock);
-    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
-    {
-        struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
-        if (node)
-            db_node_delete (node);
-        ret = true;
-    }
+    ret = db_delete_no_lock (path, ts);
     pthread_rwlock_unlock (&db_lock);
     return ret;
 }
