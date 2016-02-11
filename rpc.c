@@ -36,6 +36,7 @@ struct rpc_instance_s {
     ProtobufCService *service;
     rpc_service server;
     GThreadPool *workers;
+    GThreadPool *slow_workers;
     int pollfd[2];
     GAsyncQueue *queue;
 
@@ -46,6 +47,9 @@ struct rpc_instance_s {
 
 /* Garbage collection timer */
 #define RPC_GC_TIMEOUT_US (10 * RPC_TIMEOUT_US)
+
+/* Force test delay */
+bool rpc_test_random_watch_delay = false;
 
 /* Client object */
 typedef struct rpc_client_t
@@ -210,6 +214,10 @@ worker_func (gpointer a, gpointer b)
     struct rpc_work_s *work = (struct rpc_work_s *)a;
     if (work)
     {
+        /* TEST: force a delay here to change callback timing */
+        if (rpc_test_random_watch_delay)
+            usleep (rand() & RPC_TEST_DELAY_MASK);
+
         /* Invoke service (note that it may call back immediately) */
         work->service->invoke (work->service, work->msg.method_index, work->message,
                                server_connection_response_closure, (void*)&work->msg);
@@ -281,6 +289,8 @@ request_cb (rpc_socket sock, rpc_id id, void *data, size_t len)
         }
     }
     /* Callbacks from local Apteryx threads */
+    else if (rpc->workers && desc->n_fields == 0)
+        g_thread_pool_push (rpc->slow_workers, work, NULL);
     else if (rpc->workers)
         g_thread_pool_push (rpc->workers, work, NULL);
     else
@@ -328,6 +338,7 @@ rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descripto
     rpc->descriptor = descriptor;
     rpc->clients = g_hash_table_new (g_str_hash, g_str_equal);
     rpc->workers = g_thread_pool_new ((GFunc)worker_func, NULL, 8, FALSE, NULL);
+    rpc->slow_workers = g_thread_pool_new ((GFunc)worker_func, NULL, 1, FALSE, NULL);
 
     DEBUG ("RPC: New Instance (%p)\n", rpc);
     return rpc;
@@ -364,6 +375,8 @@ rpc_shutdown (rpc_instance rpc)
         g_thread_pool_stop_unused_threads ();
         if (g_thread_pool_unprocessed (rpc->workers) == 0 &&
             g_thread_pool_get_num_threads (rpc->workers) == 0 &&
+            g_thread_pool_unprocessed (rpc->slow_workers) == 0 &&
+            g_thread_pool_get_num_threads (rpc->slow_workers) == 0 &&
             g_thread_pool_get_num_unused_threads () == 0)
         {
             break;
@@ -376,6 +389,8 @@ rpc_shutdown (rpc_instance rpc)
     }
     g_thread_pool_free (rpc->workers, FALSE, TRUE);
     rpc->workers = NULL;
+    g_thread_pool_free (rpc->slow_workers, FALSE, TRUE);
+    rpc->slow_workers = NULL;
 
     /* Stop the server */
     rpc_service_die (rpc->server);

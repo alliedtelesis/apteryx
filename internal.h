@@ -124,6 +124,8 @@ uint64_t db_timestamp (const char *path);
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
 typedef struct rpc_instance_s *rpc_instance;
+#define RPC_TEST_DELAY_MASK 0x7FF
+extern bool rpc_test_random_watch_delay;
 rpc_instance rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descriptor, int timeout);
 void rpc_shutdown (rpc_instance rpc);
 bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
