@@ -716,7 +716,13 @@ apteryx__set (Apteryx__Server_Service *service,
     }
     INC_COUNTER (counters.set);
 
-    /* For each Path Value in the set */
+    /* Debug */
+    for (i=0; debug && i<set->n_sets; i++)
+    {
+        DEBUG ("SET: %s = %s\n", set->sets[i]->path, set->sets[i]->value);
+    }
+
+    /* Proxy first */
     for (i=0; i<set->n_sets; i++)
     {
         path = set->sets[i]->path;
@@ -724,23 +730,31 @@ apteryx__set (Apteryx__Server_Service *service,
         if (value && value[0] == '\0')
             value = NULL;
 
-        DEBUG ("SET: %s = %s\n", path, value);
-
-        /* Check proxy first */
         proxy_result = proxy_set (path, value, set->ts);
         if (proxy_result == 0)
         {
             /*  Result success */
             DEBUG ("SET: %s = %s proxied\n", path, value);
-            /* Validation is done on remote unit. */
-            continue;
+            /* Mark the set as processed */
+            notify_watchers (set->sets[i]->path);
+            set->sets[i]->path = NULL;
         }
         else if (proxy_result < 0)
         {
             result.result = proxy_result;
             goto exit;
         }
-        /* else proxy not found. */
+    }
+
+    /* Validate */
+    for (i=0; i<set->n_sets; i++)
+    {
+        path = set->sets[i]->path;
+        if (!path)
+            continue;
+        value = set->sets[i]->value;
+        if (value && value[0] == '\0')
+            value = NULL;
 
         /* Validate new data */
         validation_result = validate_set (path, value);
@@ -752,19 +766,33 @@ apteryx__set (Apteryx__Server_Service *service,
             result.result = validation_result;
             goto exit;
         }
+    }
+
+    /* Set in the database */
+    pthread_rwlock_wrlock (&db_lock);
+    for (i=0; i<set->n_sets; i++)
+    {
+        path = set->sets[i]->path;
+        if (!path)
+            continue;
+        value = set->sets[i]->value;
+        if (value && value[0] == '\0')
+            value = NULL;
 
         /* Add/Delete to/from database */
         if (value)
-            db_result = db_add (path, (unsigned char*)value, strlen (value) + 1, set->ts);
+            db_result = db_add_no_lock (path, (unsigned char*)value, strlen (value) + 1, set->ts);
         else
-            db_result = db_delete (path, set->ts);
+            db_result = db_delete_no_lock (path, set->ts);
         if (!db_result)
         {
             DEBUG ("SET: %s = %s refused by DB\n", path, value);
             result.result = -EBUSY;
+            pthread_rwlock_unlock (&db_lock);
             goto exit;
         }
     }
+    pthread_rwlock_unlock (&db_lock);
 
     /* Set succeeded */
     result.result = 0;
@@ -776,7 +804,8 @@ exit:
         /* Process all /apteryx paths before closure to ensure local watchers are processed */
         for (i=0; i<set->n_sets; i++)
         {
-            if (strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) == 0)
+            if (set->sets[i]->path &&
+                strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) == 0)
                 notify_watchers (set->sets[i]->path);
         }
 
@@ -786,7 +815,8 @@ exit:
         /* Notify watchers for each Path Value in the set*/
         for (i=0; i<set->n_sets; i++)
         {
-            if (strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) != 0)
+            if (set->sets[i]->path &&
+                strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) != 0)
                 notify_watchers (set->sets[i]->path);
         }
     }

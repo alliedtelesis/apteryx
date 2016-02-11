@@ -2337,6 +2337,111 @@ test_cas_tree ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static bool atomic_tree_running = true;
+static pthread_mutex_t atomic_tree_set_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t atomic_tree_prune_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t atomic_tree_set_cond = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t atomic_tree_prune_cond = PTHREAD_COND_INITIALIZER;
+static GNode *atomic_tree_root = NULL;
+
+static int
+tree_atomic_set (void *data)
+{
+    while (atomic_tree_running)
+    {
+        pthread_cond_wait (&atomic_tree_set_cond, &atomic_tree_set_lock);
+        //printf ("prune ");
+        CU_ASSERT (apteryx_set_tree (atomic_tree_root));
+        pthread_mutex_unlock (&atomic_tree_set_lock);
+    }
+    return 0;
+}
+
+static int
+tree_atomic_prune (void *data)
+{
+    uint64_t time = (int) (size_t) data;
+    while (atomic_tree_running)
+    {
+        pthread_cond_wait (&atomic_tree_prune_cond, &atomic_tree_prune_lock);
+        uint64_t wait = (time / 2) + (rand () & (time / 2));
+        //printf ("wait:%zd ", wait);
+        usleep (wait);
+        apteryx_prune (TEST_PATH"/interfaces/eth0");
+        pthread_mutex_unlock (&atomic_tree_prune_lock);
+    }
+    return 0;
+}
+
+void
+test_tree_atomic ()
+{
+    uint64_t start, time = 1;
+    char *name, *value;
+    int count = 1000;
+    uint64_t iterations;
+    pthread_t prune_thread, set_thread;
+    GList *paths;
+    int i;
+
+    /* Generate test tree */
+    CU_ASSERT ((name = strdup (TEST_PATH"/interfaces/eth0")) != NULL);
+    CU_ASSERT ((atomic_tree_root = APTERYX_NODE (NULL, name)) != NULL);
+    for (i=0; i<count; i++)
+    {
+        name = value = NULL;
+        CU_ASSERT (asprintf (&name, "%d", i));
+        CU_ASSERT (asprintf (&value, "%d", i));
+        APTERYX_LEAF (atomic_tree_root, name, value);
+    }
+
+    /* Calculate time to set tree */
+    start = get_time_us ();
+    CU_ASSERT (apteryx_set_tree (atomic_tree_root));
+    time = (get_time_us () - start);
+    //printf ("\nTime: %"PRIu64"us ...\n", time);
+    apteryx_prune (TEST_PATH"/interfaces/eth0");
+    iterations = 1000000 / time;
+    if (iterations < 50)
+        iterations = 50;
+    if (iterations > 200)
+        iterations = 200;
+    //printf ("Iterations: %"PRIu64"\n", iterations);
+
+    /* Start the set/prune threads */
+    atomic_tree_running = true;
+    pthread_create (&set_thread, NULL, (void *) &tree_atomic_set, (void *) (size_t) time);
+    pthread_create (&prune_thread, NULL, (void *) &tree_atomic_prune, (void *) (size_t) time);
+    usleep (TEST_SLEEP_TIMEOUT);
+
+    for (i=0; i<iterations;i++)
+    {
+        pthread_cond_signal (&atomic_tree_prune_cond);
+        pthread_cond_signal (&atomic_tree_set_cond);
+        usleep (100);
+        pthread_mutex_lock (&atomic_tree_prune_lock);
+        pthread_mutex_lock (&atomic_tree_set_lock);
+        usleep (2 * time);
+        paths = apteryx_search (TEST_PATH"/interfaces/eth0/");
+        CU_ASSERT (g_list_length (paths) == 0 || g_list_length (paths) == count);
+        //printf("len:%d\n", g_list_length (paths));
+        g_list_free_full (paths, free);
+        apteryx_prune (TEST_PATH"/interfaces/eth0");
+        pthread_mutex_unlock (&atomic_tree_prune_lock);
+        pthread_mutex_unlock (&atomic_tree_set_lock);
+    }
+
+    atomic_tree_running = false;
+    pthread_cond_signal (&atomic_tree_set_cond);
+    pthread_cond_signal (&atomic_tree_prune_cond);
+    pthread_join (set_thread, NULL);
+    pthread_join (prune_thread, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    apteryx_prune (TEST_PATH"/interfaces/eth0");
+    apteryx_free_tree (atomic_tree_root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_100 (const char *path)
 {
@@ -3495,6 +3600,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     { "cas tree", test_cas_tree},
+    { "tree atomic", test_tree_atomic},
     CU_TEST_INFO_NULL,
 };
 
