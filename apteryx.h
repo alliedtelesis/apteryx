@@ -293,6 +293,19 @@ bool apteryx_cas_tree (GNode* root, uint64_t ts);
 GList *apteryx_search (const char *root);
 
 /**
+ * Search for all children that start with the root path.
+ * Does not go further than one level down.
+ * example:
+    "/entity/zones/private/description" = "lan"
+    "/entity/zones/private/networks/description" = "engineers"
+    "/entity/zones/public/description" = "wan"
+ *  apteryx_search_simple ("/entity/zones/") = "/entity/zones/private\n/entity/zones/public"
+ * @param root root path to search on
+ * @return newline separated full paths
+ */
+char *apteryx_search_simple (const char *root);
+
+/**
  * Callback function to be called when a
  * path is searched.
  * @param root root of the searched path

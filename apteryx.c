@@ -1044,7 +1044,7 @@ apteryx_search (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SEARCH: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("SEARCH: Failed to connect to server: %s\n", strerror (errno));
         free (url);
         return false;
     }
@@ -1062,6 +1062,39 @@ apteryx_search (const char *path)
 
     /* Result */
     return data.paths;
+}
+
+char *
+apteryx_search_simple (const char *path)
+{
+    GList *paths = apteryx_search (path);
+    char *tmp = NULL, *result = NULL;
+    GList *iter;
+
+    if (!paths)
+    {
+        return NULL;
+    }
+    for (iter = g_list_first (paths); iter; iter = g_list_next (iter))
+    {
+        if (result)
+        {
+            ASSERT (asprintf (&tmp, "%s\n%s", result, (char *) iter->data) > 0,
+                    tmp = NULL, "SEARCH: Memory allocation failure\n");
+        }
+        else
+        {
+            ASSERT (asprintf (&tmp, "%s", (char *) iter->data) > 0, tmp = NULL,
+                    tmp = NULL, "SEARCH: Memory allocation failure\n");
+        }
+        if (result)
+            free (result);
+        result = tmp;
+        tmp = NULL;
+    }
+    g_list_free_full (paths, free);
+
+    return result;
 }
 
 static bool
