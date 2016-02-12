@@ -1064,6 +1064,28 @@ apteryx_search (const char *path)
     return data.paths;
 }
 
+char *
+apteryx_search_simple(const char *path)
+{
+    GList *paths = apteryx_search(path);
+    char *tmp = NULL, *result = NULL;
+    GList *iter;
+    if (!paths)
+    {
+        return NULL;
+    }
+    for (iter = g_list_first(paths); iter; iter = g_list_next(iter))
+    {
+        if (result)
+            assert(asprintf(&tmp, "%s\n%s", result, (char*)iter->data) > 0);
+        else
+            assert(asprintf(&tmp, "%s", (char*)iter->data) > 0);
+        result = tmp;
+    }
+    g_list_free_full (paths, free);
+    return result;
+}
+
 static bool
 add_callback (const char *type, const char *path, void *cb)
 {
