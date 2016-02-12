@@ -773,28 +773,15 @@ exit:
     /* Return result and notify watchers */
     if (validation_result >= 0 && result.result == 0)
     {
-        /* Process all /apteryx paths before closure to ensure local watchers are processed */
+        /* Notify watchers */
         for (i=0; i<set->n_sets; i++)
         {
-            if (strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) == 0)
-                notify_watchers (set->sets[i]->path);
-        }
-
-        /* Return result */
-        closure (&result, closure_data);
-
-        /* Notify watchers for each Path Value in the set*/
-        for (i=0; i<set->n_sets; i++)
-        {
-            if (strncmp (set->sets[i]->path, APTERYX_PATH, strlen (APTERYX_PATH)) != 0)
-                notify_watchers (set->sets[i]->path);
+            notify_watchers (set->sets[i]->path);
         }
     }
-    else
-    {
-        /* Return result */
-        closure (&result, closure_data);
-    }
+
+    /* Return result */
+    closure (&result, closure_data);
 
     /* Release validation lock - this is a sensitive value */
     while (validation_lock)
