@@ -1,0 +1,342 @@
+#!/usr/bin/python
+import keyword
+import sys
+import getopt
+
+class Entry(object):
+
+    def __init__(self, parent, key, default=None, values={}, pattern=None, help=None):
+        if not parent:
+            raise ValueError("Entries at the root are not allowed")
+        self.parent = parent
+        self.indent = (parent.indent + 2) * ' '
+        self.default = default
+        self.values = values
+        self.path = key
+        self.key = key.replace('-', '_')
+        if self.key in keyword.kwlist:
+            self.key = self.key + '_'
+        self.pattern = pattern
+        self.help = help
+        parent.children[key] = self
+        for v in values:
+            parent.defines[(self.key + '_' + v).upper().replace('-','_')] = values[v]
+        if help:
+            self.parent.help.append('#  {}:'.format(self.key))
+            self.parent.help.append('#    {}'.format(help))
+
+    def build_lines(self):
+        lines = []
+        lines.append(self.indent + '@property')
+        lines.append(self.indent + 'def {}(self):'.format(self.key))
+        lines.append(self.indent + '  {} = apteryx_get(self.get_path() + "/{}")'.format(self.key, self.path))
+
+        # add default clause
+        if self.default:
+            lines.append(self.indent + '  if {} is None:'.format(self.key))
+            lines.append(
+                self.indent + '    {} = "{}"'.format(self.key, self.default))
+
+        # add any values mapping
+        for v in self.values:
+            lines.append(self.indent + '  if {} == "{}":'.format(self.key, self.values[v]))
+            lines.append(
+                self.indent + '    return "{}"'.format(v))
+
+        lines.append(self.indent + '  return {}'.format(self.key))
+        lines.append(self.indent)
+        return lines
+
+
+class RWEntry(Entry):
+
+    def build_lines(self):
+        lines = Entry.build_lines(self)
+        lines.append(self.indent + '@{}.setter'.format(self.key))
+        lines.append(self.indent + 'def {}(self, v):'.format(self.key))
+        # add any values mapping
+        for v in self.values:
+            lines.append(self.indent + '  if v == "{}":'.format(v))
+            lines.append(self.indent + '    v = "{}"'.format(self.values[v]))
+        if self.pattern:
+            lines.append(
+                self.indent + '  if not re.findall("{}", v):'.format(self.pattern))
+            lines.append(
+                self.indent + '    raise ValueError("%s/{} may not be set to %s" % (self.get_path(), v))'.format(self.path))
+        lines.append(
+            self.indent + '  apteryx_set(self.get_path() + "/{}", str(v))'.format(self.path))
+        lines.append(self.indent)
+        lines.append(self.indent + '@{}.deleter'.format(self.key))
+        lines.append(self.indent + 'def {}(self):'.format(self.key))
+        lines.append(
+            self.indent + '  apteryx_set(self.get_path() + "/{}", None)'.format(self.path))
+        lines.append(self.indent)
+        return lines
+
+
+class ROEntry(Entry):
+
+    def build_lines(self):
+        lines = Entry.build_lines(self)
+        lines.append(self.indent + '@{}.setter'.format(self.key))
+        lines.append(self.indent + 'def {}(self, v):'.format(self.key))
+        lines.append(
+            self.indent + '  raise ValueError("%s/{} is read only" % self.get_path())'.format(self.key))
+        lines.append(self.indent)
+        lines.append(self.indent + '@{}.deleter'.format(self.key))
+        lines.append(self.indent + 'def {}(self):'.format(self.key))
+        lines.append(
+            self.indent + '  raise ValueError("%s/{} is read only" % self.get_path())'.format(self.key))
+        lines.append(self.indent)
+        return lines
+
+
+class Node(object):
+
+    def __init__(self, parent=None, key='/', help=None):
+        self.parent = parent
+        if parent:
+            self.name = key.capitalize().replace('-', '_')
+            if isinstance(parent, List):
+                self.fullname = parent.fullname + '.' + parent.name + '_Entry.'+ self.name
+            else:
+                self.fullname = parent.fullname + '.' + self.name
+            self.indent = parent.indent + 2
+            self.key =  key
+            parent.children[key] = self
+        else:
+            self.name = "ApteryxRoot"
+            self.fullname = self.name
+            self.indent = 0
+            self.path = key
+            self.key = ''
+        self.children = {}
+        self.defines = {}
+        self.help = []
+        if help:
+            self.help.append('#  {}'.format(help))
+
+    def build_lines(self):
+        lines = []
+        for h in self.help:
+            lines.append((' ' * self.indent) + h)
+        lines.append((' ' * self.indent) +
+                     'class {}(object):'.format(self.name))
+        for d in self.defines:
+            lines.append((' ' * self.indent) +
+                     '  {} = "{}"'.format(d, self.defines[d]))
+        for c in self.children.itervalues():
+            lines += c.build_lines()
+
+        lines.append((' ' * self.indent) + '  def get_path(self):')
+        lines.append((' ' * self.indent) + '    if self._parent:')
+        lines.append((' ' * self.indent) + '      return self._parent.get_path() + "/" + self._key')
+        lines.append((' ' * self.indent) + '    else:')
+        lines.append((' ' * self.indent) + '      return "%s{}" % self._prefix'.format(self.key))
+
+        lines.append((' ' * self.indent) + '  def __init__(self, parent=None, prefix=""):')
+        lines.append((' ' * self.indent) + '    self._parent = parent')
+        lines.append((' ' * self.indent) + '    self._prefix = prefix')
+        lines.append((' ' * self.indent) + '    self._key = "{}"'.format(self.key))
+        for c in self.children:
+            if isinstance(self.children[c], Node):
+                handle = c.replace('-','_')
+                if handle in keyword.kwlist:
+                    handle = handle + '_'
+                lines.append((' ' * self.indent) + '    self.{} = {}(self)'.format(handle, self.children[c].fullname))
+        lines.append((' ' * self.indent) + '  def destroy(self):')
+        lines.append((' ' * self.indent) + '    apteryx_prune(self.get_path())')
+        lines.append((' ' * self.indent))
+        return lines
+
+    def __repr__(self):
+        return '\n'.join(self.build_lines())
+
+
+class List(Node):
+
+    def __init__(self, parent=None, key='/', help=None):
+        self.parent = parent
+        self.name = key.capitalize().replace('-', '_')
+        if isinstance(parent, List):
+            self.fullname = parent.fullname + '.' + parent.name + '_Entry.'+ self.name
+        else:
+            self.fullname = parent.fullname + '.' + self.name
+        # bit of a hack - properties need to be a layer down to account for the
+        # List entry class
+        self.indent = parent.indent + 4
+        self.key = key
+        parent.children[key] = self
+        self.children = {}
+        self.defines = {}
+        self.help = []
+        if help:
+            self.help.append("#  ".format(help))
+
+    def build_lines(self):
+        lines = []
+        for h in self.help:
+            lines.append((' ' * (self.indent-2)) + h)
+        lines.append((' ' * (self.indent-2)) +
+                     'class {}(dict):'.format(self.name))
+        for d in self.defines:
+            lines.append((' ' * (self.indent-2)) +
+                     '  {} = "{}"'.format(d, self.defines[d]))
+        lines.append((' ' * self.indent) + 'def __init__(self, parent):')
+        lines.append((' ' * self.indent) + '  self._parent = parent')
+        lines.append((' ' * self.indent) + '  self._key = "{}"'.format(self.key))
+        lines.append((' ' * self.indent) + 'def get_path(self):')
+        lines.append((' ' * self.indent) + '  return self._parent.get_path() + "/%s" % self._key')
+        lines.append((' ' * self.indent) + 'class {}_Entry(object):'.format(self.name))
+        for c in self.children.itervalues():
+            lines += c.build_lines()
+        lines.append((' ' * self.indent) + '  def get_path(self):')
+        lines.append((' ' * self.indent) + '    return "%s/%s" % (self._parent.get_path(), self._key)')
+        lines.append((' ' * self.indent) + '  def __init__(self, parent, name):')
+        lines.append((' ' * self.indent) + '    self._parent = parent')
+        lines.append((' ' * self.indent) + '    self._key = name'.format(self.fullname.replace('.','_')))
+        for c in self.children:
+            if isinstance(self.children[c], Node):
+                lines.append((' ' * self.indent) + '    self.{} = {}(self)'.format(c.replace('-','_'),
+                             self.children[c].fullname))
+        lines.append((' ' * self.indent) + '  def destroy(self):')
+        lines.append((' ' * self.indent) + '    apteryx_prune(self._path)')
+        lines.append((' ' * self.indent))
+        lines.append((' ' * self.indent))
+        lines.append((' ' * self.indent) + 'def __getitem__(self, key):')
+        lines.append((' ' * self.indent) + '  if not self.has_key(key):')
+        lines.append((' ' * self.indent) + '    dict.__setitem__(self, key, {}.{}_Entry(self, key))'.format(self.fullname, self.name))
+        lines.append((' ' * self.indent) + '  return dict.__getitem__(self, key)')
+        lines.append((' ' * self.indent) + 'def __iter__(self):')
+        lines.append((' ' * self.indent) + '  paths = apteryx_search("%s/" % self.get_path())')
+        lines.append((' ' * self.indent) + '  if not paths:')
+        lines.append((' ' * self.indent) + '    return iter([])')
+        lines.append((' ' * self.indent) + '  else:')
+        lines.append((' ' * self.indent) + '    keys = []')
+        lines.append((' ' * self.indent) + '    for p in paths.splitlines():')
+        lines.append((' ' * self.indent) + '      keys.append(p[p.rfind("/")+1:])')
+        lines.append((' ' * self.indent) + '    return iter(keys)')
+        lines.append((' ' * self.indent) + 'def __repr__(self):')
+        lines.append((' ' * self.indent) + '  repr = "{"')
+        lines.append((' ' * self.indent) + '  for r in self:')
+        lines.append((' ' * self.indent) + '    repr += "\'%s\': %s, " % (r, str(self[r]))')
+        lines.append((' ' * self.indent) + '  return repr + "}"')
+        return lines
+    
+class SimpleList(Node):
+    def __init__(self, parent, key, help=None):
+        self.parent = parent
+        self.name = key.capitalize().replace('-', '_')
+        if isinstance(parent, List):
+            self.fullname = parent.fullname + '.' + parent.name + '_Entry.'+ self.name
+        else:
+            self.fullname = parent.fullname + '.' + self.name
+        self.indent = parent.indent + 4
+        self.key = key
+        parent.children[key] = self
+        self.children = {}
+        self.defines = {}
+        self.help = []
+        if help:
+            self.help.append("#  ".format(help))
+            
+    def build_lines(self):
+        lines = []
+        for h in self.help:
+            lines.append((' ' * (self.indent-2)) + h)
+        lines.append((' ' * (self.indent-2)) + 'class {}(dict):'.format(self.name))
+        for d in self.defines:
+            lines.append((' ' * (self.indent-2)) +'  {} = "{}"'.format(d, self.defines[d]))
+        lines.append((' ' * self.indent) + 'def __init__(self, parent):')
+        lines.append((' ' * self.indent) + '  self._parent = parent')
+        lines.append((' ' * self.indent) + '  self._key = "{}"'.format(self.key))
+        lines.append((' ' * self.indent) + 'def get_path(self):')
+        lines.append((' ' * self.indent) + '  return self._parent.get_path() + "/%s" % self._key')
+        
+        lines.append((' ' * self.indent) + 'def __getitem__(self, key):')
+        lines.append((' ' * self.indent) + '  return apteryx_get(self.get_path() + "/%s" % key)')
+        
+        lines.append((' ' * self.indent) + 'def __iter__(self):')
+        lines.append((' ' * self.indent) + '  paths = apteryx_search("%s/" % self.get_path())')
+        lines.append((' ' * self.indent) + '  if not paths:')
+        lines.append((' ' * self.indent) + '    return iter([])')
+        lines.append((' ' * self.indent) + '  else:')
+        lines.append((' ' * self.indent) + '    keys = []')
+        lines.append((' ' * self.indent) + '    for p in paths.splitlines():')
+        lines.append((' ' * self.indent) + '      keys.append(p[p.rfind("/")+1:])')
+        lines.append((' ' * self.indent) + '    return iter(keys)')
+        
+        lines.append((' ' * self.indent) + 'def __setitem__(self, key, value):')
+        lines.append((' ' * self.indent) + '    apteryx_set(self.get_path() + "/%s" % key, value)')
+        
+        lines.append((' ' * self.indent) + 'def __repr__(self):')
+        lines.append((' ' * self.indent) + '  repr = "{"')
+        lines.append((' ' * self.indent) + '  for r in self:')
+        lines.append((' ' * self.indent) + '    repr += "\'%s\': %s, " % (r, str(self[r]))')
+        lines.append((' ' * self.indent) + '  return repr + "}"')
+        
+        return lines
+
+def get_values(tree):
+    values = {}
+    for c in tree.getchildren():
+        values[c.get('name')] = c.get('value')
+    return values
+
+
+def create_entry(tree, existing):
+    if tree.get('mode') == 'rw':
+        RWEntry(existing, tree.get('name'), tree.get('default'),
+                pattern=tree.get('pattern'), values=get_values(tree), help=tree.get('help'))
+    else:
+        ROEntry(existing, tree.get('name'), tree.get('default'),
+                pattern=tree.get('pattern'), values=get_values(tree), help=tree.get('help'))
+    return
+
+
+def node_parse(tree, existing):
+    new_node = None
+    if 'NODE' in tree.tag:
+        children = tree.getchildren()
+        for c in children:
+            if 'VALUE' in c.tag:
+                create_entry(tree, existing)
+                return
+            if c.get('name') == '*':
+#                 print "# making %s a list under %s (%d children)" % (tree.get('name'), existing.fullname, len(c.getchildren()))
+                if len(c.getchildren()) > 0:
+                    new_node = List(existing, tree.get('name'), help=tree.get('help'))
+                else:
+                    new_node = SimpleList(existing, tree.get('name'), help=tree.get('help'))
+        if new_node is None:
+            if not tree.getchildren():
+                create_entry(tree, existing)
+                return
+            else:
+                new_node = Node(existing, tree.get('name'), help=tree.get('help'))
+
+        if new_node:
+            for c in tree.getchildren():
+                if isinstance(new_node, List):
+                    for c2 in c.getchildren():
+                        node_parse(c2, new_node)
+                else:
+                    node_parse(c, new_node)
+
+def parse_xml_to_python(filename):
+    apteryx = Node(key='/')
+    import xml.etree.ElementTree as ET
+    tree = ET.parse(filename)
+    root = tree.getroot()
+    
+    for c in root.getchildren():
+        node_parse(c, apteryx)
+
+    output = """import re
+from apteryx import *
+{}
+    """.format(apteryx)
+    return output
+
+if __name__ == "__main__":
+   print parse_xml_to_python(sys.argv[1])
