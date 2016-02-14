@@ -372,7 +372,7 @@ rpc_shutdown (rpc_instance rpc)
         {
             ERROR ("RPC: Worker threads not shutting down\n");
         }
-        g_usleep (G_USEC_PER_SEC / 10);
+        g_usleep (RPC_TIMEOUT_US / 10);
     }
     g_thread_pool_free (rpc->workers, FALSE, TRUE);
     rpc->workers = NULL;
