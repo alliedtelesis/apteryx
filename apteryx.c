@@ -1087,7 +1087,10 @@ apteryx_search_simple (const char *path)
             ASSERT (asprintf (&tmp, "%s", (char *) iter->data) > 0, tmp = NULL,
                     tmp = NULL, "SEARCH: Memory allocation failure\n");
         }
+        if (result)
+            free (result);
         result = tmp;
+        tmp = NULL;
     }
     g_list_free_full (paths, free);
 
