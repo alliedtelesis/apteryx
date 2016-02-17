@@ -7,6 +7,11 @@
 # TEST_WRAPPER="G_SLICE=always-malloc valgrind --leak-check=full" make test
 # TEST_WRAPPER="gdb" make test
 #
+
+ifneq ($(V),1)
+	Q=@
+endif
+
 DESTDIR?=./
 PREFIX?=/usr/
 CC:=$(CROSS_COMPILE)gcc
@@ -31,26 +36,26 @@ all: libapteryx.so apteryx apteryxd apteryx-sync
 
 libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Creating library "$@""
-	@$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
+	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
 %.o: %.c
 	@echo "Compiling "$<""
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
+	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
 %.pb-c.c : %.proto
-	@$(PROTOC_C) --c_out=. $<
+	$(Q)$(PROTOC_C) --c_out=. $<
 
 apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
+	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
 apteryx: apteryxc.c database.c callbacks.c test.c libapteryx.so
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
+	$(Q)$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
 
 apteryx-sync: syncer.c libapteryx.so
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
+	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
@@ -67,7 +72,7 @@ $(eval $(TEST_ARGS):;@:)
 endif
 test: apteryxd apteryx
 	@echo "Running unit test: $<"
-	@$(call apteryxd,apteryx -u$(TEST_ARGS))
+	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
 
 install: all
 	@install -d $(DESTDIR)/$(PREFIX)/lib
