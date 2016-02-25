@@ -737,6 +737,7 @@ apteryx__set (Apteryx__Server_Service *service,
             DEBUG ("SET: %s = %s proxied\n", path, value);
             /* Mark the set as processed */
             notify_watchers (set->sets[i]->path);
+            free (set->sets[i]->path);
             set->sets[i]->path = NULL;
         }
         else if (proxy_result < 0)
