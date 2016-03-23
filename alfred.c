@@ -372,6 +372,61 @@ load_config_files (alfred_instance alfred, const char *path)
     return res;
 }
 
+typedef struct delayed_execute_s
+{
+    char *script;
+} delayed_execute;
+
+GList *delayed_work = NULL;
+pthread_mutex_t delayed_work_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static gboolean
+delayed_work_process (gpointer script)
+{
+    pthread_mutex_lock (&delayed_work_lock);
+
+    /* Remove the script to be run */
+    delayed_work = g_list_remove (delayed_work, script);
+    pthread_mutex_unlock (&delayed_work_lock);
+
+    /* Execute the script */
+    pthread_mutex_lock (&alfred_inst->ls_lock);
+    alfred_exec (alfred_inst->ls, script);
+    pthread_mutex_unlock (&alfred_inst->ls_lock);
+
+    return true;
+}
+
+static void
+delayed_work_add (int delay, const char *script)
+{
+    bool found = false;
+    delayed_execute *de = g_malloc0 (sizeof (delayed_execute));
+
+    de->script = g_strdup (script);
+    pthread_mutex_lock (&delayed_work_lock);
+    for (GList * iter = delayed_work; iter; iter = g_list_next (iter))
+    {
+        delayed_execute *de_list = (delayed_execute *) script;
+        if (strcmp (de_list->script, de->script) == 0)
+        {
+            found = true;
+            break;
+        }
+    }
+    if (found)
+    {
+        g_free (de->script);
+        g_free (de);
+    }
+    else
+    {
+        delayed_work = g_list_append (delayed_work, de);
+        g_timeout_add (delay * SECONDS_TO_MILLI, delayed_work_process, &script);
+    }
+    pthread_mutex_unlock (&delayed_work_lock);
+}
+
 static int
 rate_limit (lua_State *ls)
 {
@@ -397,7 +452,7 @@ rate_limit (lua_State *ls)
         return 0;
     }
 
-    // TO DO: Implement the delayed work
+    delayed_work_add (lua_tonumber (ls, 1), lua_tostring (ls, 2));
 
     return 0;
 }
