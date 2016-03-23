@@ -97,10 +97,12 @@ lua_apteryx_get (lua_State *L)
     }
     value = apteryx_get (lua_tostring (L, 1));
     if (value)
+    {
         lua_pushstring (L, value);
-    else
-        lua_pushboolean (L, false);
-    return 1;
+        free (value);
+        return 1;
+    }
+    return 0;
 }
 
 static int
@@ -115,10 +117,11 @@ lua_apteryx_get_int (lua_State *L)
     }
     res = apteryx_get_int (lua_tostring (L, 1), NULL);
     if (res != -1)
+    {
         lua_pushnumber (L, res);
-    else
-        lua_pushboolean (L, false);
-    return 1;
+        return 1;
+    }
+    return 0;
 }
 
 static int
