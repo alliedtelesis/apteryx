@@ -29,16 +29,16 @@
 #include <pthread.h>
 #include <time.h>
 #include <glib.h>
+#include <glib-unix.h>
 #include <lua.h>
 
 /* Change the following to alfred*/
 #define APTERYX_ALFRED_PID "/var/run/apteryx-alfred.pid"
 #define APTERYX_CONFIG_DIR "/etc/apteryx/schema/"
+#define SECONDS_TO_MILLI 1000
 
 /* Debug */
 bool debug = false;
-/* Run while true */
-static bool running = true;
 
 /* Alfred object */
 typedef struct alfred_t
@@ -371,6 +371,94 @@ load_config_files (alfred_instance alfred, const char *path)
     return res;
 }
 
+typedef struct delayed_execute_s
+{
+    char *script;
+} delayed_execute;
+
+GList *delayed_work = NULL;
+pthread_mutex_t delayed_work_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static gboolean
+delayed_work_process (gpointer arg1)
+{
+    delayed_execute *de = (delayed_execute *) arg1;
+    pthread_mutex_lock (&delayed_work_lock);
+
+    /* Remove the script to be run */
+    delayed_work = g_list_remove (delayed_work, de);
+    pthread_mutex_unlock (&delayed_work_lock);
+
+    /* Execute the script */
+    pthread_mutex_lock (&alfred_inst->ls_lock);
+    alfred_exec (alfred_inst->ls, de->script);
+    pthread_mutex_unlock (&alfred_inst->ls_lock);
+    g_free (de->script);
+    g_free (de);
+    return false;
+}
+
+static void
+delayed_work_add (int delay, const char *script)
+{
+    bool found = false;
+    delayed_execute *de = g_malloc0 (sizeof (delayed_execute));
+    de->script = g_strdup (script);
+
+    pthread_mutex_lock (&delayed_work_lock);
+    for (GList * iter = delayed_work; iter; iter = g_list_next (iter))
+    {
+        delayed_execute *de_list = (delayed_execute *) iter->data;
+        if (strcmp (de_list->script, de->script) == 0)
+        {
+            found = true;
+            break;
+        }
+    }
+    if (found)
+    {
+        g_free (de->script);
+        g_free (de);
+    }
+    else
+    {
+        delayed_work = g_list_append (delayed_work, de);
+        g_timeout_add (delay * SECONDS_TO_MILLI, delayed_work_process, (gpointer) de);
+    }
+    pthread_mutex_unlock (&delayed_work_lock);
+}
+
+
+static int
+rate_limit (lua_State *ls)
+{
+    bool failure = false;
+    if (lua_gettop (ls) != 2)
+    {
+        ERROR ("Alfred.rate_limit() takes 2 arguements\n");
+        failure = true;
+    }
+    if (!lua_isnumber (ls, 1))
+    {
+        ERROR ("First argument to Alfred.rate_limit() must be a number\n");
+        failure = true;
+    }
+    if (!lua_isstring (ls, 2))
+    {
+        ERROR ("Second argument to Alfred.rate_limit() must be a string\n");
+        failure = true;
+    }
+
+    if (failure)
+    {
+        return 0;
+    }
+
+    delayed_work_add (lua_tonumber (ls, 1), lua_tostring (ls, 2));
+
+    return 0;
+}
+
 alfred_instance
 alfred_init (const char *path)
 {
@@ -407,6 +495,12 @@ alfred_init (const char *path)
     {
         ERROR ("Lua: Failed to require('api')\n");
     }
+
+    /* Add the rate_limit function to a Lua table so it can be called using Lua */
+    lua_newtable (alfred->ls);
+    lua_pushcfunction (alfred->ls, rate_limit);
+    lua_setfield (alfred->ls, -2, "rate_limit");
+    lua_setglobal (alfred->ls, "Alfred");
 
     pthread_mutex_init (&alfred->ls_lock, NULL);
 
@@ -452,10 +546,12 @@ alfred_shutdown (alfred_instance alfred)
     return;
 }
 
-void
-termination_handler (void)
+static gboolean
+termination_handler (gpointer arg1)
 {
-    running = false;
+    GMainLoop *loop = (GMainLoop *) arg1;
+    g_main_loop_quit (loop);
+    return false;
 }
 
 void
@@ -479,6 +575,7 @@ main (int argc, char *argv[])
     int i = 0;
     bool background = false;
     FILE *fp = NULL;
+    GMainLoop *loop = NULL;
 
     /* Parse options */
     while ((i = getopt (argc, argv, "hdbp:c:m")) != -1)
@@ -509,11 +606,6 @@ main (int argc, char *argv[])
         }
     }
 
-    /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
-    signal (SIGTERM, (__sighandler_t) termination_handler);
-    signal (SIGINT, (__sighandler_t) termination_handler);
-    signal (SIGPIPE, SIG_IGN);
-
     /* Daemonize */
     if (background && fork () != 0)
     {
@@ -542,13 +634,20 @@ main (int argc, char *argv[])
         fclose (fp);
     }
 
+    loop = g_main_loop_new (NULL, true);
+
+    /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
+    g_unix_signal_add (SIGINT, termination_handler, loop);
+    g_unix_signal_add (SIGTERM, termination_handler, loop);
+    signal (SIGPIPE, SIG_IGN);
+
     /* Loop while not terminated */
-    while (running)
-    {
-        sleep (1);
-    }
+    g_main_loop_run (loop);
 
   exit:
+    /* Free the glib main loop */
+    g_main_loop_unref (loop);
+
     /* Clean alfreds */
     if (alfred_inst)
         alfred_shutdown (alfred_inst);
