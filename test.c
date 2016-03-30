@@ -2228,6 +2228,26 @@ test_tree_nodes_wide ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_tree_find_children ()
+{
+    GNode* root;
+    GNode* node;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
+    APTERYX_LEAF (root, "state", "up");
+    APTERYX_LEAF (root, "speed", "1000");
+    APTERYX_LEAF (root, "duplex", "full");
+    CU_ASSERT ((node = apteryx_find_child (root, "duplex")) != NULL);
+    CU_ASSERT ((node = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT ((node = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "state"), "up") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "speed"), "1000") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "duplex"), "full") == 0);
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int
 test_tree_sort (const char *a, const char *b)
 {
@@ -3664,6 +3684,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes", test_tree_nodes },
     { "tree nodes deep", test_tree_nodes_deep },
     { "tree nodes wide", test_tree_nodes_wide },
+    { "tree find children", test_tree_find_children },
     { "tree sort children", test_tree_sort_children },
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },

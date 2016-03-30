@@ -685,6 +685,21 @@ apteryx_get_int (const char *path, const char *key)
     return value;
 }
 
+GNode *
+apteryx_find_child (GNode *root, char *name)
+{
+    GNode *node;
+
+    for (node = g_node_first_child (root); node; node = node->next)
+    {
+        if (strcmp (APTERYX_NAME (node), name) == 0)
+        {
+            return node;
+        }
+    }
+    return NULL;
+}
+
 static inline gboolean
 _node_free (GNode *node, gpointer data)
 {
