@@ -2228,6 +2228,48 @@ test_tree_nodes_wide ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static int
+test_tree_sort (const char *a, const char *b)
+{
+    unsigned int id1 = atoi (a);
+    unsigned int id2 = atoi (b);
+    return id1 - id2;
+}
+
+static void
+test_tree_check_sorted (GNode *node, gpointer data)
+{
+    unsigned int *max = (unsigned int *) data;
+    unsigned int name = atoi (APTERYX_NAME (node));
+    CU_ASSERT (*max <= name);
+    *max = name;
+}
+
+void
+test_tree_sort_children ()
+{
+    GNode *root;
+    char *name, *value;
+    unsigned int i;
+
+    CU_ASSERT ((name = strdup (TEST_PATH"/root")) != NULL);
+    CU_ASSERT ((root = APTERYX_NODE (NULL, name)) != NULL);
+    for (i=0; i<1024; i++)
+    {
+        name = value = NULL;
+        CU_ASSERT (asprintf (&name, "%d", (unsigned int) rand ()));
+        CU_ASSERT (asprintf (&value, "%d", i));
+        APTERYX_LEAF (root, name, value);
+    }
+    CU_ASSERT (g_node_n_children (root) == 1024);
+    apteryx_sort_children (root, test_tree_sort);
+    i = 0;
+    g_node_children_foreach (root, G_TRAVERSE_ALL,
+            test_tree_check_sorted, (gpointer) &i);
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_tree_docs ()
 {
@@ -3622,6 +3664,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes", test_tree_nodes },
     { "tree nodes deep", test_tree_nodes_deep },
     { "tree nodes wide", test_tree_nodes_wide },
+    { "tree sort children", test_tree_sort_children },
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },
     { "get tree single node", test_get_tree_single_node },
