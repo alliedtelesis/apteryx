@@ -249,6 +249,10 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
     (g_node_first_child (n) && G_NODE_IS_LEAF (g_node_first_child (n)))
 #define APTERYX_VALUE(n) \
     ((char*)g_node_first_child (n)->data)
+#define APTERYX_CHILD_VALUE(n,k) \
+    APTERYX_VALUE(apteryx_find_child (n,k))
+/** Find the child of the node with the specified name */
+GNode *apteryx_find_child (GNode *root, char *name);
 /** Free an N-ary tree of nodes when the data need freeing (e.g. from apteryx_get_tree) */
 void apteryx_free_tree (GNode* root);
 /** Sort the children of a node using the supplied compare function */
