@@ -702,6 +702,27 @@ apteryx_free_tree (GNode* root)
     }
 }
 
+void
+apteryx_sort_children (GNode *node, int (*cmp) (const char *a, const char *b))
+{
+    GNode *curr = node ? node->children : NULL;
+    while (curr && curr->next)
+    {
+        GNode *next = curr->next;
+        while (next)
+        {
+            if (cmp (curr->data, next->data) > 0)
+            {
+                void *tmp = next->data;
+                next->data = curr->data;
+                curr->data = tmp;
+            }
+            next = next->next;
+        }
+        curr = curr->next;
+    }
+}
+
 static char *
 _node_to_path (GNode *node, char **buf)
 {
