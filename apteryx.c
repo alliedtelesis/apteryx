@@ -771,7 +771,8 @@ merge_sort (GNode *head, int (*cmp) (const char *a, const char *b))
 void
 apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b))
 {
-    parent->children = merge_sort (parent->children, cmp);
+    if (parent)
+        parent->children = merge_sort (parent->children, cmp);
 }
 
 static char *
