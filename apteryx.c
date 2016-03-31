@@ -686,11 +686,11 @@ apteryx_get_int (const char *path, const char *key)
 }
 
 GNode *
-apteryx_find_child (GNode *root, char *name)
+apteryx_find_child (GNode *parent, char *name)
 {
     GNode *node;
 
-    for (node = g_node_first_child (root); node; node = node->next)
+    for (node = g_node_first_child (parent); node; node = node->next)
     {
         if (strcmp (APTERYX_NAME (node), name) == 0)
         {
@@ -717,25 +717,61 @@ apteryx_free_tree (GNode* root)
     }
 }
 
-void
-apteryx_sort_children (GNode *node, int (*cmp) (const char *a, const char *b))
+static GNode *
+merge (GNode *left, GNode *right, int (*cmp) (const char *a, const char *b))
 {
-    GNode *curr = node ? node->children : NULL;
-    while (curr && curr->next)
+    if (!left)
+        return right;
+    if (!right)
+        return left;
+    if (cmp (left->data, right->data) < 0)
     {
-        GNode *next = curr->next;
-        while (next)
-        {
-            if (cmp (curr->data, next->data) > 0)
-            {
-                void *tmp = next->data;
-                next->data = curr->data;
-                curr->data = tmp;
-            }
-            next = next->next;
-        }
-        curr = curr->next;
+        left->next = merge (left->next, right, cmp);
+        left->next->prev = left;
+        left->prev = NULL;
+        return left;
     }
+    else
+    {
+        right->next = merge (left, right->next, cmp );
+        right->next->prev = right;
+        right->prev = NULL;
+        return right;
+    }
+}
+
+static GNode *
+split (GNode *head)
+{
+    GNode *left, *right;
+    left = right = head;
+    while (right->next && right->next->next)
+    {
+        right = right->next->next;
+        left = left->next;
+    }
+    right = left->next;
+    left->next = NULL;
+    return right;
+}
+
+static GNode *
+merge_sort (GNode *head, int (*cmp) (const char *a, const char *b))
+{
+    GNode *left, *right;
+    if (!head || !head->next)
+        return head;
+    left = head;
+    right = split (left);
+    left = merge_sort (left, cmp);
+    right = merge_sort (right, cmp);
+    return merge (left, right, cmp);
+}
+
+void
+apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b))
+{
+    parent->children = merge_sort (parent->children, cmp);
 }
 
 static char *

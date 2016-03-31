@@ -2261,27 +2261,34 @@ test_tree_check_sorted (GNode *node, gpointer data)
 {
     unsigned int *max = (unsigned int *) data;
     unsigned int name = atoi (APTERYX_NAME (node));
-    CU_ASSERT (*max <= name);
-    *max = name;
+    unsigned int child = atoi (APTERYX_NAME (node->children));
+    unsigned int value = atoi (APTERYX_VALUE (node->children));
+    CU_ASSERT ((*max == 0 && node->prev == NULL) || node->prev->next == node);
+    CU_ASSERT (node->children->parent == node);
+    CU_ASSERT (node->children->children->parent == node->children);
+    CU_ASSERT (name == child);
+    CU_ASSERT (child == value);
+    CU_ASSERT (*max <= value);
+    *max = value;
 }
 
 void
 test_tree_sort_children ()
 {
     GNode *root;
-    char *name, *value;
+    int count = 1024;
+    char *name;
     unsigned int i;
 
     CU_ASSERT ((name = strdup (TEST_PATH"/root")) != NULL);
     CU_ASSERT ((root = APTERYX_NODE (NULL, name)) != NULL);
-    for (i=0; i<1024; i++)
+    for (i=0; i<count; i++)
     {
-        name = value = NULL;
+        name = NULL;
         CU_ASSERT (asprintf (&name, "%d", (unsigned int) rand ()));
-        CU_ASSERT (asprintf (&value, "%d", i));
-        APTERYX_LEAF (root, name, value);
+        APTERYX_LEAF (APTERYX_NODE (root, name), strdup (name), strdup (name));
     }
-    CU_ASSERT (g_node_n_children (root) == 1024);
+    CU_ASSERT (g_node_n_children (root) == count);
     apteryx_sort_children (root, test_tree_sort);
     i = 0;
     g_node_children_foreach (root, G_TRAVERSE_ALL,
@@ -3775,6 +3782,9 @@ run_unit_tests (const char *filter)
         return;
     assert (NULL != CU_get_registry ());
     assert (!CU_is_test_running ());
+
+    /* Make some random numbers */
+    srand (time (NULL));
 
     /* Add tests */
     CU_SuiteInfo *suite = &suites[0];
