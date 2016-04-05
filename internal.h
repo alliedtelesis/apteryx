@@ -156,6 +156,7 @@ cb_info_t * cb_find (GList **list, const char *guid);
 #define CB_MATCH_WILD       (1<<2)
 #define CB_MATCH_CHILD      (1<<3)
 #define CB_MATCH_WILD_PATH  (1<<4)
+#define CB_PATH_MATCH_PART  (1<<5)
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
 
