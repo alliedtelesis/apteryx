@@ -61,9 +61,9 @@ apteryx-sync: syncer.c libapteryx.so
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
 
-alfred: alfred.c libapteryx.so
+alfred: alfred.c callbacks.c libapteryx.so
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
+	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
