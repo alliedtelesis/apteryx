@@ -405,7 +405,7 @@ provide_get (const char *path)
 
     /* Retrieve a list of providers for this path */
     providers = cb_match (&provide_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
     if (!providers)
         return 0;
 

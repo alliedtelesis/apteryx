@@ -16,8 +16,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
+
 #include "common.h"
 #include "apteryx.h"
+#include "internal.h"
 #include <assert.h>
 #include <dirent.h>
 #include <libxml/parser.h>
@@ -40,26 +42,17 @@
 /* Debug */
 bool debug = false;
 
-/* Alfred object */
-typedef struct alfred_t
-{
-    /* Watched path */
-    char *path;
-    /* Script to action when the path changes */
-    char *script;
-    /* TODO */
-    bool leaf;
-} alfred_t;
-
 /* An Alfred instance. */
 struct alfred_instance_t
 {
-    /* Hash table of actions based on path */
-    GHashTable *actions;
+    /* List of watches based on path */
+    GList *watches;
     /* Lua state */
     lua_State *ls;
     /* Lock for Lua state */
     pthread_mutex_t ls_lock;
+    /* List of provides based on path */
+    GList *provides;
 } alfred_instance_t;
 typedef struct alfred_instance_t *alfred_instance;
 
@@ -109,91 +102,147 @@ alfred_exec (lua_State *ls, const char *script)
 }
 
 static bool
-node_changed (const char *path, const char *value)
+watch_node_changed (const char *path, const char *value)
 {
     char *_path = NULL;
-    alfred_t *alfred = NULL;
+    GList *matches = NULL;
+    GList *node = NULL;
+    GList *script = NULL;
+    GList *scripts = NULL;
     bool ret = false;
+    cb_info_t *cb = NULL;
 
     assert (path);
     assert (alfred_inst);
 
-    /* Find a matching action */
-    _path = g_strdup (path);
-    alfred = g_hash_table_lookup (alfred_inst->actions, _path);
-    while (alfred == NULL && strlen (_path) > 1)
-    {
-        *(strrchr (_path, '/')) = '\0';
-        alfred = g_hash_table_lookup (alfred_inst->actions, _path);
-    }
+    _path = g_strdup_printf ("%s", path);
+    matches = cb_match (&alfred_inst->watches, _path, CB_MATCH_EXACT |
+                        CB_PATH_MATCH_PART | CB_MATCH_WILD_PATH);
     g_free (_path);
-    if (alfred == NULL)
+    if (matches == NULL)
     {
-        ERROR ("ALFRED: No Alfred action for %s\n", path);
+        ERROR ("ALFRED: No Alfred watch for %s\n", path);
         return false;
     }
 
-    DEBUG ("ALFRED: %s = %s\n", path, value);
-
     pthread_mutex_lock (&alfred_inst->ls_lock);
+    for (node = g_list_first (matches); node != NULL; node = g_list_next (node))
+    {
+        cb = node->data;
+        scripts = (GList *) (long) cb->cb;
+        for (script = g_list_first (scripts); script != NULL; script = g_list_next (script))
+        {
+            ERROR ("Script: %s\n", (char *) script->data);
+            ret = alfred_exec (alfred_inst->ls, script->data);
+        }
+        cb_release (cb);
+    }
+    g_list_free (matches);
     lua_pushstring (alfred_inst->ls, path);
     lua_setglobal (alfred_inst->ls, "_path");
     lua_pushstring (alfred_inst->ls, value);
     lua_setglobal (alfred_inst->ls, "_value");
-    ret = alfred_exec (alfred_inst->ls, alfred->script);
+    pthread_mutex_unlock (&alfred_inst->ls_lock);
+    DEBUG ("ALFRED WATCH: %s = %s\n", path, value);
+
+    return ret;
+}
+
+char *
+provide_node_changed (const char *path)
+{
+    char *_path = NULL;
+    const char *const_value = NULL;
+    char *ret = NULL;
+    GList *matches = NULL;
+    GList *node = NULL;
+    char *script = NULL;
+    cb_info_t *cb = NULL;
+
+    _path = g_strdup (path);
+    matches = cb_match (&alfred_inst->provides, _path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
+    g_free (_path);
+
+    if (matches == NULL)
+    {
+        ERROR ("ALFRED: No Alfred provide for %s\n", path);
+        return NULL;
+    }
+
+    pthread_mutex_lock (&alfred_inst->ls_lock);
+    cb = matches->data;
+    script = (char *) (long) cb->cb;
+    if ((luaL_dostring (alfred_inst->ls, script)) != 0)
+    {
+        ERROR ("Lua: Failed to execute script\n");
+    }
+    for (node = g_list_first (matches); node != NULL; node = g_list_next (node))
+    {
+        cb = node->data;
+        cb_release (cb);
+    }
+    g_list_free (matches);
+    /* The return value of luaL_dostring is the top value of the stack */
+    const_value = lua_tostring (alfred_inst->ls, -1);
+    ret = g_strdup (const_value);
+    lua_pushstring (alfred_inst->ls, path);
+    lua_setglobal (alfred_inst->ls, "_path");
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     return ret;
 }
 
 static void
-alfred_register (gpointer key, gpointer value, gpointer user_data)
+alfred_register_watches (gpointer value, gpointer user_data)
 {
-    alfred_t *alfred = (alfred_t *) value;
+    cb_info_t *cb = (cb_info_t *) value;
     int install = GPOINTER_TO_INT (user_data);
-    char *path;
 
-    if (!alfred->leaf)
-        path = g_strdup_printf ("%s/*", alfred->path);
-    else
-        path = g_strdup (alfred->path);
-
-    if ((install && !apteryx_watch (path, node_changed)) ||
-        (!install && !apteryx_unwatch (path, node_changed)))
+    ERROR ("Alfred register PATH: %s\n", cb->path);
+    if ((install && !apteryx_watch (cb->path, watch_node_changed)) ||
+        (!install && !apteryx_unwatch (cb->path, watch_node_changed)))
     {
-        ERROR ("Failed to (un)register watch for path %s\n", alfred->path);
+        ERROR ("Failed to (un)register watch for path %s\n", cb->path);
     }
-
-    g_free (path);
 }
 
-static alfred_t *
-create_alfred (const char *path, const char *script, bool leaf)
+static void
+alfred_register_provide (gpointer value, gpointer user_data)
 {
-    alfred_t *alfred;
+    cb_info_t *cb = (cb_info_t *) value;
+    int install = GPOINTER_TO_INT (user_data);
 
-    alfred = g_malloc0 (sizeof (alfred_t));
-    if (!alfred)
+    if ((install && !apteryx_provide (cb->path, provide_node_changed)) ||
+        (!install && !apteryx_unprovide (cb->path, provide_node_changed)))
     {
-        ERROR ("XML: Failed to allocate memory for alfred\n");
-        return NULL;
+        ERROR ("Failed to (un)register provide for path %s\n", cb->path);
     }
-    alfred->path = g_strdup (path);
-    alfred->script = g_strdup (script);
-    alfred->leaf = leaf;
-    return alfred;
 }
 
 static bool
-destroy_alfred (gpointer key, gpointer value, gpointer rpc)
+destroy_watches (gpointer value, gpointer rpc)
 {
-    alfred_t *alfred = (alfred_t *) value;
+    cb_info_t *cb = (cb_info_t *) value;
+    GList *scripts = (GList *) (long) cb->cb;
+    DEBUG ("XML: Destroy watches for path %s\n", cb->path);
 
-    DEBUG ("XML: Destroy alfred for path %s\n", alfred->path);
+    g_list_free_full (scripts, g_free);
+    cb_release (cb);
 
-    /* Free the alfred */
-    g_free (alfred->path);
-    g_free (alfred->script);
-    g_free (alfred);
+    return true;
+}
+
+static bool
+destroy_provides (gpointer value, gpointer rpc)
+{
+
+    cb_info_t *cb = (cb_info_t *) value;
+    char *script = (char *) (long) cb->cb;
+    DEBUG ("XML: Destroy provides for path %s\n", cb->path);
+
+    ERROR ("path is: %s\n", cb->path);
+    ERROR ("script is: %s\n", script);
+    g_free (script);
+    cb_release (cb);
 
     return true;
 }
@@ -215,6 +264,10 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
     xmlChar *name = NULL;
     xmlChar *content = NULL;
     char *path = NULL;
+    char *tmp_content = NULL;
+    GList *matches = NULL;
+    GList *scripts = NULL;
+    cb_info_t *cb;
     bool res = true;
 
     assert (alfred);
@@ -238,15 +291,37 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
     else if (strcmp ((const char *) node->name, "WATCH") == 0)
     {
         content = xmlNodeGetContent (node);
-        alfred_t *act = create_alfred (parent, (char *) content, node_is_leaf (node->parent));
-        if (!act)
+        tmp_content = g_strdup ((char *) content);
+        /* If the node is a leaf or ends in a '*' don't add another '*' */
+        if (node_is_leaf (node->parent) || parent[strlen (parent) - 1] == '*')
         {
-            res = false;
-            goto exit;
+            path = g_strdup (parent);
         }
-        g_hash_table_insert (alfred->actions, act->path, act);
+        else
+        {
+            path = g_strdup_printf ("%s/*", parent);
+        }
 
-        DEBUG ("XML: %s: (%s) %s\n", node->name, act->path, act->script);
+        if (alfred->watches)
+        {
+            matches = cb_match (&alfred->watches, path, CB_MATCH_EXACT);
+        }
+        if (matches == NULL)
+        {
+            scripts = g_list_append (scripts, tmp_content);
+            cb = cb_create (&alfred->watches, "", (const char *) path, 0,
+                            (uint64_t) (long) scripts);
+        }
+        else
+        {
+            /* A watch already exists on that exact path */
+            cb = matches->data;
+            scripts = (GList *) (long) cb->cb;
+            scripts = g_list_append (scripts, tmp_content);
+            g_list_free (matches);
+        }
+        DEBUG ("XML: %s: (%s)\n", node->name, cb->path);
+        cb_release (cb);
     }
     else if (strcmp ((const char *) node->name, "SCRIPT") == 0)
     {
@@ -261,6 +336,15 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
             res = false;
             goto exit;
         }
+    }
+    else if (strcmp ((const char *) node->name, "PROVIDE") == 0)
+    {
+        content = xmlNodeGetContent (node);
+        tmp_content = g_strdup ((char *) content);
+        cb = cb_create (&alfred->provides, "", (const char *) parent, 0,
+                        (uint64_t) (long) tmp_content);
+        cb_release (cb);
+        DEBUG ("PROVIDE: %s, XML STR: %s\n", parent, content);
     }
 
     /* Process children */
@@ -371,6 +455,7 @@ load_config_files (alfred_instance alfred, const char *path)
     return res;
 }
 
+/* TO DO: Remove this struct */
 typedef struct delayed_execute_s
 {
     char *script;
@@ -428,7 +513,6 @@ delayed_work_add (int delay, const char *script)
     pthread_mutex_unlock (&delayed_work_lock);
 }
 
-
 static int
 rate_limit (lua_State *ls)
 {
@@ -474,14 +558,6 @@ alfred_init (const char *path)
         goto error;
     }
 
-    /* Create the hash table for alfreds */
-    alfred->actions = g_hash_table_new (g_str_hash, g_str_equal);
-    if (!alfred->actions)
-    {
-        ERROR ("ALFRED: Failed to allocate hash table\n");
-        goto error;
-    }
-
     /* Initialise the Lua state */
     alfred->ls = luaL_newstate ();
     if (!alfred->ls)
@@ -510,9 +586,11 @@ alfred_init (const char *path)
         goto error;
     }
 
-    /* Register actions */
-    g_hash_table_foreach (alfred->actions, (GHFunc) alfred_register, GINT_TO_POINTER (1));
+    /* Register watches */
+    g_list_foreach (alfred->watches, (GFunc) alfred_register_watches, GINT_TO_POINTER (1));
 
+    /* Register provides */
+    g_list_foreach (alfred->provides, (GFunc) alfred_register_provide, GINT_TO_POINTER (1));
     return alfred;
 
   error:
@@ -520,8 +598,10 @@ alfred_init (const char *path)
     {
         if (alfred->ls)
             lua_close (alfred->ls);
-        if (alfred->actions)
-            g_hash_table_destroy (alfred->actions);
+        if (alfred->watches)
+            g_list_free (alfred->watches);
+        if (alfred->provides)
+            g_list_free (alfred->provides);
         g_free (alfred);
     }
     return NULL;
@@ -534,12 +614,19 @@ alfred_shutdown (alfred_instance alfred)
 
     if (alfred->ls)
         lua_close (alfred->ls);
-    if (alfred->actions)
+    if (alfred->watches)
     {
-        g_hash_table_foreach (alfred->actions, (GHFunc) alfred_register,
-                              GINT_TO_POINTER (0));
-        g_hash_table_foreach (alfred->actions, (GHFunc) destroy_alfred, NULL);
-        g_hash_table_destroy (alfred->actions);
+        g_list_foreach (alfred->watches, (GFunc) alfred_register_watches,
+                        GINT_TO_POINTER (0));
+        g_list_foreach (alfred->watches, (GFunc) destroy_watches, NULL);
+        g_list_free (alfred->watches);
+    }
+    if (alfred->provides)
+    {
+        g_list_foreach (alfred->provides, (GFunc) alfred_register_provide,
+                        GINT_TO_POINTER (0));
+        g_list_foreach (alfred->provides, (GFunc) destroy_provides, NULL);
+        g_list_free (alfred->provides);
     }
     g_free (alfred);
 
@@ -616,7 +703,9 @@ main (int argc, char *argv[])
     /* Initialise Apteryx client library */
     apteryx_init (debug);
 
-    /* Create the alfred hash table */
+    cb_init ();
+
+    /* Create the alfred glists */
     alfred_inst = alfred_init (config_dir);
     if (!alfred_inst)
         goto exit;

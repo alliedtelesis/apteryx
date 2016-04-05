@@ -124,9 +124,15 @@ cb_match (GList **list, const char *path, int criteria)
         if (!cb->active)
             continue;
 
-        /* Part match */
+        /* Part match on path */
         if ((criteria & CB_MATCH_PART) &&
             strncmp (cb->path, path, strlen (path)) == 0)
+        {
+            match = true;
+        }
+        /* Part match on cb->path */
+        else if ((criteria & CB_PATH_MATCH_PART) &&
+            strncmp (cb->path, path, strlen (cb->path)) == 0)
         {
             match = true;
         }
