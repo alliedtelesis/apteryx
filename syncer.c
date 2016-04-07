@@ -28,6 +28,7 @@ GList *partners = NULL;
 pthread_rwlock_t partners_lock = PTHREAD_RWLOCK_INITIALIZER;
 /* keep a list of the paths we are syncing */
 GList *paths = NULL;
+GList *excluded_paths = NULL;
 pthread_rwlock_t paths_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 bool
@@ -117,6 +118,23 @@ sync_path_check (const char *path)
     return true;
 }
 
+bool
+sync_path_excluded (const char *path)
+{
+    /* go through the list of paths to sync to the partner */
+    pthread_rwlock_rdlock (&paths_lock);
+    for (GList *iter = paths; iter; iter = iter->next)
+    {
+        if (strcmp (path, iter->data))
+        {
+            pthread_rwlock_unlock (&paths_lock);
+            return true;
+        }
+    }
+    pthread_rwlock_unlock (&paths_lock);
+    return false;
+}
+
 char *
 sp_path (sync_partner *sp, const char *path)
 {
@@ -157,6 +175,11 @@ apteryx_set_sp (sync_partner *sp, const char *path, const char *value)
 bool
 sync_recursive (sync_partner *sp, const char *path)
 {
+    if (sync_path_excluded (path))
+    {
+        /* Skip excluded paths */
+        return true;
+    }
     uint64_t ts = apteryx_timestamp (path);
     if (ts < sp->last_sync_local)
     {
@@ -326,6 +349,20 @@ add_path_to_sync (const char *path)
 }
 
 bool
+add_excluded_path (const char *path)
+{
+    if (sync_path_check (path))
+    {
+        DEBUG ("SYNC INIT: Adding exclusion for: %s\n", path);
+        char *new_path = strdup (path);
+        pthread_rwlock_wrlock (&paths_lock);
+        excluded_paths = g_list_append (excluded_paths, new_path);
+        pthread_rwlock_unlock (&paths_lock);
+    }
+    return true;
+}
+
+bool
 parse_config_files (const char* config_dir)
 {
     FILE *fp = NULL;
@@ -378,7 +415,15 @@ parse_config_files (const char* config_dir)
                     newline[0] = '\0'; // remove the trailing newline char
                 }
 
-                add_path_to_sync (sync_path);
+                if (sync_path[0] == '!')
+                {
+                    // Add an exclusion to syncing
+                    add_excluded_path (sync_path + 1);
+                }
+                else
+                {
+                    add_path_to_sync (sync_path);
+                }
 
                 free (sync_path);
                 sync_path = NULL;
