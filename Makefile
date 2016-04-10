@@ -32,8 +32,8 @@ EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION)) -ldl
 endif
 endif
 ifneq ($(HAVE_XML2),no)
-EXTRA_CFLAGS += -DHAVE_LIBXML2 -I/usr/include/libxml2
-EXTRA_LDFLAGS += -L/usr/include/libxml2 -lxml2
+EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0)
+EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0)
 endif
 
 all: libapteryx.so apteryx apteryxd apteryx-sync alfred
