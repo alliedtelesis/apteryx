@@ -32,6 +32,8 @@
 #include <glib.h>
 #include <glib-unix.h>
 #include <lua.h>
+#include <CUnit/CUnit.h>
+#include <CUnit/Basic.h>
 
 /* Change the following to alfred*/
 #define APTERYX_ALFRED_PID "/var/run/apteryx-alfred.pid"
@@ -535,8 +537,6 @@ alfred_shutdown (alfred_instance alfred)
 {
     assert (alfred);
 
-    if (alfred->ls)
-        lua_close (alfred->ls);
     if (alfred->watches)
     {
         g_list_foreach (alfred->watches, (GFunc) alfred_register_watches,
@@ -551,6 +551,10 @@ alfred_shutdown (alfred_instance alfred)
         g_list_foreach (alfred->provides, (GFunc) destroy_provides, NULL);
         g_list_free (alfred->provides);
     }
+
+    if (alfred->ls)
+        lua_close (alfred->ls);
+
     g_free (alfred);
 
     return;
@@ -604,6 +608,8 @@ alfred_init (const char *path)
 
     /* Register provides */
     g_list_foreach (alfred->provides, (GFunc) alfred_register_provide, GINT_TO_POINTER (1));
+
+    alfred_inst = alfred;
     return alfred;
 
   error:
@@ -612,6 +618,388 @@ alfred_init (const char *path)
         alfred_shutdown (alfred);
     }
     return NULL;
+}
+
+static int
+suite_init (void)
+{
+    return 0;
+}
+
+static int
+suite_clean (void)
+{
+    return 0;
+}
+
+void
+test_simple_watch ()
+{
+    FILE *library = NULL;
+    FILE *data = NULL;
+    alfred_instance alfred = NULL;
+    char *test_str = NULL;
+
+    /* Create library file + XML */
+    library = fopen ("alfred_test.lua", "w");
+    CU_ASSERT (library != NULL);
+    if (!library)
+    {
+        goto cleanup;
+    }
+
+    fprintf (library,
+            "function test_library_function(test_str)\n"
+            "  test_value = test_str\n"
+            "end\n"
+            );
+    fclose (library);
+    library = NULL;
+
+    data = fopen ("alfred_test.xml", "w");
+    CU_ASSERT (data != NULL);
+    if (!data)
+    {
+        goto cleanup;
+    }
+
+    fprintf (data, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                  "<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
+                  "  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+                  "  xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
+                  "  https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
+                  "  <SCRIPT>\n"
+                  "  function test_node_change(new_value)\n"
+                  "    test_library_function(new_value)\n"
+                  "  end\n"
+                  "  </SCRIPT>\n"
+                  "  <NODE name=\"test\">\n"
+                  "    <NODE name=\"set_node\" mode=\"rw\"  help=\"Set this node to test the watch function\">\n"
+                  "      <WATCH>test_node_change(_value)</WATCH>\n"
+                  "    </NODE>\n"
+                  "  </NODE>\n"
+                  "</MODULE>\n");
+    fclose (data);
+    data = NULL;
+
+    /* Init */
+    alfred = alfred_init ("./");
+    CU_ASSERT (alfred != NULL);
+    if (!alfred)
+    {
+        goto cleanup;
+    }
+
+    /* Trigger Action */
+    apteryx_set ("/test/set_node", "Goodnight moon");
+    sleep (1);
+
+    /* Check output */
+    lua_getglobal (alfred->ls, "test_value");
+    if (!lua_isnil (alfred->ls,-1))
+    {
+        test_str = strdup (lua_tostring (alfred->ls,-1));
+    }
+    lua_pop(alfred->ls, 1);
+
+    CU_ASSERT (test_str && strcmp (test_str, "Goodnight moon") == 0);
+    apteryx_set("/test/set_node", NULL);
+    /* Clean up */
+cleanup:
+    if (alfred)
+    {
+        alfred_shutdown (alfred);
+        alfred_inst = NULL;
+    }
+    if (library)
+    {
+        fclose (library);
+        unlink ("alfred_test.lua");
+    }
+    if (data)
+    {
+        fclose (data);
+        unlink ("alfred_test.xml");
+    }
+    if (test_str)
+    {
+        free (test_str);
+    }
+}
+
+void
+test_dir_watch ()
+{
+    FILE *library = NULL;
+    FILE *data = NULL;
+    alfred_instance alfred = NULL;
+    char *test_str = NULL;
+    char *test_path = NULL;
+
+    /* Create library file + XML */
+    library = fopen ("alfred_test.lua", "w");
+    CU_ASSERT (library != NULL);
+    if (!library)
+    {
+        goto cleanup;
+    }
+
+    fprintf (library,
+            "function test_library_function(p, v)\n"
+            "  test_value = v\n"
+            "  test_path = p\n"
+            "end\n"
+            );
+    fclose (library);
+    library = NULL;
+
+    data = fopen ("alfred_test.xml", "w");
+    CU_ASSERT (data != NULL);
+    if (!data)
+    {
+        goto cleanup;
+    }
+
+    fprintf (data, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                   "<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
+                   "  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+                   "  xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
+                   "  https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
+                   "  <SCRIPT>\n"
+                   "  function test_dir_change(path, new_value)\n"
+                   "    test_library_function(path, new_value)\n"
+                   "  end\n"
+                   "  </SCRIPT>\n"
+                   "  <NODE name=\"test\">\n"
+                   "    <WATCH>test_dir_change(_path, _value)</WATCH>\n"
+                   "    <NODE name=\"set_node\" mode=\"rw\"  help=\"Set this node to test the watch function\"/>\n"
+                   "    <NODE name=\"deeper\">\n"
+                   "      <NODE name=\"set_node\" mode=\"rw\"  help=\"Set this node to test the deeper function\"/>\n"
+                   "    </NODE>\n"
+                   "  </NODE>\n"
+                   "</MODULE>\n");
+    fclose (data);
+    data = NULL;
+
+    /* Init */
+    alfred = alfred_init ("./");
+    CU_ASSERT (alfred != NULL);
+    if (!alfred)
+        goto cleanup;
+
+    /* Trigger Action */
+    apteryx_set ("/test/set_node", "Goodnight cow jumping over the moon");
+    sleep (1);
+
+    /* Check output */
+    lua_getglobal (alfred->ls, "test_value");
+    if (!lua_isnil (alfred->ls,-1))
+        test_str = strdup (lua_tostring (alfred->ls,-1));
+    lua_pop (alfred->ls, 1);
+    lua_getglobal (alfred->ls, "test_path");
+    if (!lua_isnil (alfred->ls,-1))
+        test_path = strdup (lua_tostring (alfred->ls,-1));
+    lua_pop (alfred->ls, 1);
+
+    CU_ASSERT (test_path && strcmp (test_path, "/test/set_node") == 0);
+    CU_ASSERT (test_str && strcmp (test_str, "Goodnight cow jumping over the moon") == 0);
+    free (test_path);
+    free (test_str);
+
+    /* Trigger Action */
+    apteryx_set ("/test/deeper/set_node", "Goodnight bears");
+    sleep (1);
+
+    /* Check output */
+    lua_getglobal (alfred->ls, "test_value");
+    if (!lua_isnil (alfred->ls,-1))
+        test_str = strdup (lua_tostring (alfred->ls,-1));
+    lua_pop(alfred->ls, 1);
+
+    lua_getglobal (alfred->ls, "test_path");
+    if (!lua_isnil (alfred->ls,-1))
+        test_path = strdup (lua_tostring (alfred->ls,-1));
+    lua_pop(alfred->ls, 1);
+
+    CU_ASSERT (test_path && strcmp (test_path, "/test/deeper/set_node") == 0);
+    CU_ASSERT (test_str && strcmp (test_str, "Goodnight bears") == 0);
+
+    apteryx_set("/test/set_node", NULL);
+    apteryx_set("/test/deeper/set_node", NULL);
+
+    /* Clean up */
+cleanup:
+    if (alfred)
+    {
+        alfred_shutdown (alfred);
+        alfred_inst = NULL;
+    }
+    if (library)
+    {
+        fclose (library);
+        unlink ("alfred_test.lua");
+    }
+    if (data)
+    {
+        fclose (data);
+        unlink ("alfred_test.xml");
+    }
+    if (test_str)
+    {
+        free (test_str);
+    }
+    if (test_path)
+    {
+        free (test_path);
+    }
+}
+
+
+void
+test_simple_provide()
+{
+    FILE *library = NULL;
+    FILE *data = NULL;
+    alfred_instance alfred = NULL;
+    char *test_str = NULL;
+
+    /* Create library file + XML */
+    library = fopen ("alfred_test.lua", "w");
+    CU_ASSERT (library != NULL);
+    if (!library)
+        goto cleanup;
+
+    fprintf (library,
+            "function test_library_function(path)\n"
+            "  return \"hello \"..path\n"
+            "end\n"
+            );
+    fclose (library);
+    library = NULL;
+
+    data = fopen ("alfred_test.xml", "w");
+    CU_ASSERT (data != NULL);
+    if (!data)
+        goto cleanup;
+
+    fprintf (data, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                   "<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
+                   "  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+                   "  xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
+                   "  https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
+                   "  <SCRIPT>\n"
+                   "  function test_provide(path)\n"
+                   "    return test_library_function(path)\n"
+                   "  end\n"
+                   "  </SCRIPT>\n"
+                   "  <NODE name=\"test\">\n"
+                   "    <NODE name=\"set_node\" mode=\"rw\"  help=\"Get this node to test the provide function\">\n"
+                   "      <PROVIDE>return test_provide(_path)</PROVIDE>\n"
+                   "    </NODE>\n"
+                   "  </NODE>\n"
+                   "</MODULE>\n");
+    fclose (data);
+    data = NULL;
+
+    /* Init */
+    alfred = alfred_init ("./");
+    CU_ASSERT (alfred != NULL);
+    if (!alfred)
+        goto cleanup;
+    sleep (1);
+
+    /* Trigger provide */
+    test_str = apteryx_get ("/test/set_node");
+    CU_ASSERT (test_str && strcmp (test_str, "hello /test/set_node") == 0);
+
+    /* Clean up */
+cleanup:
+    if (alfred)
+    {
+        alfred_shutdown (alfred);
+        alfred_inst = NULL;
+    }
+    if (library)
+    {
+        fclose (library);
+        unlink ("alfred_test.lua");
+    }
+    if (data)
+    {
+        fclose (data);
+        unlink ("alfred_test.xml");
+    }
+    if (test_str)
+    {
+        free (test_str);
+    }
+}
+
+static CU_TestInfo tests_alfred[] = {
+    { "simple watch", test_simple_watch },
+    { "directory watch", test_dir_watch },
+    { "simple provide", test_simple_provide },
+    CU_TEST_INFO_NULL,
+};
+
+static CU_SuiteInfo suites[] = {
+    { "Alfred", suite_init, suite_clean, tests_alfred },
+    CU_SUITE_INFO_NULL,
+};
+
+void
+run_unit_test(char *filter)
+{
+    /* Initialize the CUnit test registry */
+    if (CUE_SUCCESS != CU_initialize_registry ())
+    {
+        printf("failed to init\n");
+        return;
+    }
+    assert (NULL != CU_get_registry ());
+    assert (!CU_is_test_running ());
+
+    /* Make some random numbers */
+    srand (time (NULL));
+
+    /* Add tests */
+    CU_SuiteInfo *suite = &suites[0];
+    while (suite && suite->pName)
+    {
+        /* Default to running all tests of a suite */
+        bool all = true;
+        if (filter && strstr (suite->pName, filter) != NULL)
+            all = true;
+        else if (filter)
+            all = false;
+        CU_pSuite pSuite = CU_add_suite(suite->pName, suite->pInitFunc, suite->pCleanupFunc);
+        if (pSuite == NULL)
+        {
+            fprintf (stderr, "suite registration failed - %s\n", CU_get_error_msg ());
+            exit (EXIT_FAILURE);
+        }
+        CU_TestInfo *test = &suite->pTests[0];
+        while (test && test->pName)
+        {
+            if (all || (filter && strstr (test->pName, filter) != NULL))
+            {
+                if (CU_add_test(pSuite, test->pName, test->pTestFunc) == NULL)
+                {
+                    fprintf (stderr, "test registration failed - %s\n", CU_get_error_msg ());
+                    exit (EXIT_FAILURE);
+                }
+            }
+            test++;
+        }
+        suite++;
+    }
+
+    /* Run all tests using the CUnit Basic interface */
+    CU_basic_set_mode (CU_BRM_VERBOSE);
+    CU_set_error_action (CUEA_IGNORE);
+    CU_basic_run_tests ();
+    CU_cleanup_registry ();
+    return;
 }
 
 static gboolean
@@ -625,13 +1013,14 @@ termination_handler (gpointer arg1)
 void
 help (char *app_name)
 {
-    printf ("Usage: %s [-h] [-b] [-d] [-p <pidfile>] [-c <configdir>]\n"
+    printf ("Usage: %s [-h] [-b] [-d] [-p <pidfile>] [-c <configdir>] [-u <filter>]\n"
             "  -h   show this help\n"
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
             "  -m   memory profiling\n"
             "  -p   use <pidfile> (defaults to "APTERYX_ALFRED_PID")\n"
-            "  -c   use <configdir> (defaults to "APTERYX_CONFIG_DIR")\n",
+            "  -c   use <configdir> (defaults to "APTERYX_CONFIG_DIR")\n"
+            "  -u   Run unit tests\n",
             app_name);
 }
 
@@ -644,9 +1033,11 @@ main (int argc, char *argv[])
     bool background = false;
     FILE *fp = NULL;
     GMainLoop *loop = NULL;
+    bool unit_test = false;
+    char *filter = NULL;
 
     /* Parse options */
-    while ((i = getopt (argc, argv, "hdbp:c:m")) != -1)
+    while ((i = getopt (argc, argv, "hdbp:c:mu::")) != -1)
     {
         switch (i)
         {
@@ -666,6 +1057,14 @@ main (int argc, char *argv[])
         case 'm':
             g_mem_set_vtable (glib_mem_profiler_table);
             break;
+        case 'u':
+            unit_test = true;
+            if (optarg && optarg[0] == '=')
+            {
+                memmove(optarg, optarg+1, strlen (optarg));
+            }
+            filter = optarg;
+            break;
         case '?':
         case 'h':
         default:
@@ -675,7 +1074,7 @@ main (int argc, char *argv[])
     }
 
     /* Daemonize */
-    if (background && fork () != 0)
+    if (!unit_test && background && fork () != 0)
     {
         /* Parent */
         return 0;
@@ -687,9 +1086,15 @@ main (int argc, char *argv[])
     cb_init ();
 
     /* Create the alfred glists */
-    alfred_inst = alfred_init (config_dir);
+    alfred_init (config_dir);
     if (!alfred_inst)
         goto exit;
+
+    if (unit_test)
+    {
+        run_unit_test (filter);
+        goto exit;
+    }
 
     /* Create pid file */
     if (background)
@@ -716,7 +1121,10 @@ main (int argc, char *argv[])
 
   exit:
     /* Free the glib main loop */
-    g_main_loop_unref (loop);
+    if (loop)
+    {
+        g_main_loop_unref (loop);
+    }
 
     /* Clean alfreds */
     if (alfred_inst)
