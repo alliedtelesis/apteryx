@@ -48,10 +48,12 @@ struct alfred_instance_t
     lua_State *ls;
     /* Lock for Lua state */
     pthread_mutex_t ls_lock;
-    /* List of provides based on path */
-    GList *provides;
     /* List of watches based on path */
     GList *watches;
+    /* List of provides based on path */
+    GList *provides;
+    /* List of provides based on path */
+    GList *indexes;
 } alfred_instance_t;
 typedef struct alfred_instance_t *alfred_instance;
 
@@ -177,7 +179,51 @@ provide_node_changed (const char *path)
     g_list_free (matches);
     /* The return value of luaL_dostring is the top value of the stack */
     const_value = lua_tostring (alfred_inst->ls, -1);
+    lua_pop (alfred_inst->ls, 1);
     ret = g_strdup (const_value);
+    pthread_mutex_unlock (&alfred_inst->ls_lock);
+    return ret;
+}
+
+static GList *
+index_node_changed (const char *path)
+{
+    char *script = NULL;
+    const char *tmp_path = NULL;
+    char *tmp_path2 = NULL;
+    GList *ret = NULL;
+    GList *matches = NULL;
+    GList *node = NULL;
+    cb_info_t *cb = NULL;
+
+    matches = cb_match (&alfred_inst->indexes, path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
+    if (matches == NULL)
+    {
+        ERROR ("ALFRED: No Alfred index for %s\n", path);
+        return NULL;
+    }
+    cb = matches->data;
+    script = (char *) (long) cb->cb;
+    pthread_mutex_lock (&alfred_inst->ls_lock);
+    lua_pushstring (alfred_inst->ls, path);
+    lua_setglobal (alfred_inst->ls, "_path");
+    if ((luaL_dostring (alfred_inst->ls, script)) != 0)
+    {
+        ERROR ("Lua: Failed to execute script\n");
+    }
+    for (node = g_list_first (matches); node != NULL; node = g_list_next (node))
+    {
+        cb = node->data;
+        cb_release (cb);
+    }
+    g_list_free (matches);
+    while (lua_gettop (alfred_inst->ls) && lua_isstring (alfred_inst->ls, -1))
+    {
+        tmp_path = lua_tostring (alfred_inst->ls, -1);
+        tmp_path2 = strdup (tmp_path);
+        lua_pop (alfred_inst->ls, 1);
+        ret = g_list_append (ret, tmp_path2);
+    }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     return ret;
 }
@@ -208,6 +254,19 @@ alfred_register_provide (gpointer value, gpointer user_data)
     }
 }
 
+static void
+alfred_register_index (gpointer value, gpointer user_data)
+{
+    cb_info_t *cb = (cb_info_t *) value;
+    int install = GPOINTER_TO_INT (user_data);
+
+    if ((install && !apteryx_index (cb->path, index_node_changed)) ||
+        (!install && !apteryx_unindex (cb->path, index_node_changed)))
+    {
+        ERROR ("Failed to (un)register provide for path %s\n", cb->path);
+    }
+}
+
 static bool
 destroy_watches (gpointer value, gpointer rpc)
 {
@@ -231,6 +290,18 @@ destroy_provides (gpointer value, gpointer rpc)
     g_free (script);
     cb_release (cb);
 
+    return true;
+}
+
+static bool
+destroy_indexes (gpointer value, gpointer rpc)
+{
+    cb_info_t *cb = (cb_info_t *) value;
+    char *script = (char *) (long) cb->cb;
+    DEBUG ("XML: Destroy indexes for path %s\n", cb->path);
+
+    g_free (script);
+    cb_release (cb);
     return true;
 }
 
@@ -334,6 +405,29 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         DEBUG ("PROVIDE: %s, XML STR: %s\n", parent, content);
     }
 
+    else if (strcmp ((const char *) node->name, "INDEX") == 0)
+    {
+        content = xmlNodeGetContent (node);
+        tmp_content = g_strdup ((char *) content);
+        DEBUG ("INDEX: XML STR: %s\n", content);
+
+        /* If the node is a leaf or ends in a '*' don't add another '*' */
+        if (node_is_leaf (node->parent) || parent[strlen (parent) - 1] == '*')
+        {
+            path = g_strdup (parent);
+        }
+        else
+        {
+            path = g_strdup_printf ("%s/*", parent);
+        }
+
+        if (path)
+        {
+            cb = cb_create (&alfred->indexes, "", (const char *) path, 0,
+                            (uint64_t) (long) tmp_content);
+            cb_release (cb);
+        }
+    }
     /* Process children */
     for (xmlNode *n = node->children; n; n = n->next)
     {
@@ -551,6 +645,13 @@ alfred_shutdown (alfred_instance alfred)
         g_list_foreach (alfred->provides, (GFunc) destroy_provides, NULL);
         g_list_free (alfred->provides);
     }
+    if (alfred->indexes)
+    {
+        g_list_foreach (alfred->indexes, (GFunc) alfred_register_index,
+                        GINT_TO_POINTER (0));
+        g_list_foreach (alfred->indexes, (GFunc) destroy_indexes, NULL);
+        g_list_free (alfred->indexes);
+    }
     g_free (alfred);
 
     return;
@@ -579,7 +680,6 @@ alfred_init (const char *path)
         goto error;
     }
     luaL_openlibs (alfred->ls);
-    lua_setglobal (alfred->ls, "Apteryx");
     if (luaL_dostring (alfred->ls, "require('api')") != 0)
     {
         ERROR ("Lua: Failed to require('api')\n");
@@ -604,6 +704,10 @@ alfred_init (const char *path)
 
     /* Register provides */
     g_list_foreach (alfred->provides, (GFunc) alfred_register_provide, GINT_TO_POINTER (1));
+
+    /* Register indexes */
+    g_list_foreach (alfred->indexes, (GFunc) alfred_register_index, GINT_TO_POINTER (1));
+
     return alfred;
 
   error:
