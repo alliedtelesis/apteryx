@@ -537,31 +537,24 @@ load_config_files (alfred_instance alfred, const char *path)
     return res;
 }
 
-/* TO DO: Remove this struct */
-typedef struct delayed_execute_s
-{
-    char *script;
-} delayed_execute;
-
 GList *delayed_work = NULL;
 pthread_mutex_t delayed_work_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static gboolean
 delayed_work_process (gpointer arg1)
 {
-    delayed_execute *de = (delayed_execute *) arg1;
+    char *script = (char *) arg1;
     pthread_mutex_lock (&delayed_work_lock);
 
     /* Remove the script to be run */
-    delayed_work = g_list_remove (delayed_work, de);
+    delayed_work = g_list_remove (delayed_work, script);
     pthread_mutex_unlock (&delayed_work_lock);
 
     /* Execute the script */
     pthread_mutex_lock (&alfred_inst->ls_lock);
-    alfred_exec (alfred_inst->ls, de->script);
+    alfred_exec (alfred_inst->ls, script);
     pthread_mutex_unlock (&alfred_inst->ls_lock);
-    g_free (de->script);
-    g_free (de);
+    g_free (script);
     return false;
 }
 
@@ -569,14 +562,14 @@ static void
 delayed_work_add (int delay, const char *script)
 {
     bool found = false;
-    delayed_execute *de = g_malloc0 (sizeof (delayed_execute));
-    de->script = g_strdup (script);
+    char *delay_script = NULL;
 
+    delay_script = g_strdup (script);
     pthread_mutex_lock (&delayed_work_lock);
     for (GList * iter = delayed_work; iter; iter = g_list_next (iter))
     {
-        delayed_execute *de_list = (delayed_execute *) iter->data;
-        if (strcmp (de_list->script, de->script) == 0)
+        char *script_list = (char *) iter->data;
+        if (strcmp (delay_script, script_list) == 0)
         {
             found = true;
             break;
@@ -584,13 +577,12 @@ delayed_work_add (int delay, const char *script)
     }
     if (found)
     {
-        g_free (de->script);
-        g_free (de);
+        g_free (delay_script);
     }
     else
     {
-        delayed_work = g_list_append (delayed_work, de);
-        g_timeout_add (delay * SECONDS_TO_MILLI, delayed_work_process, (gpointer) de);
+        delayed_work = g_list_append (delayed_work, delay_script);
+        g_timeout_add (delay * SECONDS_TO_MILLI, delayed_work_process, (gpointer) delay_script);
     }
     pthread_mutex_unlock (&delayed_work_lock);
 }
