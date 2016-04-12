@@ -1021,10 +1021,99 @@ cleanup:
     }
 }
 
+
+void
+test_simple_index ()
+{
+    FILE *library = NULL;
+    FILE *data = NULL;
+    GList *paths = NULL;
+
+    /* Create library file + XML */
+    library = fopen ("alfred_test.lua", "w");
+    CU_ASSERT (library != NULL);
+    if (!library)
+    {
+        goto cleanup;
+    }
+
+    fprintf (library,
+            "function test_library_function()\n"
+            "  return \"Goodnight light\", \"and the red balloon\"\n"
+            "end\n"
+            );
+    fclose (library);
+    library = NULL;
+
+    data = fopen ("alfred_test.xml", "w");
+    CU_ASSERT (data != NULL);
+    if (!data)
+    {
+        goto cleanup;
+    }
+
+    fprintf (data, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                   "<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
+                   "  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+                   "  xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
+                   "  https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
+                   "  <SCRIPT>\n"
+                   "  function test_index(path)\n"
+                   "    return test_library_function()\n"
+                   "  end\n"
+                   "  </SCRIPT>\n"
+                   "  <NODE name=\"test\">\n"
+                   "    <NODE name=\"*\" mode=\"rw\"  help=\"Set this node to test the watch function\">\n"
+                   "      <INDEX>return test_index(_path)</INDEX>\n"
+                   "      <NODE name=\"id\"/>"
+                   "    </NODE>\n"
+                   "  </NODE>\n"
+                   "</MODULE>\n");
+    fclose (data);
+    data = NULL;
+
+    /* Init */
+    alfred_init ("./");
+    CU_ASSERT (alfred_inst != NULL);
+    if (!alfred_inst)
+    {
+        goto cleanup;
+    }
+
+    /* Trigger Action */
+    paths = apteryx_search ("/test/");
+
+    CU_ASSERT (g_list_length(paths) == 2);
+    CU_ASSERT (paths && strcmp((char*)paths->data, "Goodnight light") == 0);
+    CU_ASSERT (paths && paths->next && strcmp(((char*)paths->next->data), "and the red balloon") == 0);
+    /* Clean up */
+cleanup:
+    if (alfred_inst)
+    {
+        alfred_shutdown ();
+        alfred_inst = NULL;
+    }
+    if (library)
+    {
+        fclose (library);
+        unlink ("alfred_test.lua");
+    }
+    if (data)
+    {
+        fclose (data);
+        unlink ("alfred_test.xml");
+    }
+    if (paths)
+    {
+        g_list_free_full(paths, free);
+    }
+}
+
 static CU_TestInfo tests_alfred[] = {
     { "simple watch", test_simple_watch },
     { "directory watch", test_dir_watch },
     { "simple provide", test_simple_provide },
+    { "simple index", test_simple_index },
     CU_TEST_INFO_NULL,
 };
 
