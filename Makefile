@@ -78,9 +78,17 @@ ifeq (test,$(firstword $(MAKECMDGOALS)))
 TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 $(eval $(TEST_ARGS):;@:)
 endif
-test: apteryxd apteryx
-	@echo "Running unit test: $<"
+
+test_apteryx: apteryxd apteryx
+	@echo "Running apteryx unit test: $<"
 	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
+
+test_alfred: apteryxd alfred
+	@echo "Running apteryx unit test: $<"
+	$(Q)$(call apteryxd,alfred -u$(TEST_ARGS))
+
+test: test_alfred test_apteryx
+	@echo "Tests have been run!"
 
 install: all
 	@install -d $(DESTDIR)/$(PREFIX)/lib
