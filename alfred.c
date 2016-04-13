@@ -50,10 +50,12 @@ struct alfred_instance_t
     lua_State *ls;
     /* Lock for Lua state */
     pthread_mutex_t ls_lock;
-    /* List of provides based on path */
-    GList *provides;
     /* List of watches based on path */
     GList *watches;
+    /* List of provides based on path */
+    GList *provides;
+    /* List of provides based on path */
+    GList *indexes;
 } alfred_instance_t;
 typedef struct alfred_instance_t *alfred_instance;
 
@@ -179,7 +181,51 @@ provide_node_changed (const char *path)
     g_list_free (matches);
     /* The return value of luaL_dostring is the top value of the stack */
     const_value = lua_tostring (alfred_inst->ls, -1);
+    lua_pop (alfred_inst->ls, 1);
     ret = g_strdup (const_value);
+    pthread_mutex_unlock (&alfred_inst->ls_lock);
+    return ret;
+}
+
+static GList *
+index_node_changed (const char *path)
+{
+    char *script = NULL;
+    const char *tmp_path = NULL;
+    char *tmp_path2 = NULL;
+    GList *ret = NULL;
+    GList *matches = NULL;
+    GList *node = NULL;
+    cb_info_t *cb = NULL;
+
+    matches = cb_match (&alfred_inst->indexes, path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
+    if (matches == NULL)
+    {
+        ERROR ("ALFRED: No Alfred index for %s\n", path);
+        return NULL;
+    }
+    cb = matches->data;
+    script = (char *) (long) cb->cb;
+    pthread_mutex_lock (&alfred_inst->ls_lock);
+    lua_pushstring (alfred_inst->ls, path);
+    lua_setglobal (alfred_inst->ls, "_path");
+    if ((luaL_dostring (alfred_inst->ls, script)) != 0)
+    {
+        ERROR ("Lua: Failed to execute script\n");
+    }
+    for (node = g_list_first (matches); node != NULL; node = g_list_next (node))
+    {
+        cb = node->data;
+        cb_release (cb);
+    }
+    g_list_free (matches);
+    while (lua_gettop (alfred_inst->ls) && lua_isstring (alfred_inst->ls, -1))
+    {
+        tmp_path = lua_tostring (alfred_inst->ls, -1);
+        tmp_path2 = strdup (tmp_path);
+        lua_pop (alfred_inst->ls, 1);
+        ret = g_list_prepend (ret, tmp_path2);
+    }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     return ret;
 }
@@ -210,6 +256,19 @@ alfred_register_provide (gpointer value, gpointer user_data)
     }
 }
 
+static void
+alfred_register_index (gpointer value, gpointer user_data)
+{
+    cb_info_t *cb = (cb_info_t *) value;
+    int install = GPOINTER_TO_INT (user_data);
+
+    if ((install && !apteryx_index (cb->path, index_node_changed)) ||
+        (!install && !apteryx_unindex (cb->path, index_node_changed)))
+    {
+        ERROR ("Failed to (un)register provide for path %s\n", cb->path);
+    }
+}
+
 static bool
 destroy_watches (gpointer value, gpointer rpc)
 {
@@ -233,6 +292,18 @@ destroy_provides (gpointer value, gpointer rpc)
     g_free (script);
     cb_release (cb);
 
+    return true;
+}
+
+static bool
+destroy_indexes (gpointer value, gpointer rpc)
+{
+    cb_info_t *cb = (cb_info_t *) value;
+    char *script = (char *) (long) cb->cb;
+    DEBUG ("XML: Destroy indexes for path %s\n", cb->path);
+
+    g_free (script);
+    cb_release (cb);
     return true;
 }
 
@@ -336,6 +407,29 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         DEBUG ("PROVIDE: %s, XML STR: %s\n", parent, content);
     }
 
+    else if (strcmp ((const char *) node->name, "INDEX") == 0)
+    {
+        content = xmlNodeGetContent (node);
+        tmp_content = g_strdup ((char *) content);
+        DEBUG ("INDEX: XML STR: %s\n", content);
+
+        /* If the node is a leaf or ends in a '*' don't add another '*' */
+        if (node_is_leaf (node->parent) || parent[strlen (parent) - 1] == '*')
+        {
+            path = g_strdup (parent);
+        }
+        else
+        {
+            path = g_strdup_printf ("%s/*", parent);
+        }
+
+        if (path)
+        {
+            cb = cb_create (&alfred->indexes, "", (const char *) path, 0,
+                            (uint64_t) (long) tmp_content);
+            cb_release (cb);
+        }
+    }
     /* Process children */
     for (xmlNode *n = node->children; n; n = n->next)
     {
@@ -533,91 +627,97 @@ rate_limit (lua_State *ls)
 }
 
 static void
-alfred_shutdown (alfred_instance alfred)
+alfred_shutdown (void)
 {
-    assert (alfred);
+    assert (alfred_inst);
 
-    if (alfred->watches)
+    if (alfred_inst->watches)
     {
-        g_list_foreach (alfred->watches, (GFunc) alfred_register_watches,
+        g_list_foreach (alfred_inst->watches, (GFunc) alfred_register_watches,
                         GINT_TO_POINTER (0));
-        g_list_foreach (alfred->watches, (GFunc) destroy_watches, NULL);
-        g_list_free (alfred->watches);
+        g_list_foreach (alfred_inst->watches, (GFunc) destroy_watches, NULL);
+        g_list_free (alfred_inst->watches);
     }
-    if (alfred->provides)
+    if (alfred_inst->provides)
     {
-        g_list_foreach (alfred->provides, (GFunc) alfred_register_provide,
+        g_list_foreach (alfred_inst->provides, (GFunc) alfred_register_provide,
                         GINT_TO_POINTER (0));
-        g_list_foreach (alfred->provides, (GFunc) destroy_provides, NULL);
-        g_list_free (alfred->provides);
+        g_list_foreach (alfred_inst->provides, (GFunc) destroy_provides, NULL);
+        g_list_free (alfred_inst->provides);
     }
 
-    if (alfred->ls)
-        lua_close (alfred->ls);
+    if (alfred_inst->indexes)
+    {
+        g_list_foreach (alfred_inst->indexes, (GFunc) alfred_register_index,
+                        GINT_TO_POINTER (0));
+        g_list_foreach (alfred_inst->indexes, (GFunc) destroy_indexes, NULL);
+        g_list_free (alfred_inst->indexes);
+    }
 
-    g_free (alfred);
+    if (alfred_inst->ls)
+        lua_close (alfred_inst->ls);
 
+    g_free (alfred_inst);
+    alfred_inst = NULL;
     return;
 }
 
-alfred_instance
+void
 alfred_init (const char *path)
 {
-    alfred_instance alfred = NULL;
-
     assert (path);
 
     /* Malloc memory for the new service */
-    alfred = (alfred_instance) g_malloc0 (sizeof (*alfred));
-    if (!alfred)
+    alfred_inst = (alfred_instance) g_malloc0 (sizeof (*alfred_inst));
+    if (!alfred_inst)
     {
         ERROR ("ALFRED: No memory for alfred instance\n");
         goto error;
     }
 
     /* Initialise the Lua state */
-    alfred->ls = luaL_newstate ();
-    if (!alfred->ls)
+    alfred_inst->ls = luaL_newstate ();
+    if (!alfred_inst->ls)
     {
         ERROR ("XML: Failed to instantiate Lua interpreter\n");
         goto error;
     }
-    luaL_openlibs (alfred->ls);
-    lua_setglobal (alfred->ls, "Apteryx");
-    if (luaL_dostring (alfred->ls, "require('api')") != 0)
+    luaL_openlibs (alfred_inst->ls);
+    if (luaL_dostring (alfred_inst->ls, "require('api')") != 0)
     {
         ERROR ("Lua: Failed to require('api')\n");
     }
 
     /* Add the rate_limit function to a Lua table so it can be called using Lua */
-    lua_newtable (alfred->ls);
-    lua_pushcfunction (alfred->ls, rate_limit);
-    lua_setfield (alfred->ls, -2, "rate_limit");
-    lua_setglobal (alfred->ls, "Alfred");
+    lua_newtable (alfred_inst->ls);
+    lua_pushcfunction (alfred_inst->ls, rate_limit);
+    lua_setfield (alfred_inst->ls, -2, "rate_limit");
+    lua_setglobal (alfred_inst->ls, "Alfred");
 
-    pthread_mutex_init (&alfred->ls_lock, NULL);
+    pthread_mutex_init (&alfred_inst->ls_lock, NULL);
 
     /* Parse files in the config path */
-    if (!load_config_files (alfred, path))
+    if (!load_config_files (alfred_inst, path))
     {
         goto error;
     }
 
     /* Register watches */
-    g_list_foreach (alfred->watches, (GFunc) alfred_register_watches, GINT_TO_POINTER (1));
+    g_list_foreach (alfred_inst->watches, (GFunc) alfred_register_watches, GINT_TO_POINTER (1));
 
     /* Register provides */
-    g_list_foreach (alfred->provides, (GFunc) alfred_register_provide, GINT_TO_POINTER (1));
+    g_list_foreach (alfred_inst->provides, (GFunc) alfred_register_provide, GINT_TO_POINTER (1));
 
-    alfred_inst = alfred;
-    return alfred;
+    /* Register indexes */
+    g_list_foreach (alfred_inst->indexes, (GFunc) alfred_register_index, GINT_TO_POINTER (1));
 
-  error:
-    if (alfred)
+    return;
+error:
+    if (alfred_inst)
     {
-        alfred_shutdown (alfred);
+        alfred_shutdown ();
     }
-    return NULL;
+    return;
 }
 
 static int
@@ -637,7 +737,6 @@ test_simple_watch ()
 {
     FILE *library = NULL;
     FILE *data = NULL;
-    alfred_instance alfred = NULL;
     char *test_str = NULL;
 
     /* Create library file + XML */
@@ -683,9 +782,9 @@ test_simple_watch ()
     data = NULL;
 
     /* Init */
-    alfred = alfred_init ("./");
-    CU_ASSERT (alfred != NULL);
-    if (!alfred)
+    alfred_init ("./");
+    CU_ASSERT (alfred_inst != NULL);
+    if (!alfred_inst)
     {
         goto cleanup;
     }
@@ -695,21 +794,20 @@ test_simple_watch ()
     sleep (1);
 
     /* Check output */
-    lua_getglobal (alfred->ls, "test_value");
-    if (!lua_isnil (alfred->ls,-1))
+    lua_getglobal (alfred_inst->ls, "test_value");
+    if (!lua_isnil (alfred_inst->ls,-1))
     {
-        test_str = strdup (lua_tostring (alfred->ls,-1));
+        test_str = strdup (lua_tostring (alfred_inst->ls,-1));
     }
-    lua_pop(alfred->ls, 1);
+    lua_pop(alfred_inst->ls, 1);
 
     CU_ASSERT (test_str && strcmp (test_str, "Goodnight moon") == 0);
     apteryx_set("/test/set_node", NULL);
     /* Clean up */
 cleanup:
-    if (alfred)
+    if (alfred_inst)
     {
-        alfred_shutdown (alfred);
-        alfred_inst = NULL;
+        alfred_shutdown ();
     }
     if (library)
     {
@@ -732,7 +830,6 @@ test_dir_watch ()
 {
     FILE *library = NULL;
     FILE *data = NULL;
-    alfred_instance alfred = NULL;
     char *test_str = NULL;
     char *test_path = NULL;
 
@@ -782,9 +879,9 @@ test_dir_watch ()
     data = NULL;
 
     /* Init */
-    alfred = alfred_init ("./");
-    CU_ASSERT (alfred != NULL);
-    if (!alfred)
+    alfred_init ("./");
+    CU_ASSERT (alfred_inst != NULL);
+    if (!alfred_inst)
         goto cleanup;
 
     /* Trigger Action */
@@ -792,14 +889,14 @@ test_dir_watch ()
     sleep (1);
 
     /* Check output */
-    lua_getglobal (alfred->ls, "test_value");
-    if (!lua_isnil (alfred->ls,-1))
-        test_str = strdup (lua_tostring (alfred->ls,-1));
-    lua_pop (alfred->ls, 1);
-    lua_getglobal (alfred->ls, "test_path");
-    if (!lua_isnil (alfred->ls,-1))
-        test_path = strdup (lua_tostring (alfred->ls,-1));
-    lua_pop (alfred->ls, 1);
+    lua_getglobal (alfred_inst->ls, "test_value");
+    if (!lua_isnil (alfred_inst->ls,-1))
+        test_str = strdup (lua_tostring (alfred_inst->ls,-1));
+    lua_pop (alfred_inst->ls, 1);
+    lua_getglobal (alfred_inst->ls, "test_path");
+    if (!lua_isnil (alfred_inst->ls,-1))
+        test_path = strdup (lua_tostring (alfred_inst->ls,-1));
+    lua_pop (alfred_inst->ls, 1);
 
     CU_ASSERT (test_path && strcmp (test_path, "/test/set_node") == 0);
     CU_ASSERT (test_str && strcmp (test_str, "Goodnight cow jumping over the moon") == 0);
@@ -811,15 +908,15 @@ test_dir_watch ()
     sleep (1);
 
     /* Check output */
-    lua_getglobal (alfred->ls, "test_value");
-    if (!lua_isnil (alfred->ls,-1))
-        test_str = strdup (lua_tostring (alfred->ls,-1));
-    lua_pop(alfred->ls, 1);
+    lua_getglobal (alfred_inst->ls, "test_value");
+    if (!lua_isnil (alfred_inst->ls,-1))
+        test_str = strdup (lua_tostring (alfred_inst->ls,-1));
+    lua_pop(alfred_inst->ls, 1);
 
-    lua_getglobal (alfred->ls, "test_path");
-    if (!lua_isnil (alfred->ls,-1))
-        test_path = strdup (lua_tostring (alfred->ls,-1));
-    lua_pop(alfred->ls, 1);
+    lua_getglobal (alfred_inst->ls, "test_path");
+    if (!lua_isnil (alfred_inst->ls,-1))
+        test_path = strdup (lua_tostring (alfred_inst->ls,-1));
+    lua_pop(alfred_inst->ls, 1);
 
     CU_ASSERT (test_path && strcmp (test_path, "/test/deeper/set_node") == 0);
     CU_ASSERT (test_str && strcmp (test_str, "Goodnight bears") == 0);
@@ -829,10 +926,9 @@ test_dir_watch ()
 
     /* Clean up */
 cleanup:
-    if (alfred)
+    if (alfred_inst)
     {
-        alfred_shutdown (alfred);
-        alfred_inst = NULL;
+        alfred_shutdown ();
     }
     if (library)
     {
@@ -860,7 +956,6 @@ test_simple_provide()
 {
     FILE *library = NULL;
     FILE *data = NULL;
-    alfred_instance alfred = NULL;
     char *test_str = NULL;
 
     /* Create library file + XML */
@@ -902,9 +997,9 @@ test_simple_provide()
     data = NULL;
 
     /* Init */
-    alfred = alfred_init ("./");
-    CU_ASSERT (alfred != NULL);
-    if (!alfred)
+    alfred_init ("./");
+    CU_ASSERT (alfred_inst != NULL);
+    if (!alfred_inst)
         goto cleanup;
     sleep (1);
 
@@ -914,10 +1009,9 @@ test_simple_provide()
 
     /* Clean up */
 cleanup:
-    if (alfred)
+    if (alfred_inst)
     {
-        alfred_shutdown (alfred);
-        alfred_inst = NULL;
+        alfred_shutdown ();
     }
     if (library)
     {
@@ -1128,7 +1222,7 @@ main (int argc, char *argv[])
 
     /* Clean alfreds */
     if (alfred_inst)
-        alfred_shutdown (alfred_inst);
+        alfred_shutdown ();
 
     /* Cleanup client library */
     apteryx_shutdown ();
