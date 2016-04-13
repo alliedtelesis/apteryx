@@ -755,21 +755,21 @@ test_simple_watch ()
     }
 
     fprintf (data, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                  "<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
-                  "  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
-                  "  xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
-                  "  https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
-                  "  <SCRIPT>\n"
-                  "  function test_node_change(new_value)\n"
-                  "    test_library_function(new_value)\n"
-                  "  end\n"
-                  "  </SCRIPT>\n"
-                  "  <NODE name=\"test\">\n"
-                  "    <NODE name=\"set_node\" mode=\"rw\"  help=\"Set this node to test the watch function\">\n"
-                  "      <WATCH>test_node_change(_value)</WATCH>\n"
-                  "    </NODE>\n"
-                  "  </NODE>\n"
-                  "</MODULE>\n");
+                   "<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
+                   "  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+                   "  xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
+                   "  https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
+                   "  <SCRIPT>\n"
+                   "  function test_node_change(new_value)\n"
+                   "    test_library_function(new_value)\n"
+                   "  end\n"
+                   "  </SCRIPT>\n"
+                   "  <NODE name=\"test\">\n"
+                   "    <NODE name=\"set_node\" mode=\"rw\"  help=\"Set this node to test the watch function\">\n"
+                   "      <WATCH>test_node_change(_value)</WATCH>\n"
+                   "    </NODE>\n"
+                   "  </NODE>\n"
+                   "</MODULE>\n");
     fclose (data);
     data = NULL;
 
@@ -787,16 +787,16 @@ test_simple_watch ()
 
     /* Check output */
     lua_getglobal (alfred_inst->ls, "test_value");
-    if (!lua_isnil (alfred_inst->ls,-1))
+    if (!lua_isnil (alfred_inst->ls, -1))
     {
-        test_str = strdup (lua_tostring (alfred_inst->ls,-1));
+        test_str = strdup (lua_tostring (alfred_inst->ls, -1));
     }
-    lua_pop(alfred_inst->ls, 1);
+    lua_pop (alfred_inst->ls, 1);
 
     CU_ASSERT (test_str && strcmp (test_str, "Goodnight moon") == 0);
-    apteryx_set("/test/set_node", NULL);
+    apteryx_set ("/test/set_node", NULL);
     /* Clean up */
-cleanup:
+  cleanup:
     if (alfred_inst)
     {
         alfred_shutdown ();
@@ -882,12 +882,12 @@ test_dir_watch ()
 
     /* Check output */
     lua_getglobal (alfred_inst->ls, "test_value");
-    if (!lua_isnil (alfred_inst->ls,-1))
-        test_str = strdup (lua_tostring (alfred_inst->ls,-1));
+    if (!lua_isnil (alfred_inst->ls, -1))
+        test_str = strdup (lua_tostring (alfred_inst->ls, -1));
     lua_pop (alfred_inst->ls, 1);
     lua_getglobal (alfred_inst->ls, "test_path");
-    if (!lua_isnil (alfred_inst->ls,-1))
-        test_path = strdup (lua_tostring (alfred_inst->ls,-1));
+    if (!lua_isnil (alfred_inst->ls, -1))
+        test_path = strdup (lua_tostring (alfred_inst->ls, -1));
     lua_pop (alfred_inst->ls, 1);
 
     CU_ASSERT (test_path && strcmp (test_path, "/test/set_node") == 0);
@@ -901,23 +901,23 @@ test_dir_watch ()
 
     /* Check output */
     lua_getglobal (alfred_inst->ls, "test_value");
-    if (!lua_isnil (alfred_inst->ls,-1))
-        test_str = strdup (lua_tostring (alfred_inst->ls,-1));
-    lua_pop(alfred_inst->ls, 1);
+    if (!lua_isnil (alfred_inst->ls, -1))
+        test_str = strdup (lua_tostring (alfred_inst->ls, -1));
+    lua_pop (alfred_inst->ls, 1);
 
     lua_getglobal (alfred_inst->ls, "test_path");
-    if (!lua_isnil (alfred_inst->ls,-1))
-        test_path = strdup (lua_tostring (alfred_inst->ls,-1));
-    lua_pop(alfred_inst->ls, 1);
+    if (!lua_isnil (alfred_inst->ls, -1))
+        test_path = strdup (lua_tostring (alfred_inst->ls, -1));
+    lua_pop (alfred_inst->ls, 1);
 
     CU_ASSERT (test_path && strcmp (test_path, "/test/deeper/set_node") == 0);
     CU_ASSERT (test_str && strcmp (test_str, "Goodnight bears") == 0);
 
-    apteryx_set("/test/set_node", NULL);
-    apteryx_set("/test/deeper/set_node", NULL);
+    apteryx_set ("/test/set_node", NULL);
+    apteryx_set ("/test/deeper/set_node", NULL);
 
-    /* Clean up */
-cleanup:
+  /* Clean up */
+  cleanup:
     if (alfred_inst)
     {
         alfred_shutdown ();
@@ -944,7 +944,7 @@ cleanup:
 
 
 void
-test_simple_provide()
+test_simple_provide ()
 {
     FILE *library = NULL;
     FILE *data = NULL;
@@ -1083,11 +1083,12 @@ test_simple_index ()
     /* Trigger Action */
     paths = apteryx_search ("/test/");
 
-    CU_ASSERT (g_list_length(paths) == 2);
-    CU_ASSERT (paths && strcmp((char*)paths->data, "Goodnight light") == 0);
-    CU_ASSERT (paths && paths->next && strcmp(((char*)paths->next->data), "and the red balloon") == 0);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (paths && strcmp ((char *) paths->data, "Goodnight light") == 0);
+    CU_ASSERT (paths && paths->next &&
+               strcmp (((char *) paths->next->data), "and the red balloon") == 0);
     /* Clean up */
-cleanup:
+  cleanup:
     if (alfred_inst)
     {
         alfred_shutdown ();
@@ -1105,7 +1106,7 @@ cleanup:
     }
     if (paths)
     {
-        g_list_free_full(paths, free);
+        g_list_free_full (paths, free);
     }
 }
 
@@ -1123,12 +1124,12 @@ static CU_SuiteInfo suites[] = {
 };
 
 void
-run_unit_test(char *filter)
+run_unit_test (char *filter)
 {
     /* Initialize the CUnit test registry */
     if (CUE_SUCCESS != CU_initialize_registry ())
     {
-        printf("failed to init\n");
+        printf ("failed to init\n");
         return;
     }
     assert (NULL != CU_get_registry ());
@@ -1147,7 +1148,7 @@ run_unit_test(char *filter)
             all = true;
         else if (filter)
             all = false;
-        CU_pSuite pSuite = CU_add_suite(suite->pName, suite->pInitFunc, suite->pCleanupFunc);
+        CU_pSuite pSuite = CU_add_suite (suite->pName, suite->pInitFunc, suite->pCleanupFunc);
         if (pSuite == NULL)
         {
             fprintf (stderr, "suite registration failed - %s\n", CU_get_error_msg ());
@@ -1158,9 +1159,10 @@ run_unit_test(char *filter)
         {
             if (all || (filter && strstr (test->pName, filter) != NULL))
             {
-                if (CU_add_test(pSuite, test->pName, test->pTestFunc) == NULL)
+                if (CU_add_test (pSuite, test->pName, test->pTestFunc) == NULL)
                 {
-                    fprintf (stderr, "test registration failed - %s\n", CU_get_error_msg ());
+                    fprintf (stderr, "test registration failed - %s\n",
+                             CU_get_error_msg ());
                     exit (EXIT_FAILURE);
                 }
             }
@@ -1236,7 +1238,7 @@ main (int argc, char *argv[])
             unit_test = true;
             if (optarg && optarg[0] == '=')
             {
-                memmove(optarg, optarg+1, strlen (optarg));
+                memmove (optarg, optarg + 1, strlen (optarg));
             }
             filter = optarg;
             break;
