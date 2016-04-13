@@ -1262,15 +1262,17 @@ main (int argc, char *argv[])
 
     cb_init ();
 
-    /* Create the alfred glists */
-    alfred_init (config_dir);
-    if (!alfred_inst)
-        goto exit;
-
     if (unit_test)
     {
         run_unit_test (filter);
         goto exit;
+    }
+    else
+    {
+        /* Create the alfred glists */
+        alfred_init (config_dir);
+        if (!alfred_inst)
+            goto exit;
     }
 
     /* Create pid file */
