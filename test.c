@@ -664,6 +664,27 @@ test_index_cb_wild (const char *path)
     return paths;
 }
 
+static GList*
+test_index_cb_always_slash (const char *path)
+{
+    GList *paths = NULL;
+    if (strcmp (path, TEST_PATH"/ends/with/slash/") == 0)
+    {
+        paths = g_list_append (paths, strdup (TEST_PATH"/ends/with/slash/yes"));
+    }
+    return paths;
+}
+
+static char*
+test_index_cb_always_slash_provide (const char *path)
+{
+    if (strcmp (path, TEST_PATH"/ends/with/slash/yes") == 0)
+    {
+        return strdup ("yes");
+    }
+    return NULL;
+}
+
 void
 test_index ()
 {
@@ -772,6 +793,32 @@ test_index_remove_handler ()
     CU_ASSERT (apteryx_index (path, test_index_cb));
     CU_ASSERT (apteryx_unindex (path, test_index_cb));
     CU_ASSERT (apteryx_search (path) == NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_index_always_ends_with_slash ()
+{
+    char *path = TEST_PATH"/ends/with/slash/*";
+    GList *paths = NULL;
+    GNode *root = NULL;
+
+    CU_ASSERT (apteryx_index (path, test_index_cb_always_slash));
+    CU_ASSERT (apteryx_provide (path, test_index_cb_always_slash_provide));
+
+    /* apteryx_search */
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/ends/with/slash/")) != NULL);
+    g_list_free_full (paths, free);
+
+    /* apteryx_get_tree */
+    root = apteryx_get_tree (TEST_PATH"/ends/with/slash");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/ends/with/slash") == 0);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unindex (path, test_index_cb_always_slash));
+    CU_ASSERT (apteryx_unprovide (path, test_index_cb_always_slash_provide));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3612,6 +3659,7 @@ static CU_TestInfo tests_api_index[] = {
     { "index no handler", test_index_no_handler },
     { "index remove handler", test_index_remove_handler },
     { "index x/* with provide x/*", test_index_and_provide },
+    { "index path ends with /", test_index_always_ends_with_slash },
     CU_TEST_INFO_NULL,
 };
 
