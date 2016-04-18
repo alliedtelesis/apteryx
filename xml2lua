@@ -204,7 +204,7 @@ function generate_defines(tbl, path, depth)
 			print(line)
 		elseif is_list(tbl) then
 			if depth == 0 then
-				print("apteryx[\""..name.."\"]=function(name"..depth..")")
+				print("apteryx[\""..name.."\"]=function(name"..depth..",value)")
 			else
 				print(tab.."[\""..name.."\"]".."=function(name"..depth..",value)")
 			end
