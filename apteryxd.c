@@ -973,22 +973,29 @@ _traverse_paths (GList **pvlist, const char *path)
         *pvlist = g_list_prepend (*pvlist, pv);
     }
 
+    char *path_s = NULL;
+    if (asprintf (&path_s, "%s/", path) < 0)
+    {
+        ERROR ("Out of memory");
+        return;
+    }
+
     /* Check for children - index first */
-    if (!index_get (path, &children))
+    if (!index_get (path_s, &children))
     {
         /* Search database next */
-        children = db_search (path);
+        children = db_search (path_s);
 
         /* Append any provided paths */
         GList *providers = NULL;
-        providers = cb_match (&provide_list, path, CB_MATCH_PART);
+        providers = cb_match (&provide_list, path_s, CB_MATCH_PART);
         for (iter = providers; iter; iter = g_list_next (iter))
         {
             cb_info_t *provider = iter->data;
             char *ptr, *ppath;
-            int len = strlen (path);
+            int len = strlen (path_s);
 
-            if (strcmp (provider->path, path) == 0)
+            if (strcmp (provider->path, path_s) == 0)
                 continue;
 
             ppath = g_strdup (provider->path);
@@ -1006,6 +1013,7 @@ _traverse_paths (GList **pvlist, const char *path)
         _traverse_paths (pvlist, (const char *) iter->data);
     }
     g_list_free_full (children, g_free);
+    free (path_s);
 }
 
 static void
