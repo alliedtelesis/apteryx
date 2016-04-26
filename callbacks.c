@@ -160,7 +160,7 @@ cb_match (GList **list, const char *path, int criteria)
                   (ptr = strchr(cb->path, '*')) != NULL)
         {
             /* Match up to the '*' */
-            if (strncmp(path, cb->path, ptr - cb->path - 1) == 0)
+            if (strncmp(path, cb->path, ptr - cb->path) == 0)
             {
                 const char *after_needle = ptr + 1;
                 const char *after_haystack = path + strlen(path) - strlen(after_needle);
