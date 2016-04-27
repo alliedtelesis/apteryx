@@ -2182,6 +2182,49 @@ test_provide_after_db ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static char*
+test_provide_wildcard_callback (const char *path)
+{
+    return strdup ("matching");
+}
+
+void
+test_provider_wildcard ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/*";
+    const char *path2 = TEST_PATH"/interfaces/eth0/state";
+    const char *path3 = TEST_PATH"/interfaces/eth0";
+    char *value = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_wildcard_callback));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path2)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path3)) == NULL);
+    if (value)
+        free (value);
+}
+
+void
+test_provider_wildcard_internal ()
+{
+    const char *path = TEST_PATH"/a/b/*/f";
+    const char *path2 = TEST_PATH"/a/b/e/f";
+    const char *path3 = TEST_PATH"/a/bcd/e/f";
+    char *value = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_wildcard_callback));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path2)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path3)) == NULL);
+    if (value)
+        free (value);
+};
+
+
 void
 test_tree_nodes ()
 {
@@ -3717,6 +3760,8 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide search", test_provide_search },
     { "provide and db search", test_provide_search_db },
     { "provide after db", test_provide_after_db },
+    { "provider wildcard", test_provider_wildcard },
+    { "provider wildcard internal", test_provider_wildcard_internal },
     CU_TEST_INFO_NULL,
 };
 
