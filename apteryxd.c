@@ -823,6 +823,29 @@ exit:
     return;
 }
 
+static char *
+get_value (const char *path)
+{
+    char *value = NULL;
+    size_t vsize = 0;
+
+    /* Proxy first */
+    if ((value = proxy_get (path)) == NULL)
+    {
+        /* Database second */
+        if (!db_get (path, (unsigned char**)&value, &vsize))
+        {
+            /* Provide third */
+            if ((value = provide_get (path)) == NULL)
+            {
+                DEBUG ("GET: not in database or provided or proxied\n");
+            }
+        }
+    }
+
+    return value;
+}
+
 static void
 apteryx__get (Apteryx__Server_Service *service,
               const Apteryx__Get *get,
@@ -830,7 +853,6 @@ apteryx__get (Apteryx__Server_Service *service,
 {
     Apteryx__GetResult result = APTERYX__GET_RESULT__INIT;
     char *value = NULL;
-    size_t vsize = 0;
 
     /* Check parameters */
     if (get == NULL || get->path == NULL)
@@ -845,21 +867,7 @@ apteryx__get (Apteryx__Server_Service *service,
     DEBUG ("GET: %s\n", get->path);
 
     /* Lookup value */
-    value = NULL;
-    vsize = 0;
-    /* Proxy first */
-    if ((value = proxy_get (get->path)) == NULL)
-    {
-        /* Database second */
-        if (!db_get (get->path, (unsigned char**)&value, &vsize))
-        {
-            /* Provide third */
-            if ((value = provide_get (get->path)) == NULL)
-            {
-                DEBUG ("GET: not in database or provided or proxied\n");
-            }
-        }
-    }
+    value = get_value (get->path);
 
     /* Send result */
     DEBUG ("     = %s\n", value);
@@ -868,6 +876,47 @@ apteryx__get (Apteryx__Server_Service *service,
     if (value)
         g_free (value);
     return;
+}
+
+static GList *
+search_path (const char *path)
+{
+    GList *results = NULL;
+    GList *iter = NULL;
+
+    /* Proxy first */
+    results = proxy_search (path);
+    if (!results)
+    {
+        /* Indexers second */
+        if (index_get (path, &results) == true)
+        {
+            DEBUG (" (index result:)\n");
+        }
+        else
+        {
+            /* Search database next */
+            results = db_search (path);
+
+            /* Append any provided paths */
+            GList *providers = NULL;
+            providers = cb_match (&provide_list, path, CB_MATCH_PART);
+            for (iter = providers; iter; iter = g_list_next (iter))
+            {
+                cb_info_t *provider = iter->data;
+                int len = strlen (path);
+                char *ptr, *path = g_strdup (provider->path);
+                if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
+                    *ptr = '\0';
+                if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
+                    results = g_list_append (results, path);
+                else
+                    g_free (path);
+            }
+            g_list_free_full (providers, (GDestroyNotify) cb_release);
+        }
+    }
+    return results;
 }
 
 static void
@@ -893,38 +942,7 @@ apteryx__search (Apteryx__Server_Service *service,
 
     DEBUG ("SEARCH: %s\n", search->path);
 
-    /* Proxy first */
-    results = proxy_search (search->path);
-    if (!results)
-    {
-        /* Indexers second */
-        if (index_get (search->path, &results) == true)
-        {
-            DEBUG (" (index result:)\n");
-        }
-        else
-        {
-            /* Search database next */
-            results = db_search (search->path);
-
-            /* Append any provided paths */
-            GList *providers = NULL;
-            providers = cb_match (&provide_list, search->path, CB_MATCH_PART);
-            for (iter = providers; iter; iter = g_list_next (iter))
-            {
-                cb_info_t *provider = iter->data;
-                int len = strlen (search->path);
-                char *ptr, *path = g_strdup (provider->path);
-                if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
-                    *ptr = '\0';
-                if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
-                    results = g_list_append (results, path);
-                else
-                    g_free (path);
-            }
-            g_list_free_full (providers, (GDestroyNotify) cb_release);
-        }
-    }
+    results = search_path (search->path);
 
     /* Prepare the results */
     result.n_paths = g_list_length (results);
@@ -943,6 +961,132 @@ apteryx__search (Apteryx__Server_Service *service,
     g_list_free_full (results, g_free);
     if (result.paths)
         g_free (result.paths);
+    return;
+}
+
+
+static void
+apteryx__find (Apteryx__Server_Service *service,
+              const Apteryx__Find *find,
+              Apteryx__SearchResult_Closure closure, void *closure_data)
+{
+    Apteryx__SearchResult result = APTERYX__SEARCH_RESULT__INIT;
+    GList *possible_matches = NULL;
+    GList *iter = NULL;
+    char *tmp = NULL;
+    char *ptr = NULL;
+    char *chunk;
+    GList *matches = NULL;
+    int i;
+
+    /* Check parameters */
+    if (find == NULL || find->n_matches == 0 || find->matches == NULL)
+    {
+        ERROR ("FIND: Invalid parameters.\n");
+        INC_COUNTER (counters.find_invalid);
+        goto exit;
+    }
+    INC_COUNTER (counters.find);
+
+    /* Debug */
+    for (i = 0; debug && i < find->n_matches; i++)
+    {
+        DEBUG ("FIND: %s = %s\n", find->matches[i]->path, find->matches[i]->value);
+    }
+
+    /* Grab first level (from root) */
+    tmp = g_strdup (find->path);
+    chunk = strtok_r( tmp, "*", &ptr);
+    if (chunk)
+    {
+        possible_matches = search_path (chunk);
+    }
+
+    /* For each * do a search + add keys, then re-search */
+    while ((chunk = strtok_r (NULL, "*", &ptr)) != NULL)
+    {
+        GList *last_round = possible_matches;
+        possible_matches = NULL;
+        for (iter = g_list_first (last_round); iter; iter = g_list_next (iter))
+        {
+            char *next_level = NULL;
+            next_level = g_strdup_printf("%s%s", (char*) iter->data, chunk);
+            possible_matches = g_list_concat (search_path (next_level), possible_matches);
+            g_free (next_level);
+        }
+        g_list_free_full (last_round, g_free);
+    }
+
+    /* Go through each path match and see if all keys match */
+    for (iter = g_list_first (possible_matches); iter; iter = g_list_next (iter))
+    {
+        bool possible_match = true;
+        for (i = 0; i < find->n_matches && possible_match; i++)
+        {
+            char *key = NULL;
+            char *value = NULL;
+
+            key = g_strdup_printf("%s%s", (char*)iter->data,
+                              strrchr (find->matches[i]->path, '*') + 1);
+            value = get_value (key);
+
+
+            /* A "" value on a match maps to no return value from provider / database */
+            if (strlen (find->matches[i]->value) == 0 && value == NULL)
+            {
+                possible_match = true;
+            }
+            else if ((strlen (find->matches[i]->value) == 0 && value != NULL) ||
+                    (value == NULL && strlen (find->matches[i]->value) > 0))
+            {
+                /* Match miss - we can stop checking */
+                possible_match = false;
+            }
+            else if (strcmp (value, find->matches[i]->value) != 0)
+            {
+                /* Match miss - we can stop checking */
+                possible_match = false;
+            }
+
+            g_free (key);
+            g_free (value);
+        }
+
+        /* All keys match, so this is a good path */
+        if (possible_match)
+        {
+            matches = g_list_prepend (matches, g_strdup ((char*)iter->data));
+        }
+    }
+    g_list_free_full (possible_matches, g_free);
+
+    DEBUG ("FIND: matches:\n");
+    /* Prepare the results */
+    result.n_paths = g_list_length (matches);
+    if (result.n_paths > 0)
+    {
+        result.paths = (char **) g_malloc (result.n_paths * sizeof (char *));
+        for (i = 0, iter = g_list_first (matches); iter; iter = g_list_next (iter), i++)
+        {
+            DEBUG ("         = %s\n", (char *) iter->data);
+            result.paths[i] = (char *) iter->data;
+        }
+    }
+    else
+    {
+        DEBUG ("         NONE\n");
+    }
+
+exit:
+    /* Return result */
+    closure (&result, closure_data);
+
+    /* Cleanup */
+    g_free (tmp);
+    g_list_free_full (matches, g_free);
+    if (result.paths)
+        g_free (result.paths);
+
     return;
 }
 

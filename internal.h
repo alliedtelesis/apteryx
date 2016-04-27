@@ -97,6 +97,8 @@ typedef struct _cb_info_t
     X(uint32_t, proxied_timeout) \
     X(uint32_t, prune) \
     X(uint32_t, prune_invalid) \
+    X(uint32_t, find) \
+    X(uint32_t, find_invalid) \
     X(uint32_t, timestamp) \
     X(uint32_t, timestamp_invalid)
 

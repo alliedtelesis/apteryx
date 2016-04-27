@@ -1170,6 +1170,190 @@ apteryx_search_simple (const char *path)
     return result;
 }
 
+
+GList *
+apteryx_find (const char *path, const char *value)
+{
+    char *url = NULL;
+    ProtobufCService *rpc_client;
+    Apteryx__Find find = APTERYX__FIND__INIT;
+    search_data_t data = {0};
+    Apteryx__PathValue pv = {
+            .base.descriptor = &apteryx__path_value__descriptor,
+            .path = (char*) path,
+            .value = (char*) value
+    };
+
+    char *tmp_path = NULL;
+
+    ASSERT ((ref_count > 0), return NULL, "FIND: Not initialised\n");
+    ASSERT (path, return NULL, "FIND: Invalid parameters\n");
+    ASSERT (value, return NULL, "FIND: Invalid parameters\n");
+
+    DEBUG ("FIND: %s = %s\n", path, value);
+
+    /* Check path */
+    path = validate_path (path, &url);
+    if (!path)
+    {
+        ERROR ("FIND: invalid root (%s)!\n", path);
+        free (url);
+        assert (!debug || path);
+        return false;
+    }
+
+    /* Validate path */
+    if (!path ||
+        strcmp (path, "/") == 0 ||
+        strcmp (path, "/*") == 0 ||
+        strcmp (path, "*") == 0 ||
+        strlen (path) == 0)
+    {
+        path = "";
+    }
+    else if (path[0] != '/' ||
+             strstr (path, "//") != NULL)
+    {
+        free (url);
+        ERROR ("FIND: invalid root (%s)!\n", path);
+        assert(!debug || path[0] == '/');
+        assert(!debug || strstr (path, "//") == NULL);
+        return NULL;
+    }
+
+    /* Remove the trailing key */
+    tmp_path = strdup (path);
+    if (strrchr (tmp_path, '*'))
+        *strrchr (tmp_path, '*') = '\0';
+
+    find.path = tmp_path;
+    find.n_matches = 1;
+    find.matches = malloc (find.n_matches * sizeof (Apteryx__PathValue *));
+    find.matches[0] = &pv;
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
+    {
+        ERROR ("FIND: Failed to connect to server: %s\n", strerror (errno));
+        free (url);
+        free (tmp_path);
+        return false;
+    }
+
+    apteryx__server__find (rpc_client, &find, handle_search_response, &data);
+    if (!data.done)
+    {
+        ERROR ("FIND: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
+        free (tmp_path);
+        return NULL;
+    }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+
+    free (tmp_path);
+    free (find.matches);
+
+    /* Result */
+    return data.paths;
+}
+
+static gboolean
+_find_multi (GNode *node, gpointer data)
+{
+    Apteryx__Find *find = (Apteryx__Find *)data;
+
+    if (APTERYX_HAS_VALUE(node))
+    {
+        char *path = apteryx_node_path (node);
+        Apteryx__PathValue *pv = calloc (1, sizeof (Apteryx__PathValue));
+        DEBUG ("FIND_TREE: %s = %s\n", path, APTERYX_VALUE (node));
+        pv->base.descriptor = &apteryx__path_value__descriptor;
+        pv->path = (char *) path;
+        pv->value = (char *) APTERYX_VALUE (node);
+        find->matches[find->n_matches++] = pv;
+    }
+    return FALSE;
+}
+
+GList *
+apteryx_find_tree (GNode *root)
+{
+    char *url = NULL;
+    ProtobufCService *rpc_client;
+    Apteryx__Find find = APTERYX__FIND__INIT;
+    search_data_t data = {0};
+    const char *path = APTERYX_NAME(root);
+    int i;
+
+    ASSERT ((ref_count > 0), return NULL, "FIND: Not initialised\n");
+    ASSERT (path, return NULL, "FIND: Invalid parameters\n");
+
+    DEBUG ("FIND_TREE: %s\n", path);
+
+    /* Check path */
+    path = validate_path (path, &url);
+
+    /* Validate path */
+    if (!path ||
+        strcmp (path, "/") == 0 ||
+        strcmp (path, "/*") == 0 ||
+        strcmp (path, "*") == 0 ||
+        strlen (path) == 0)
+    {
+        path = "";
+    }
+    else if (path[0] != '/' ||
+             strstr (path, "//") != NULL)
+    {
+        free (url);
+        ERROR ("FIND: invalid root (%s)!\n", path);
+        assert(!debug || path[0] == '/');
+        assert(!debug || strstr (path, "//") == NULL);
+        return NULL;
+    }
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
+    {
+        ERROR ("FIND: Failed to connect to server: %s\n", strerror (errno));
+        free (url);
+        return false;
+    }
+
+    find.path = (char *) path;
+    find.n_matches = g_node_n_nodes (root, G_TRAVERSE_LEAVES);
+    find.matches = malloc (find.n_matches * sizeof (Apteryx__PathValue *));
+    find.n_matches = 0;
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _find_multi, &find);
+
+    apteryx__server__find (rpc_client, &find, handle_search_response, &data);
+    if (!data.done)
+    {
+        ERROR ("FIND: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
+        return NULL;
+    }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+
+    /* Cleanup message */
+    for (i = 0; i < find.n_matches; i++)
+    {
+        Apteryx__PathValue *pv = find.matches[i];
+        free (pv->path);
+        free (pv);
+    }
+    free (find.matches);
+
+    /* Result */
+    return data.paths;
+}
+
 static bool
 add_callback (const char *type, const char *path, void *cb)
 {

@@ -266,6 +266,21 @@ void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char
 char* apteryx_node_path (GNode* node);
 
 /**
+ * Find a list of paths that match this tree below the root path given 
+ * @param root pointer to the N-ary tree of nodes with a wildcard root path
+ * @return GList of paths where this tree can be found
+ */
+GList *apteryx_find_tree (GNode *root);
+
+/**
+ * Find a list of paths that match this wildcard path + value
+ * @param path Path to match (with one or more * wildcard)
+ * @param value Value to match path against
+ * @return GList of paths where this value can be found
+ */
+GList *apteryx_find (const char *path, const char *value);
+
+/**
  * Set a tree of multiple values in Apteryx.
  * @param root pointer to the N-ary tree of nodes.
  * @return true on a successful set.

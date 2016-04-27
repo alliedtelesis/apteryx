@@ -41,6 +41,12 @@ message Search
     required string path = 1;
 };
 
+message Find
+{
+    required string path = 1;
+    repeated PathValue matches = 2;
+}
+
 message SearchResult
 {
     repeated string paths = 1;
@@ -101,6 +107,7 @@ service server
     rpc set (Set) returns (OKResult);
     rpc get (Get) returns (GetResult);
     rpc search (Search) returns (SearchResult);
+    rpc find (Find) returns (SearchResult);
     rpc traverse (Traverse) returns (TraverseResult);
     rpc prune (Prune) returns (OKResult);
     rpc timestamp (Get) returns (TimeStampResult);
