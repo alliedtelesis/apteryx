@@ -2628,6 +2628,212 @@ test_tree_atomic ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_find_one_star ()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT(apteryx_set_tree(root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT(apteryx_set_tree(root));
+    g_node_destroy (root);
+
+    GList *paths = apteryx_find (TEST_PATH"/routing/ipv4/rib/*/ifname", "eth0");
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+
+    apteryx_prune (TEST_PATH);
+}
+
+
+void
+test_find_two_star ()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "fc00:1::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "fc00:2::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    GList *paths = apteryx_find (TEST_PATH"/routing/*/rib/*/ifname", "eth1");
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+
+    apteryx_prune(TEST_PATH);
+}
+
+void
+test_find_tree_one_star()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+
+    GList *paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_find_tree_two_star()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "fc00:1::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "fc00:2::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+
+    GList *paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
+
+void
+test_find_tree_null_values()
+{
+    GNode* root = NULL;
+    GList *paths = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/0");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/3");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth10");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    /* Find the entry with a NULL ifname */
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "");
+    paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    /* Find the entry the eth1 entry (miss eth10) */
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    /* No entries exist with bpg as proto */
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "bgp");
+    paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 0);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
 static char*
 test_provide_callback_100 (const char *path)
 {
@@ -3796,6 +4002,15 @@ static CU_TestInfo tests_api_tree[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_find[] = {
+    { "simple find", test_find_one_star },
+    { "multi * find", test_find_two_star },
+    { "simple tree find", test_find_tree_one_star },
+    { "multi * tree find", test_find_tree_two_star },
+    { "find with null entry", test_find_tree_null_values },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_single_threaded[] = {
     { "single-threaded index", test_single_index },
     { "single-threaded index no polling", test_single_index_no_polling },
@@ -3862,6 +4077,7 @@ static CU_SuiteInfo suites[] = {
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
     { "Apteryx API Proxy", suite_init, suite_clean, tests_api_proxy },
+    { "Apteryx API Find", suite_init, suite_clean, tests_find },
     { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
     { "Apteryx Performance", suite_init, suite_clean, tests_performance },
     CU_SUITE_INFO_NULL,
