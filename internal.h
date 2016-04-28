@@ -137,6 +137,7 @@ bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
 bool rpc_server_release (rpc_instance rpc, const char *guid);
 int rpc_server_process (rpc_instance rpc, bool poll);
 ProtobufCService *rpc_client_connect (rpc_instance rpc, const char *url);
+ProtobufCService *rpc_client_connect_timeout (rpc_instance rpc, const char *url, uint64_t timeout);
 void rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep);
 
 /* Apteryx configuration */
