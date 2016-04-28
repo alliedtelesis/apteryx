@@ -2204,6 +2204,7 @@ test_provider_wildcard ()
     CU_ASSERT ((value = apteryx_get (path3)) == NULL);
     if (value)
         free (value);
+    apteryx_unprovide (path, test_provide_wildcard_callback);
 }
 
 void
@@ -2222,6 +2223,7 @@ test_provider_wildcard_internal ()
     CU_ASSERT ((value = apteryx_get (path3)) == NULL);
     if (value)
         free (value);
+    apteryx_unprovide (path, test_provide_wildcard_callback);
 };
 
 
