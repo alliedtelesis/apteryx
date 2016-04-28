@@ -986,7 +986,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
 }
 
 GNode*
-apteryx_get_tree (const char *path)
+apteryx_get_tree_timeout (const char *path, uint64_t timeout)
 {
     char *url = NULL;
     ProtobufCService *rpc_client;
@@ -1009,7 +1009,7 @@ apteryx_get_tree (const char *path)
     }
 
     /* IPC */
-    rpc_client = rpc_client_connect (rpc, url);
+    rpc_client = rpc_client_connect_timeout (rpc, url, timeout);
     if (!rpc_client)
     {
         ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
@@ -1031,6 +1031,12 @@ apteryx_get_tree (const char *path)
     rpc_client_release (rpc, rpc_client, true);
     free (url);
     return data.root;
+}
+
+GNode*
+apteryx_get_tree (const char *path)
+{
+    return apteryx_get_tree_timeout (path, RPC_TIMEOUT_US);
 }
 
 typedef struct _search_data_t
