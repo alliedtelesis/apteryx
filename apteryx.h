@@ -296,6 +296,15 @@ bool apteryx_set_tree (GNode* root);
 GNode* apteryx_get_tree (const char *path);
 
 /**
+ * Get a tree of multiple values from Apteryx, using the specified
+ * timeout for the RPC.
+ * @param path path to the root of the tree to return.
+ * @param timeout timeout for the RPC.
+ * @return N-ary tree of nodes.
+ */
+GNode* apteryx_get_tree_timeout (const char *path, uint64_t timeout);
+
+/**
  * Set a tree of multiple values in Apteryx, but only if
  * the existing value has not changed since the specified timestamp.
  * @param root pointer to the N-ary tree of nodes.
