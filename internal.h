@@ -128,6 +128,7 @@ uint64_t db_timestamp (const char *path);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
+#define RPC_CLIENT_TIMEOUT_US 1000000
 typedef struct rpc_instance_s *rpc_instance;
 #define RPC_TEST_DELAY_MASK 0x7FF
 extern bool rpc_test_random_watch_delay;

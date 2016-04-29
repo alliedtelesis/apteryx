@@ -249,7 +249,7 @@ apteryx_init (bool debug_enabled)
         char * uri = NULL;
 
         /* Create RPC instance */
-        rpc = rpc_init ((ProtobufCService *)&apteryx_client_service, &apteryx__server__descriptor, RPC_TIMEOUT_US);
+        rpc = rpc_init ((ProtobufCService *)&apteryx_client_service, &apteryx__server__descriptor, RPC_CLIENT_TIMEOUT_US);
         if (rpc == NULL)
         {
             ERROR ("Init: Failed to initialise RPC service\n");
