@@ -58,6 +58,7 @@ typedef struct rpc_client_t
     rpc_socket sock;
     uint32_t refcount;
     char *url;
+    uint64_t timeout;
 } rpc_client_t;
 
 /* Message header */
@@ -132,7 +133,7 @@ invoke_client_service (ProtobufCService *service,
     DEBUG ("RPC[%d]: waiting for response\n", client->sock->sock);
     void *data = NULL;
     size_t len = 0;
-    if (!rpc_socket_recv (client->sock, id, &data, &len, RPC_TIMEOUT_US))
+    if (!rpc_socket_recv (client->sock, id, &data, &len, client->timeout))
     {
         goto error;
     }
@@ -610,6 +611,7 @@ rpc_client_connect (rpc_instance rpc, const char *url)
     client->sock = sock;
     client->refcount = 1;
     client->url = g_strdup (url);
+    client->timeout = rpc->timeout;
 
     DEBUG ("RPC[%d]: New client to %s\n", sock->sock, url);
 
