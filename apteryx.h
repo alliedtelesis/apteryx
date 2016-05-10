@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <glib.h>
 
 /** Apteryx configuration
@@ -149,10 +150,28 @@ bool apteryx_dump (const char *path, FILE *fp);
  * @return false if the path is invalid
  */
 bool apteryx_set (const char *path, const char *value);
-/** Helper to extend the path with the specified key */
-bool apteryx_set_string (const char *path, const char *key, const char *value);
-/** Helper to store a simple int at an extended path */
-bool apteryx_set_int (const char *path, const char *key, int32_t value);
+
+/**
+ * Set a path/value using standard printf format specifiers
+ * Example:
+    apteryx_setf ("/rules/%d/index", index, "%d", index);
+    apteryx_setf ("/rules/%d/name", index, "%s", name);
+    apteryx_setf ("/rules/%d/action", index, "%d", action);
+ * @param format variable list of path and value format specifiers
+ * @return true on a successful set
+ * @return false if the path is invalid or the path/value cannot be formatted
+ */
+bool apteryx_setf (const char *format, ...);
+
+/** Deprecated helpers */
+static inline bool apteryx_set_string (const char *path, const char *key, const char *value)
+{
+    return apteryx_setf ("%s%s%s", path, key ? "/" : "", key ? : "", value);
+}
+static inline bool apteryx_set_int (const char *path, const char *key, int32_t value)
+{
+    return apteryx_setf ("%s%s%s", path, key ? "/" : "", key ? : "", "%d", value);
+}
 
 /**
  * Get a path/value from Apteryx
@@ -161,10 +180,33 @@ bool apteryx_set_int (const char *path, const char *key, int32_t value);
  * @return NULL if the path is invalid
  */
 char *apteryx_get (const char *path);
-/** Helper to retrieve the value using an extended path based on the specified key */
-char *apteryx_get_string (const char *path, const char *key);
-/** Helper to retrieve a simple integer from an extended path */
-int32_t apteryx_get_int (const char *path, const char *key);
+
+/**
+ * Get a path/value using standard scanf format specifiers
+ * Example:
+    apteryx_getf ("/rules/%d/name", index, "%15s", name);
+    apteryx_getf ("/rules/%d/description", index, "%31[^\\0]", description);
+    apteryx_getf ("/rules/%d/action", index, "%d", &action);
+ * @param format variable list of path and value format specifiers
+ * @return number of successfully parsed items (0 if path value is NULL)
+ */
+int apteryx_getf (const char *format, ...);
+
+/** Deprecated helpers */
+static inline char *apteryx_get_string (const char *path, const char *key)
+{
+    char _v[8192] = {};
+    if (apteryx_getf ("%s%s%s", path, key ? "/" : "", key ? : "", "%8191[^\\0]", _v))
+        return strdup(_v);
+    return NULL;
+}
+static inline int32_t apteryx_get_int (const char *path, const char *key)
+{
+    int32_t _v = -1;
+    if (apteryx_getf ("%s%s%s", path, key ? "/" : "", key ?: "", "%d", &_v))
+        return _v;
+    return -1;
+}
 
 /**
  * Get the last change timestamp of a given path
@@ -177,31 +219,13 @@ uint64_t apteryx_timestamp (const char *path);
  * Set a path/value in Apteryx, but only if the existing
  * value has not changed since the specified timestamp.
  * Can be used for a Compare-And-Swap operation.
- * Example: Safely reserve the next free row in a table
-    uint32_t index = 1;
-    while (index > 0) {
-        if (apteryx_cas_int (path, key, index, 0))
-            break;
-        index++;
-    }
- * Example: Safely updating a 32-bit bitmap
-    while (1) {
-        uint64_t ts = apteryx_timestamp (path);
-        uint32_t bitmap = 0;
-        char *value = apteryx_get (path);
-        if (value)
-        {
-            sscanf (value, "%"PRIx32, &bitmap);
-            free (value);
-        }
-        bitmap = (bitmap & ~clear) | set;
-        if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
-            bool success = apteryx_cas (path, value, ts);
-            free (value);
-            if (success || errno != -EBUSY)
-                return success;
-        }
-    }
+ * Example: Set a value only if has not changed since read
+    uint64_t ts = apteryx_timestamp ("/interfaces/eth0/state");
+    char *state = apteryx_get ("/interfaces/eth0/state");
+    if (strcmp (state, "up") == 0 &&
+        apteryx_cas (ts, "/interfaces/eth0/state", "down"))
+        return true;
+    return false;
  * @param path path to the value to set
  * @param value value to set at the specified path
  * @param ts timestamp to be compared to the paths last change time
@@ -209,10 +233,42 @@ uint64_t apteryx_timestamp (const char *path);
  * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
  */
 bool apteryx_cas (const char *path, const char *value, uint64_t ts);
-/** Helper to extend the path with the specified key */
-bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts);
-/** Helper to store a simple int at an extended path */
-bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts);
+
+/**
+ * Set a path/value using standard printf format specifiers,
+ * but only if the existing value has not changed since
+ * the specified timestamp.
+ * Example: Safely reserve the next free row in a table
+    uint32_t index = 1;
+    while (index > 0) {
+        if (apteryx_casf (0, "/rules/%d/index", index))
+            break;
+        index++;
+    }
+ * Example: Safely updating a 32-bit bitmap
+    while (1) {
+        uint64_t ts = apteryx_timestamp (path);
+        uint32_t bitmap = apteryx_getf (path, "%"PRIx32, &bitmap) ? bitmap : 0;
+        bitmap = (bitmap & ~clear) | set;
+        if (apteryx_casf (ts, "%"PRIx32, bitmap))
+            return;
+    }
+ * @param ts timestamp to be compared to the paths last change time
+ * @param format variable list of path and value format specifiers
+ * @return true on a successful set
+ * @return false if the path is invalid or the path/value cannot be formatted
+ */
+bool apteryx_casf (uint64_t ts, const char *format, ...);
+
+/** Deprecated helpers */
+static inline bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
+{
+    return apteryx_casf (ts, "%s%s%s", path, key ? "/" : "", key ? : "", value);
+}
+static inline  bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
+{
+    return apteryx_casf (ts, "%s%s%s", path, key ? "/" : "", key ? : "", "%d", value);
+}
 
 /**
  * Helpers for generating and parsing an Apteryx tree.
