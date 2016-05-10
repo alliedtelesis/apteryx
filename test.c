@@ -3330,6 +3330,20 @@ test_deadlock2 ()
 }
 
 void
+test_remote_path_colon ()
+{
+    char *path = TEST_TCP_URL":"TEST_PATH "/2001:db8::1/test";
+    char *value = NULL;
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_set (path, "hello"));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL && strcmp (value, "hello") == 0);
+    free (value);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+}
+
+void
 _dump_config (FILE *fd, char *root, int tab)
 {
     GList *paths = apteryx_search (root);
@@ -3899,6 +3913,7 @@ static CU_TestInfo tests_api[] = {
     { "bitmap", test_bitmap },
     { "shutdown deadlock", test_deadlock },
     { "shutdown deadlock 2", test_deadlock2 },
+    { "remote path contains colon", test_remote_path_colon },
     CU_TEST_INFO_NULL,
 };
 
