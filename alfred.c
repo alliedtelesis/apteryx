@@ -420,12 +420,25 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
     {
         content = xmlNodeGetContent (node);
         tmp_content = g_strdup ((char *) content);
-        cb = cb_create (&alfred->provides, "", (const char *) parent, 0,
-                        (uint64_t) (long) tmp_content);
-        cb_release (cb);
         DEBUG ("PROVIDE: %s, XML STR: %s\n", parent, content);
-    }
 
+        /* If the node is a leaf or ends in a '*' don't add another '*' */
+        if (node_is_leaf (node->parent) || parent[strlen (parent) - 1] == '*')
+        {
+            path = g_strdup (parent);
+        }
+        else
+        {
+            path = g_strdup_printf ("%s/*", parent);
+        }
+
+        if (path)
+        {
+            cb = cb_create (&alfred->provides, "", (const char *) path, 0,
+                            (uint64_t) (long) tmp_content);
+            cb_release (cb);
+        }
+    }
     else if (strcmp ((const char *) node->name, "INDEX") == 0)
     {
         content = xmlNodeGetContent (node);
