@@ -323,6 +323,7 @@ bool
 apteryx_bind (const char *url)
 {
     char path[PATH_MAX];
+    bool result;
 
     ASSERT ((ref_count > 0), return false, "BIND: Not initialised\n");
     ASSERT (url, return false, "BIND: Invalid parameters\n");
@@ -332,7 +333,9 @@ apteryx_bind (const char *url)
     if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
         return false;
-    return apteryx_set (path, url);
+    result = apteryx_set (path, url);
+    usleep (1000); /* Sockets need time to bind/unbind */
+    return result;
 }
 
 bool
