@@ -118,6 +118,48 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
     }
 }
 
+/* Traverse (get tree) */
+typedef struct _traverse_data_t
+{
+    GList *paths;
+    const char *path;
+    bool done;
+} traverse_data_t;
+
+static void
+handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_data)
+{
+    traverse_data_t *data = (traverse_data_t *)closure_data;
+    int i;
+
+    data->done = false;
+    data->paths = NULL;
+    if (result == NULL)
+    {
+        ERROR ("TRAVERSE: Error processing request.\n");
+        errno = -ETIMEDOUT;
+    }
+    else if (result->pv == NULL)
+    {
+        DEBUG ("    = (null)\n");
+        data->done = true;
+    }
+    else if (result->n_pv != 0)
+    {
+        int slen = strlen (data->path);
+        for (i = 0; i < result->n_pv; i++)
+        {
+            Apteryx__PathValue *pvread = result->pv[i];
+            Apteryx__PathValue *pv = calloc (1, sizeof (Apteryx__PathValue));
+            pv->path = strdup (pvread->path + slen);
+            pv->value = strdup (pvread->value);
+            DEBUG ("  %s = %s\n", pv->path, pv->value);
+            data->paths = g_list_append (data->paths, pv);
+        }
+        data->done = true;
+    }
+}
+
 static void
 handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
 {
@@ -635,6 +677,48 @@ proxy_search (const char *path)
     return data.paths;
 }
 
+static GList *
+proxy_traverse (const char *path)
+{
+    const char *in_path = path;
+    ProtobufCService *rpc_client;
+    Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
+    traverse_data_t data = {0};
+    cb_info_t *proxy = NULL;
+
+    /* Find and connect to a proxied instance */
+    rpc_client = find_proxy (&path, &proxy);
+    if (!rpc_client)
+        return NULL;
+
+    /* Do remote traverse */
+    traverse.path = (char *) path;
+    data.path = path;
+    apteryx__server__traverse (rpc_client, &traverse, handle_traverse_response, &data);
+    if (!data.done)
+    {
+        INC_COUNTER (counters.proxied_timeout);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        rpc_client_release (rpc, rpc_client, false);
+    }
+    else
+    {
+        DEBUG ("TRAVERSE: %s (proxies as %s)\n", in_path, path);
+        rpc_client_release (rpc, rpc_client, true);
+        /* Prepend full path to start of all search results */
+        GList *itr = data.paths;
+        for (; itr; itr = itr->next)
+        {
+            Apteryx__PathValue *pv = (Apteryx__PathValue *) itr->data;
+            char *tmp = g_strconcat (in_path, pv->path, NULL);
+            g_free (pv->path);
+            pv->path = tmp;
+        }
+    }
+
+    return data.paths;
+}
+
 static int
 proxy_prune (const char *path)
 {
@@ -1109,7 +1193,6 @@ _traverse_paths (GList **pvlist, const char *path)
 
         /* Allocate a new pv */
         pv = g_malloc0 (sizeof (Apteryx__PathValue));
-        pv->base.descriptor = &apteryx__path_value__descriptor;
         pv->path = g_strdup (path);
         pv->value = value;
 
@@ -1175,8 +1258,14 @@ apteryx__traverse (Apteryx__Server_Service *service,
 
     DEBUG ("TRAVERSE: %s\n", traverse->path);
 
-    /* Traverse paths */
-    _traverse_paths (&pvlist, traverse->path);
+    /* Proxy first */
+    pvlist = proxy_traverse (traverse->path);
+    if (!pvlist)
+    {
+        /* Traverse (local) paths */
+        _traverse_paths (&pvlist, traverse->path);
+    }
+
     if (pvlist)
     {
         result.n_pv = 0;
@@ -1184,6 +1273,7 @@ apteryx__traverse (Apteryx__Server_Service *service,
         for (iter = pvlist; iter; iter = g_list_next (iter))
         {
             Apteryx__PathValue *pv = (Apteryx__PathValue *) iter->data;
+            pv->base.descriptor = &apteryx__path_value__descriptor;
             DEBUG ("  %s = %s\n", pv->path, pv->value);
             result.pv[result.n_pv++] = pv;
         }

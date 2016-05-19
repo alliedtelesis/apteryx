@@ -3082,6 +3082,49 @@ test_proxy_get ()
 }
 
 void
+test_proxy_tree_get ()
+{
+    const char *value = NULL;
+    GNode *root = NULL;
+
+    debug = true;
+
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu1", "spam"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu2", "eggsandspam"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu3", "eggspamspamandeggs"))
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu4", "spamspameggsspamspamspameggsandspam"));
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+
+    /* Get menu item 1 via proxy */
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote"TEST_PATH"/local/foo/menu1")) != NULL);
+    CU_ASSERT (value && strcmp (value, "spam") == 0);
+    if (value)
+        free ((void *) value);
+
+    /* Test local tree */
+    root = apteryx_get_tree (TEST_PATH"/local");
+    CU_ASSERT (root && APTERYX_NUM_NODES (root) == 7);
+    if (root)
+        apteryx_free_tree (root);
+
+    /* Test same tree via proxy */
+    root = apteryx_get_tree (TEST_PATH"/remote"TEST_PATH"/local");
+    CU_ASSERT (root && APTERYX_NUM_NODES (root) == 7);
+    if (root)
+        apteryx_free_tree (root);
+    else
+        printf("No tree in result");
+
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+
+    debug = false;
+}
+
+void
 test_proxy_set ()
 {
     const char *value = NULL;
@@ -3990,6 +4033,7 @@ static CU_TestInfo tests_api_provide[] = {
 
 static CU_TestInfo tests_api_proxy[] = {
     { "proxy get", test_proxy_get },
+    { "proxy tree get", test_proxy_tree_get },
     { "proxy set", test_proxy_set },
     { "proxy not listening", test_proxy_not_listening },
     { "proxy before db get", test_proxy_before_db_get },
