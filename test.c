@@ -546,6 +546,59 @@ test_set_get_string ()
 }
 
 void
+test_setf_getf ()
+{
+    const char *path = TEST_PATH"/entity/zone/%s/description";
+    const char *index = "private";
+    const char *value = "my private zone";
+    char buffer[1024] = {};
+
+    CU_ASSERT (apteryx_setf (path, index, "%s", value));
+    CU_ASSERT (apteryx_getf (path, index, "%1023[^\\0]", buffer) == 1);
+    CU_ASSERT (strcmp (buffer, value) == 0);
+    CU_ASSERT (apteryx_setf (path, index, NULL));
+    CU_ASSERT (apteryx_getf (path, index) == 0);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_setf_parameters ()
+{
+    char *v;
+    CU_ASSERT (!apteryx_setf (NULL));
+    CU_ASSERT (!apteryx_setf ("%s", "dog"));
+    CU_ASSERT (apteryx_setf (TEST_PATH"/animal", "dog"));
+    CU_ASSERT (apteryx_setf (TEST_PATH"/animal", NULL));
+    /* Bad things happen if we forget to specify the source */
+    CU_ASSERT (apteryx_setf (TEST_PATH"/%s/%d", "animal", 1, "dog"));
+    CU_ASSERT (apteryx_setf (TEST_PATH"/%s/%d", "animal", 1, NULL));
+    CU_ASSERT (apteryx_setf (TEST_PATH"/%s/%d", "animal", 1, "%s", "dog"));
+    CU_ASSERT ((v = apteryx_get (TEST_PATH"/animal/1")) != NULL);
+    CU_ASSERT (v && strcmp (v, "dog") == 0);
+    free (v);
+    CU_ASSERT (apteryx_setf (TEST_PATH"/%s/%d", "animal", 1, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_getf_parameters ()
+{
+    char v[8192] = {};
+    apteryx_set (TEST_PATH"/animal/2", "cat");
+    CU_ASSERT (!apteryx_getf (NULL));
+    CU_ASSERT (!apteryx_getf ("%s", "cat"));
+    CU_ASSERT (!apteryx_getf (TEST_PATH"/animal"));
+    CU_ASSERT (!apteryx_getf (TEST_PATH"/%s/%d", "animal", 2));
+    CU_ASSERT (!apteryx_getf (TEST_PATH"/%s/%d", "animal", 1, "%s"));
+    CU_ASSERT (!apteryx_getf (TEST_PATH"/%s/%d", "animal", 1, "%d"));
+    /* Bad things happen if we forget to specify the destination */
+    CU_ASSERT (apteryx_getf (TEST_PATH"/%s/%d", "animal", 2, "%s", v));
+    CU_ASSERT (strcmp (v, "cat") == 0);
+    apteryx_set (TEST_PATH"/animal/2", NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_search_paths ()
 {
     GList *paths = NULL;
@@ -888,6 +941,27 @@ test_cas ()
     free ((void *) value);
 
     CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_casf ()
+{
+    uint64_t ts;
+    char *v;
+    CU_ASSERT (!apteryx_casf (0, NULL));
+    CU_ASSERT (!apteryx_casf (0, "%s", "dog"));
+    CU_ASSERT (apteryx_casf (0, TEST_PATH"/%s/%d", "animal", 1, "dog"));
+    CU_ASSERT (!apteryx_casf (0, TEST_PATH"/%s/%d", "animal", 1, "cat"));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (TEST_PATH"/animal/1")) != 0);
+    CU_ASSERT (apteryx_casf (ts, TEST_PATH"/%s/%d", "animal", 1, "mouse"));
+    CU_ASSERT (!apteryx_casf (ts, TEST_PATH"/%s/%d", "animal", 1, "frog"));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((v = apteryx_get (TEST_PATH"/animal/1")) != NULL);
+    CU_ASSERT (v && strcmp (v, "mouse") == 0);
+    free (v);
+    CU_ASSERT (apteryx_set (TEST_PATH"/animal/1", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3939,6 +4013,9 @@ static CU_TestInfo tests_api[] = {
     { "large value", test_set_get_large_value },
     { "multiple leaves", test_multiple_leaves },
     { "set/get string", test_set_get_string },
+    { "setf/getf", test_setf_getf },
+    { "setf parameters", test_setf_parameters },
+    { "getf parameters", test_getf_parameters },
     { "set/get int", test_set_get_int },
     { "get no value", test_get_no_value },
     { "overwrite", test_overwrite },
@@ -3949,6 +4026,7 @@ static CU_TestInfo tests_api[] = {
     { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
     { "cas", test_cas },
+    { "casf", test_casf },
     { "cas string", test_cas_string },
     { "cas int", test_cas_int },
     { "bitmap", test_bitmap },

@@ -505,62 +505,37 @@ apteryx_set (const char *path, const char *value)
 }
 
 bool
-apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
+_apteryx_casf (uint64_t ts, const char *format, va_list vl)
 {
-    char *full_path;
-    size_t len;
-    bool res = false;
-
-    /* Create full path */
-    if (key)
-        len = asprintf (&full_path, "%s/%s", path, key);
-    else
-        len = asprintf (&full_path, "%s", path);
-    if (len)
-    {
-        res = apteryx_cas (full_path, value, ts);
-        free (full_path);
-    }
+    if (!format)
+        return false;
+    char *path = g_strdup_vprintf (format, vl);
+    char *value = va_arg (vl, char *);
+    value = value ? g_strdup_vprintf (value, vl) : NULL;
+    bool res = apteryx_cas (path, value, ts);
+    g_free (value);
+    g_free (path);
     return res;
 }
 
 bool
-apteryx_set_string (const char *path, const char *key, const char *value)
+apteryx_casf (uint64_t ts, const char *format, ...)
 {
-    return apteryx_cas_string (path, key, value, UINT64_MAX);
-}
-
-bool
-apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
-{
-    char *full_path;
-    size_t len;
-    char *v;
-    bool res = false;
-
-    /* Create full path */
-    if (key)
-        len = asprintf (&full_path, "%s/%s", path, key);
-    else
-        len = asprintf (&full_path, "%s", path);
-    if (len)
-    {
-        /* Store as a string at the moment */
-        len = asprintf ((char **) &v, "%d", value);
-        if (len)
-        {
-            res = apteryx_cas (full_path, v, ts);
-            free ((void *) v);
-        }
-        free (full_path);
-    }
+    va_list vl;
+    va_start (vl, format);
+    bool res = _apteryx_casf (ts, format, vl);
+    va_end (vl);
     return res;
 }
 
 bool
-apteryx_set_int (const char *path, const char *key, int32_t value)
+apteryx_setf (const char *format, ...)
 {
-    return apteryx_cas_int (path, key, value, UINT64_MAX);
+    va_list vl;
+    va_start (vl, format);
+    bool res = _apteryx_casf (UINT64_MAX, format, vl);
+    va_end (vl);
+    return res;
 }
 
 typedef struct _get_data_t
@@ -639,53 +614,23 @@ apteryx_get (const char *path)
     return value;
 }
 
-char *
-apteryx_get_string (const char *path, const char *key)
+int
+apteryx_getf (const char *format, ...)
 {
-    char *full_path;
-    size_t len;
-    char *value = NULL;
-    char *str = NULL;
-
-    /* Create full path */
-    if (key)
-        len = asprintf (&full_path, "%s/%s", path, key);
-    else
-        len = asprintf (&full_path, "%s", path);
-    if (len)
-    {
-        if ((value = apteryx_get ((const char *) full_path)))
-        {
-            str = (char *) value;
-        }
-        free (full_path);
-    }
-    return str;
-}
-
-int32_t
-apteryx_get_int (const char *path, const char *key)
-{
-    char *full_path;
-    size_t len;
-    char *v = NULL;
-    int value = -1;
-
-    /* Create full path */
-    if (key)
-        len = asprintf (&full_path, "%s/%s", path, key);
-    else
-        len = asprintf (&full_path, "%s", path);
-    if (len)
-    {
-        if ((v = apteryx_get (full_path)))
-        {
-            value = atoi ((char *) v);
-            free (v);
-        }
-        free (full_path);
-    }
-    return value;
+    va_list vl;
+    if (!format)
+        return 0;
+    va_start (vl, format);
+    char *path = g_strdup_vprintf (format, vl);
+    char *value = apteryx_get (path);
+    free (path);
+    if (!value)
+        return 0;
+    format = va_arg (vl, char *);
+    int res = vsscanf (value, format, vl);
+    free (value);
+    va_end (vl);
+    return res;
 }
 
 GNode *
