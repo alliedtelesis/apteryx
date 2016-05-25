@@ -75,13 +75,13 @@ end
 
 local __apteryx = {
 	__index = function(self, key)
-		if self["__"..key] ~= nil then
-			value = apteryx_get(self["__"..key].path)
+		if rawget(self, "__"..key) ~= nil then
+			value = apteryx_get(rawget(self, "__"..key).path)
 			if value == nil then
-				value = self["__"..key].default
+				value = rawget(self, "__"..key).default
 			end
-			if self["__"..key].values ~= nil then
-				for k, v in pairs(self["__"..key].values) do
+			if rawget(self, "__"..key).values ~= nil then
+				for k, v in pairs(rawget(self, "__"..key).values) do
 					if v == value then
 						return k
 					end
