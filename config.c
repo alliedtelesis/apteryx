@@ -28,10 +28,10 @@ static bool
 handle_debug_set (const char *path, const char *value)
 {
     if (value)
-        debug = atoi (value);
+        apteryx_debug = atoi (value);
     else
-        debug = false;
-    DEBUG ("DEBUG %s\n", debug ? "enabled" : "disabled");
+        apteryx_debug = false;
+    DEBUG ("DEBUG %s\n", apteryx_debug ? "enabled" : "disabled");
     return true;
 }
 

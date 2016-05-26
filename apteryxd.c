@@ -30,7 +30,7 @@
 #include "internal.h"
 
 /* Debug */
-bool debug = false;
+bool apteryx_debug = false;
 
 /* Run while true */
 static bool running = true;
@@ -801,7 +801,7 @@ apteryx__set (Apteryx__Server_Service *service,
     INC_COUNTER (counters.set);
 
     /* Debug */
-    for (i=0; debug && i<set->n_sets; i++)
+    for (i=0; apteryx_debug && i<set->n_sets; i++)
     {
         DEBUG ("SET: %s = %s\n", set->sets[i]->path, set->sets[i]->value);
     }
@@ -1073,7 +1073,7 @@ apteryx__find (Apteryx__Server_Service *service,
     INC_COUNTER (counters.find);
 
     /* Debug */
-    for (i = 0; debug && i < find->n_matches; i++)
+    for (i = 0; apteryx_debug && i < find->n_matches; i++)
     {
         DEBUG ("FIND: %s = %s\n", find->matches[i]->path, find->matches[i]->value);
     }
@@ -1429,7 +1429,7 @@ main (int argc, char **argv)
         switch (i)
         {
         case 'd':
-            debug = true;
+            apteryx_debug = true;
             background = false;
             break;
         case 'b':

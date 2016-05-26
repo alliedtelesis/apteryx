@@ -41,7 +41,7 @@
 #define SECONDS_TO_MILLI 1000
 
 /* Debug */
-bool debug = false;
+bool apteryx_debug = false;
 
 /* An Alfred instance. */
 struct alfred_instance_t
@@ -1340,7 +1340,7 @@ main (int argc, char *argv[])
         switch (i)
         {
         case 'd':
-            debug = true;
+            apteryx_debug = true;
             background = false;
             break;
         case 'b':
@@ -1379,7 +1379,7 @@ main (int argc, char *argv[])
     }
 
     /* Initialise Apteryx client library */
-    apteryx_init (debug);
+    apteryx_init (apteryx_debug);
 
     cb_init ();
 

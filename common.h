@@ -34,7 +34,7 @@
 #include <glib.h>
 
 /* Debug */
-extern bool debug;
+extern bool apteryx_debug;
 
 static inline uint64_t
 get_time_us (void)
@@ -54,7 +54,7 @@ static inline uint32_t htol32 (uint32_t v)
 #define ltoh32 htol32
 
 #define DEBUG(fmt, args...) \
-    if (debug) \
+    if (apteryx_debug) \
     { \
         syslog (LOG_DEBUG, fmt, ## args); \
         printf ("[%"PRIu64":%d] ", get_time_us (), getpid ()); \
@@ -64,7 +64,7 @@ static inline uint32_t htol32 (uint32_t v)
 #define ERROR(fmt, args...) \
     { \
         syslog (LOG_ERR, fmt, ## args); \
-        if (debug) \
+        if (apteryx_debug) \
         { \
             fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
             fprintf (stderr, "ERROR: "); \
@@ -76,7 +76,7 @@ static inline uint32_t htol32 (uint32_t v)
     if (!(assertion)) \
     { \
         syslog (LOG_ERR, fmt, ## args); \
-        if (debug) \
+        if (apteryx_debug) \
         { \
             fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
             fprintf (stderr, "ASSERT: "); \
