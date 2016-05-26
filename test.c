@@ -546,6 +546,21 @@ test_set_get_string ()
 }
 
 void
+test_set_has_value ()
+{
+    const char *path = TEST_PATH"/entity/zones";
+    const char *value = "123456";
+
+    CU_ASSERT (apteryx_set (path, value));
+
+    CU_ASSERT (apteryx_has_value (path) == true);
+
+    CU_ASSERT (apteryx_prune (path));
+
+    CU_ASSERT (apteryx_has_value (path) == false);
+}
+
+void
 test_search_paths ()
 {
     GList *paths = NULL;
@@ -3940,6 +3955,7 @@ static CU_TestInfo tests_api[] = {
     { "multiple leaves", test_multiple_leaves },
     { "set/get string", test_set_get_string },
     { "set/get int", test_set_get_int },
+    { "has_value", test_set_has_value },
     { "get no value", test_get_no_value },
     { "overwrite", test_overwrite },
     { "delete", test_delete },

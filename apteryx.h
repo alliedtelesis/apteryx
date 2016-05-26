@@ -167,6 +167,14 @@ char *apteryx_get_string (const char *path, const char *key);
 int32_t apteryx_get_int (const char *path, const char *key);
 
 /**
+ * Check if a path has a value in Apteryx
+ * @param path path to check that it exists and has a value
+ * @return true if the path exists and has a value
+ * @return false if the path is invalid or has no value
+ */
+bool apteryx_has_value (const char *path);
+
+/**
  * Get the last change timestamp of a given path
  * @param path path to get the timestamp for
  * @return 0 if the path doesn't exist, last change timestamp otherwise

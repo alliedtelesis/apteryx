@@ -688,6 +688,19 @@ apteryx_get_int (const char *path, const char *key)
     return value;
 }
 
+bool
+apteryx_has_value (const char *path)
+{
+    char *value = NULL;
+    value = apteryx_get (path);
+    if (value)
+    {
+        free (value);
+        return true;
+    }
+    return false;
+}
+
 GNode *
 apteryx_find_child (GNode *parent, char *name)
 {
