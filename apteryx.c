@@ -36,7 +36,7 @@
 #include <glib.h>
 
 /* Configuration */
-bool debug = false;                      /* Debug enabled */
+bool apteryx_debug = false;                      /* Debug enabled */
 static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
@@ -243,7 +243,7 @@ apteryx_init (bool debug_enabled)
     /* Increment refcount */
     pthread_mutex_lock (&lock);
     ref_count++;
-    debug |= debug_enabled;
+    apteryx_debug |= debug_enabled;
     if (ref_count == 1)
     {
         char * uri = NULL;
@@ -372,7 +372,7 @@ apteryx_prune (const char *path)
     if (!path)
     {
         ERROR ("PRUNE: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         return false;
     }
 
@@ -462,7 +462,7 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
     {
         ERROR ("SET: invalid path (%s)!\n", path);
         free (url);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         return false;
     }
 
@@ -609,7 +609,7 @@ apteryx_get (const char *path)
     {
         ERROR ("GET: invalid path (%s)!\n", path);
         free (url);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         return NULL;
     }
 
@@ -863,7 +863,7 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
     if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("SET_TREE: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         free (url);
         return false;
     }
@@ -1019,7 +1019,7 @@ apteryx_get_tree (const char *path)
     if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("GET_TREE: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         free (url);
         return false;
     }
@@ -1104,7 +1104,7 @@ apteryx_search (const char *path)
     {
         ERROR ("SEARCH: invalid root (%s)!\n", path);
         free (url);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         return false;
     }
 
@@ -1123,9 +1123,9 @@ apteryx_search (const char *path)
     {
         free (url);
         ERROR ("SEARCH: invalid root (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        assert(!debug || path[strlen (path) - 1] == '/');
-        assert(!debug || strstr (path, "//") == NULL);
+        assert(!apteryx_debug || path[0] == '/');
+        assert(!apteryx_debug || path[strlen (path) - 1] == '/');
+        assert(!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
 
@@ -1214,7 +1214,7 @@ apteryx_find (const char *path, const char *value)
     {
         ERROR ("FIND: invalid root (%s)!\n", path);
         free (url);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         return false;
     }
 
@@ -1232,8 +1232,8 @@ apteryx_find (const char *path, const char *value)
     {
         free (url);
         ERROR ("FIND: invalid root (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        assert(!debug || strstr (path, "//") == NULL);
+        assert(!apteryx_debug || path[0] == '/');
+        assert(!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
 
@@ -1326,8 +1326,8 @@ apteryx_find_tree (GNode *root)
     {
         free (url);
         ERROR ("FIND: invalid root (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        assert(!debug || strstr (path, "//") == NULL);
+        assert(!apteryx_debug || path[0] == '/');
+        assert(!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
 
@@ -1520,7 +1520,7 @@ apteryx_timestamp (const char *path)
     {
         ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
         free (url);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         return 0;
     }
 

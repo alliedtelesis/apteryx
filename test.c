@@ -74,7 +74,7 @@ test_init ()
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
     CU_ASSERT (apteryx_set (path, NULL) == FALSE);
     CU_ASSERT (assert_apteryx_empty ());
-    apteryx_init (debug);
+    apteryx_init (apteryx_debug);
 }
 
 void
@@ -263,13 +263,13 @@ test_process_multi_write ()
         writers[i] = fork ();
         if (writers[i] == 0)
         {
-            apteryx_init (debug);
+            apteryx_init (apteryx_debug);
             _multi_write_thread ((void *) i);
             apteryx_shutdown ();
             exit (0);
         }
     }
-    apteryx_init (debug);
+    apteryx_init (apteryx_debug);
 
     for (i = 0; i < thread_count; i++)
     {
@@ -1093,7 +1093,7 @@ test_watch_fork ()
     apteryx_shutdown ();
     if ((pid = fork ()) == 0)
     {
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         usleep (TEST_SLEEP_TIMEOUT);
         apteryx_set_string (path, NULL, "down");
         apteryx_shutdown ();
@@ -1101,7 +1101,7 @@ test_watch_fork ()
     }
     else if (pid > 0)
     {
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         CU_ASSERT (apteryx_watch (path, test_watch_callback));
         usleep (TEST_SLEEP_TIMEOUT * 2);
         waitpid (pid, &status, 0);
@@ -1573,13 +1573,13 @@ test_watch_rpc_restart ()
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     CU_ASSERT (apteryx_watch (path, test_watch_callback));
     apteryx_shutdown ();
-    apteryx_init (debug);
+    apteryx_init (apteryx_debug);
     CU_ASSERT (apteryx_set_string (path, NULL, "down"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_path && strcmp (_path, path) == 0);
     CU_ASSERT (_value && strcmp (_value, "down") == 0);
     apteryx_shutdown ();
-    apteryx_init (debug);
+    apteryx_init (apteryx_debug);
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_path && strcmp (_path, path) == 0);
@@ -2083,7 +2083,7 @@ test_provide_different_process ()
     apteryx_shutdown ();
     if ((pid = fork ()) == 0)
     {
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
         usleep (RPC_TIMEOUT_US);
         apteryx_unprovide (path, test_provide_callback_up);
@@ -2092,7 +2092,7 @@ test_provide_different_process ()
     }
     else if (pid > 0)
     {
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         usleep (RPC_TIMEOUT_US / 2);
         CU_ASSERT ((value = apteryx_get (path)) != NULL);
         CU_ASSERT (value && strcmp (value, "up") == 0);
@@ -3134,7 +3134,7 @@ test_proxy_tree_get ()
     CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 
-    debug = false;
+    apteryx_debug = false;
 }
 
 void

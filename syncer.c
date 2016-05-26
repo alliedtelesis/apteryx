@@ -11,7 +11,7 @@
 #define APTERYX_SYNC_CONFIG_DIR "/etc/apteryx/sync/"
 
 /* Debug */
-bool debug = false;
+bool apteryx_debug = false;
 
 /* Run while true */
 static bool running = true;
@@ -470,7 +470,7 @@ main (int argc, char *argv[])
         switch (i)
         {
         case 'd':
-            debug = true;
+            apteryx_debug = true;
             background = false;
             break;
         case 'b':
