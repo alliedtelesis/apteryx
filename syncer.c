@@ -121,11 +121,10 @@ sync_path_check (const char *path)
 bool
 sync_path_excluded (const char *path)
 {
-    /* go through the list of paths to sync to the partner */
     pthread_rwlock_rdlock (&paths_lock);
-    for (GList *iter = paths; iter; iter = iter->next)
+    for (GList *iter = excluded_paths; iter; iter = iter->next)
     {
-        if (strcmp (path, iter->data))
+        if (strcmp (path, iter->data) == 0)
         {
             pthread_rwlock_unlock (&paths_lock);
             return true;
