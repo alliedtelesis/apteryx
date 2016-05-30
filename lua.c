@@ -11,7 +11,7 @@
  * > apteryx_set("/interfaces/eth1/state", "down")
  * > print(apteryx_get("/interfaces/eth0/state"))
  * up
- * > paths = {apteryx_search("/interfaces")}
+ * > paths = apteryx_search("/interfaces/")
  * > print(unpack(paths))
  * /interfaces/eth0        /interfaces/eth1
  *
@@ -137,13 +137,17 @@ lua_apteryx_search (lua_State *L)
     }
     paths = apteryx_search (lua_tostring (L, 1));
     num = g_list_length (paths);
-    for (GList* _iter= paths; _iter; _iter = _iter->next)
+    GList* _iter= paths;
+    lua_createtable (L, num, 0);
+    for (int i = 1; i <= num; i ++)
     {
         const char *path = (char *)_iter->data;
         lua_pushstring (L, path);
+        lua_rawseti (L, -2, i);
+        _iter = _iter->next;
     }
     g_list_free_full (paths, free);
-    return num;
+    return 1;
 }
 
 int

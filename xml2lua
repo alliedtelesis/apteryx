@@ -209,7 +209,7 @@ function generate_defines(tbl, path, depth)
 				print(tab.."[\""..name.."\"]".."=function(name"..depth..",value)")
 			end
 			print(tab.."	if name"..depth.." == nil then")
-			print(tab.."		local search = {apteryx_search(\""..path.."/\")}")
+			print(tab.."		local search = apteryx_search(\""..path.."/\")")
 			print(tab.."		for i,item in pairs(search) do")
 			print(tab.."			search[i] = item:sub(item:match'^.*()/'+1)")
 			print(tab.."		end")
