@@ -99,8 +99,6 @@ alfred_exec (lua_State *ls, const char *script)
     if (res != 0)
         alfred_error (ls, res);
 
-    lua_gc (ls, LUA_GCCOLLECT, 0);
-
     return (res == 0);
 }
 
@@ -138,12 +136,10 @@ watch_node_changed (const char *path, const char *value)
             lua_setglobal (alfred_inst->ls, "_value");
             ret = alfred_exec (alfred_inst->ls, script->data);
         }
-        cb_release (cb);
     }
-    g_list_free (matches);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     DEBUG ("ALFRED WATCH: %s = %s\n", path, value);
-
     return ret;
 }
 
@@ -153,7 +149,6 @@ provide_node_changed (const char *path)
     const char *const_value = NULL;
     char *ret = NULL;
     GList *matches = NULL;
-    GList *node = NULL;
     char *script = NULL;
     cb_info_t *cb = NULL;
 
@@ -165,7 +160,7 @@ provide_node_changed (const char *path)
     }
 
     pthread_mutex_lock (&alfred_inst->ls_lock);
-    cb = matches->data;
+    cb = g_list_first (matches)->data;
     script = (char *) (long) cb->cb;
     lua_pushstring (alfred_inst->ls, path);
     lua_setglobal (alfred_inst->ls, "_path");
@@ -173,12 +168,7 @@ provide_node_changed (const char *path)
     {
         ERROR ("Lua: Failed to execute script\n");
     }
-    for (node = g_list_first (matches); node != NULL; node = g_list_next (node))
-    {
-        cb = node->data;
-        cb_release (cb);
-    }
-    g_list_free (matches);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
     /* The return value of luaL_dostring is the top value of the stack */
     const_value = lua_tostring (alfred_inst->ls, -1);
     lua_pop (alfred_inst->ls, 1);
@@ -195,7 +185,6 @@ index_node_changed (const char *path)
     char *tmp_path2 = NULL;
     GList *ret = NULL;
     GList *matches = NULL;
-    GList *node = NULL;
     cb_info_t *cb = NULL;
 
     matches = cb_match (&alfred_inst->indexes, path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
@@ -204,7 +193,7 @@ index_node_changed (const char *path)
         ERROR ("ALFRED: No Alfred index for %s\n", path);
         return NULL;
     }
-    cb = matches->data;
+    cb = g_list_first (matches)->data;
     script = (char *) (long) cb->cb;
     pthread_mutex_lock (&alfred_inst->ls_lock);
     lua_pushstring (alfred_inst->ls, path);
@@ -213,12 +202,8 @@ index_node_changed (const char *path)
     {
         ERROR ("Lua: Failed to execute script\n");
     }
-    for (node = g_list_first (matches); node != NULL; node = g_list_next (node))
-    {
-        cb = node->data;
-        cb_release (cb);
-    }
-    g_list_free (matches);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
     if (lua_gettop (alfred_inst->ls))
     {
         if (lua_istable(alfred_inst->ls, -1))
@@ -244,7 +229,6 @@ index_node_changed (const char *path)
             }
         }
     }
-
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     return ret;
 }
@@ -296,8 +280,8 @@ destroy_watches (gpointer value, gpointer rpc)
     DEBUG ("XML: Destroy watches for path %s\n", cb->path);
 
     g_list_free_full (scripts, g_free);
+    cb_destroy (cb);
     cb_release (cb);
-
     return true;
 }
 
@@ -309,8 +293,8 @@ destroy_provides (gpointer value, gpointer rpc)
     DEBUG ("XML: Destroy provides for path %s\n", cb->path);
 
     g_free (script);
+    cb_destroy (cb);
     cb_release (cb);
-
     return true;
 }
 
@@ -322,6 +306,7 @@ destroy_indexes (gpointer value, gpointer rpc)
     DEBUG ("XML: Destroy indexes for path %s\n", cb->path);
 
     g_free (script);
+    cb_destroy (cb);
     cb_release (cb);
     return true;
 }
@@ -397,10 +382,9 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
             cb = matches->data;
             scripts = (GList *) (long) cb->cb;
             scripts = g_list_append (scripts, tmp_content);
-            g_list_free (matches);
+            g_list_free_full (matches, (GDestroyNotify) cb_release);
         }
         DEBUG ("XML: %s: (%s)\n", node->name, cb->path);
-        cb_release (cb);
     }
     else if (strcmp ((const char *) node->name, "SCRIPT") == 0)
     {
@@ -431,12 +415,10 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         {
             path = g_strdup_printf ("%s/*", parent);
         }
-
         if (path)
         {
             cb = cb_create (&alfred->provides, "", (const char *) path, 0,
                             (uint64_t) (long) tmp_content);
-            cb_release (cb);
         }
     }
     else if (strcmp ((const char *) node->name, "INDEX") == 0)
@@ -454,12 +436,10 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         {
             path = g_strdup_printf ("%s/*", parent);
         }
-
         if (path)
         {
             cb = cb_create (&alfred->indexes, "", (const char *) path, 0,
                             (uint64_t) (long) tmp_content);
-            cb_release (cb);
         }
     }
     /* Process children */
@@ -605,14 +585,11 @@ delayed_work_add (int delay, const char *script)
         if (strcmp (delay_script, script_list) == 0)
         {
             found = true;
+            g_free (delay_script);
             break;
         }
     }
-    if (found)
-    {
-        g_free (delay_script);
-    }
-    else
+    if (!found)
     {
         delayed_work = g_list_append (delayed_work, delay_script);
         g_timeout_add (delay * SECONDS_TO_MILLI, delayed_work_process, (gpointer) delay_script);
@@ -699,6 +676,8 @@ alfred_init (const char *path)
         goto error;
     }
 
+    pthread_mutex_init (&alfred_inst->ls_lock, NULL);
+
     /* Initialise the Lua state */
     alfred_inst->ls = luaL_newstate ();
     if (!alfred_inst->ls)
@@ -717,8 +696,6 @@ alfred_init (const char *path)
     lua_pushcfunction (alfred_inst->ls, rate_limit);
     lua_setfield (alfred_inst->ls, -2, "rate_limit");
     lua_setglobal (alfred_inst->ls, "Alfred");
-
-    pthread_mutex_init (&alfred_inst->ls_lock, NULL);
 
     /* Parse files in the config path */
     if (!load_config_files (alfred_inst, path))
