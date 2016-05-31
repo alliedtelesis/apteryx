@@ -101,8 +101,8 @@ function generate_header(xml,filename)
     generate_help(xml)
     print(string.format([[
  */
-#ifndef __%s_H__
-#define __%s_H__
+#ifndef __%s_APTERYX_SCHEMA_H__
+#define __%s_APTERYX_SCHEMA_H__
 ]], module:upper(),module:upper()))
 end
 
@@ -167,7 +167,7 @@ function generate_footer(filename)
     module = name:gsub(".xml", "")
     print(string.format([[
 
-#endif /*__%s_H__*/
+#endif /*__%s_APTERYX_SCHEMA_H__*/
 ]], module:upper()))
 end
 
