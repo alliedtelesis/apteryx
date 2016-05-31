@@ -260,7 +260,11 @@ apteryx_init (bool debug_enabled)
 
         /* Bind to the default uri for this client */
         if (asprintf((char **)&uri, APTERYX_SERVER".%"PRIu64, (uint64_t)getpid ()) <= 0)
+        {
+            ref_count--;
+            pthread_mutex_unlock (&lock);
             return false;
+        }
         if (!rpc_server_bind (rpc, uri, uri))
         {
             ERROR ("Failed to bind to default rpc service\n");
