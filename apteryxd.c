@@ -989,13 +989,17 @@ search_path (const char *path)
             {
                 cb_info_t *provider = iter->data;
                 int len = strlen (path);
-                char *ptr, *path = g_strdup (provider->path);
-                if ((ptr = strchr (&path[len ? len : len+1], '/')) != 0)
+                /* If there is a provider for a single node below here it may
+                 * show as a "*" entry in this list, which is not desirable */
+                if (strchr (provider->path, '*'))
+                    continue;
+                char *ptr, *provider_path = g_strdup (provider->path);
+                if ((ptr = strchr (&provider_path[len ? len : len+1], '/')) != 0)
                     *ptr = '\0';
-                if (!g_list_find_custom (results, path, (GCompareFunc) strcmp))
-                    results = g_list_append (results, path);
+                if (!g_list_find_custom (results, provider_path, (GCompareFunc) strcmp))
+                    results = g_list_append (results, provider_path);
                 else
-                    g_free (path);
+                    g_free (provider_path);
             }
             g_list_free_full (providers, (GDestroyNotify) cb_release);
         }
