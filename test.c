@@ -2228,9 +2228,16 @@ test_provider_wildcard_internal ()
     const char *path = TEST_PATH"/a/b/*/f";
     const char *path2 = TEST_PATH"/a/b/e/f";
     const char *path3 = TEST_PATH"/a/bcd/e/f";
+    GList *search_result = NULL;
     char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_wildcard_callback));
+
+    /* The provided value should NOT show in search */
+    search_result = apteryx_search (TEST_PATH"/a/b/");
+    CU_ASSERT (g_list_length (search_result) == 0);
+    g_list_free_full (search_result, free);
+
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     free (value);
     CU_ASSERT ((value = apteryx_get (path2)) != NULL);
