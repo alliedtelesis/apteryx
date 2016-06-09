@@ -630,12 +630,20 @@ rpc_client_connect (rpc_instance rpc, const char *url)
 void
 rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep)
 {
+    rpc_client_t *client = (rpc_client_t *) service;
     assert (rpc);
-    assert (service);
 
-    /* Protected release */
     pthread_mutex_lock (&rpc->lock);
-    client_release (rpc, (rpc_client_t *)service, keep);
+    if (client)
+    {
+        /* Release the specified client */
+        client_release (rpc, client, keep);
+    }
+    else if (!keep)
+    {
+        /* Force release all clients */
+        g_hash_table_foreach_remove (rpc->clients, (GHRFunc)destroy_rpc_client, rpc);
+    }
     pthread_mutex_unlock (&rpc->lock);
     return;
 }
