@@ -35,6 +35,11 @@ ifneq ($(HAVE_XML2),no)
 EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0)
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0)
 endif
+ifneq ($(HAVE_TESTS),no)
+EXTRA_CSRC += test.c
+EXTRA_CFLAGS += -DTEST
+EXTRA_LDFLAGS += -lcunit
+endif
 
 all: libapteryx.so apteryx apteryxd apteryx-sync alfred
 
@@ -53,9 +58,9 @@ apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.o rpc_transport.o rpc_socket.
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
-apteryx: apteryxc.c database.c callbacks.c test.c libapteryx.so
+apteryx: apteryxc.c database.c callbacks.c libapteryx.so $(EXTRA_CSRC)
 	@echo "Building $@"
-	$(Q)$(CC) $(CFLAGS) -DTEST $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
+	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
 apteryx-sync: syncer.c libapteryx.so
 	@echo "Building $@"
@@ -63,7 +68,7 @@ apteryx-sync: syncer.c libapteryx.so
 
 alfred: alfred.c callbacks.c libapteryx.so
 	@echo "Building $@"
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) -lcunit
+	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
