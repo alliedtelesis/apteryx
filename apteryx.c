@@ -41,6 +41,8 @@ static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx data
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
 static rpc_instance rpc = NULL;         /* RPC Service */
+static bool bound = false;              /* Do we have a listen socket open */
+static bool have_callbacks = false;     /* Have we ever registered any callbacks */
 
 static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
@@ -258,27 +260,28 @@ apteryx_init (bool debug_enabled)
             return false;
         }
 
-        /* Bind to the default uri for this client */
-        if (asprintf((char **)&uri, APTERYX_SERVER".%"PRIu64, (uint64_t)getpid ()) <= 0)
+        /* Only need to bind if we have previously added callbacks */
+        if (have_callbacks)
         {
-            ref_count--;
-            pthread_mutex_unlock (&lock);
-            return false;
-        }
-        if (!rpc_server_bind (rpc, uri, uri))
-        {
-            ERROR ("Failed to bind to default rpc service\n");
-            ref_count--;
+            /* Bind to the default uri for this client */
+            if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+                    || !rpc_server_bind (rpc, uri, uri))
+            {
+                ERROR ("Failed to bind uri %s\n", uri);
+                ref_count--;
+                pthread_mutex_unlock (&lock);
+                free ((void*) uri);
+                return false;
+            }
+            DEBUG ("Bound to uri %s\n", uri);
+            bound = true;
             free ((void*) uri);
-            pthread_mutex_unlock (&lock);
-            return false;
         }
-        free ((void*) uri);
     }
     pthread_mutex_unlock (&lock);
 
     /* Ready to go */
-    if (ref_count > 1)
+    if (ref_count == 1)
         DEBUG ("Init: Initialised\n");
     return true;
 }
@@ -303,6 +306,7 @@ apteryx_shutdown (void)
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
     rpc_shutdown (rpc);
+    bound = false;
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
 }
@@ -1385,11 +1389,32 @@ add_callback (const char *type, const char *path, void *cb)
     ASSERT (path, return false, "ADD_CB: Invalid path\n");
     ASSERT (cb, return false, "ADD_CB: Invalid callback\n");
 
+    if (!bound)
+    {
+        char * uri = NULL;
+
+        /* Bind to the default uri for this client */
+        pthread_mutex_lock (&lock);
+        if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+                || !rpc_server_bind (rpc, uri, uri))
+        {
+            ERROR ("Failed to bind uri %s\n", uri);
+            pthread_mutex_unlock (&lock);
+            free ((void*) uri);
+            return false;
+        }
+        DEBUG ("Bound to uri %s\n", uri);
+        pthread_mutex_unlock (&lock);
+        free ((void*) uri);
+        bound = true;
+    }
+
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
         return false;
+    have_callbacks = true;
     return true;
 }
 
