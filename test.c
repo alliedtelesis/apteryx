@@ -3393,35 +3393,6 @@ test_deadlock2 ()
 }
 
 void
-test_double_fork ()
-{
-    const char *path = TEST_PATH"/entity/zones/private/age";
-    int status;
-    int pid;
-
-    CU_ASSERT (apteryx_set_int (path, NULL, 1));
-    if ((pid = fork ()) == 0)
-    {
-        /* Child */
-        apteryx_set_int (path, NULL, apteryx_get_int (path, NULL) + 1);
-        if ((pid = fork ()) == 0)
-        {
-            /* Grandchild */
-            apteryx_set_int (path, NULL, apteryx_get_int (path, NULL) + 1);
-            exit (0);
-        }
-        waitpid (pid, &status, 0);
-        exit (0);
-    }
-    waitpid (pid, &status, 0);
-    CU_ASSERT (WEXITSTATUS (status) == 0);
-    CU_ASSERT ((apteryx_get_int (path, NULL)) == 3);
-
-    CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
 test_remote_path_colon ()
 {
     char *path = TEST_TCP_URL":"TEST_PATH "/2001:db8::1/test";
@@ -4007,7 +3978,6 @@ static CU_TestInfo tests_api[] = {
     { "shutdown deadlock", test_deadlock },
     { "shutdown deadlock 2", test_deadlock2 },
     { "remote path contains colon", test_remote_path_colon },
-    { "double fork", test_double_fork },
     CU_TEST_INFO_NULL,
 };
 
