@@ -44,7 +44,11 @@ termination_handler (void)
 void
 usage ()
 {
+#ifdef TEST
     printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-u<filter>] [<path>] [<value>]\n"
+#else
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]\n"
+#endif
             "  -h   show this help\n"
             "  -d   debug\n"
             "  -s   set <path> to <value>\n"
@@ -55,7 +59,10 @@ usage ()
             "  -p   provide <value> for <path>\n"
             "  -x   proxy <path> via url <value>\n"
             "  -l   last change <path>\n"
-            "  -u   run unit tests (optionally match only tests with <filter>)\n");
+#ifdef TEST
+            "  -u   run unit tests (optionally match only tests with <filter>)\n"
+#endif
+            );
     printf ("\n");
     printf ("  Internal settings\n");
     printf ("    %s\n", APTERYX_DEBUG_PATH);
@@ -87,7 +94,9 @@ provide_callback (const char *path)
 int
 main (int argc, char **argv)
 {
+#ifdef TEST
     const char *filter = NULL;
+#endif
     APTERYX_MODE mode = -1;
     char *path = NULL;
     char *param = NULL;
@@ -127,12 +136,14 @@ main (int argc, char **argv)
         case 'l':
             mode = MODE_TIMESTAMP;
             break;
+#ifdef TEST
         case 'u':
             mode = MODE_TEST;
             if (optarg && optarg[0] == '=')
                 memmove(optarg, optarg+1, strlen(optarg));
             filter = optarg;
             break;
+#endif
         case '?':
         case 'h':
         default:
@@ -273,6 +284,7 @@ main (int argc, char **argv)
         printf ("%"PRIu64"\n", value);
         apteryx_shutdown ();
         break;
+#ifdef TEST
     case MODE_TEST:
         if (path || param)
         {
@@ -280,10 +292,13 @@ main (int argc, char **argv)
             return 0;
         }
         apteryx_init (apteryx_debug);
+
         run_unit_tests (filter);
         usleep (100000);
+
         apteryx_shutdown ();
         break;
+#endif
     default:
         usage ();
         return 0;

@@ -32,8 +32,10 @@
 #include <glib.h>
 #include <glib-unix.h>
 #include <lua.h>
+#ifdef TEST
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
+#endif
 
 /* Change the following to alfred*/
 #define APTERYX_ALFRED_PID "/var/run/apteryx-alfred.pid"
@@ -721,6 +723,7 @@ error:
     return;
 }
 
+#ifdef TEST
 static int
 suite_init (void)
 {
@@ -1276,6 +1279,7 @@ run_unit_test (char *filter)
     CU_cleanup_registry ();
     return;
 }
+#endif
 
 static gboolean
 termination_handler (gpointer arg1)
@@ -1288,15 +1292,21 @@ termination_handler (gpointer arg1)
 void
 help (char *app_name)
 {
+#ifdef TEST
     printf ("Usage: %s [-h] [-b] [-d] [-p <pidfile>] [-c <configdir>] [-u <filter>]\n"
+#else
+    printf ("Usage: %s [-h] [-b] [-d] [-p <pidfile>] [-c <configdir>]\n"
+#endif
             "  -h   show this help\n"
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
             "  -m   memory profiling\n"
             "  -p   use <pidfile> (defaults to "APTERYX_ALFRED_PID")\n"
             "  -c   use <configdir> (defaults to "APTERYX_CONFIG_DIR")\n"
-            "  -u   Run unit tests\n",
-            app_name);
+#ifdef TEST
+            "  -u   Run unit tests\n"
+#endif
+            ,app_name);
 }
 
 int
@@ -1309,7 +1319,9 @@ main (int argc, char *argv[])
     FILE *fp = NULL;
     GMainLoop *loop = NULL;
     bool unit_test = false;
+#ifdef TEST
     char *filter = NULL;
+#endif
 
     /* Parse options */
     while ((i = getopt (argc, argv, "hdbp:c:mu::")) != -1)
@@ -1332,6 +1344,7 @@ main (int argc, char *argv[])
         case 'm':
             g_mem_set_vtable (glib_mem_profiler_table);
             break;
+#ifdef TEST
         case 'u':
             unit_test = true;
             if (optarg && optarg[0] == '=')
@@ -1340,6 +1353,7 @@ main (int argc, char *argv[])
             }
             filter = optarg;
             break;
+#endif
         case '?':
         case 'h':
         default:
@@ -1360,12 +1374,14 @@ main (int argc, char *argv[])
 
     cb_init ();
 
+#ifdef TEST
     if (unit_test)
     {
         run_unit_test (filter);
         goto exit;
     }
     else
+#endif
     {
         /* Create the alfred glists */
         alfred_init (config_dir);
