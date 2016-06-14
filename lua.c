@@ -11,7 +11,7 @@
  * > apteryx_set("/interfaces/eth1/state", "down")
  * > print(apteryx_get("/interfaces/eth0/state"))
  * up
- * > paths = {apteryx_search("/interfaces")}
+ * > paths = apteryx_search("/interfaces/")
  * > print(unpack(paths))
  * /interfaces/eth0        /interfaces/eth1
  *
@@ -97,10 +97,31 @@ lua_apteryx_get (lua_State *L)
     }
     value = apteryx_get (lua_tostring (L, 1));
     if (value)
+    {
         lua_pushstring (L, value);
-    else
+        free (value);
+        return 1;
+    }
+    return 0;
+}
+
+static int
+lua_apteryx_get_int (lua_State *L)
+{
+    int res;
+    if (lua_gettop (L) != 1 || !lua_isstring (L, 1))
+    {
+        ERROR ("invalid arguments\n");
         lua_pushboolean (L, false);
-    return 1;
+        return 1;
+    }
+    res = apteryx_get_int (lua_tostring (L, 1), NULL);
+    if (res != -1)
+    {
+        lua_pushnumber (L, res);
+        return 1;
+    }
+    return 0;
 }
 
 static int
@@ -116,13 +137,17 @@ lua_apteryx_search (lua_State *L)
     }
     paths = apteryx_search (lua_tostring (L, 1));
     num = g_list_length (paths);
-    for (GList* _iter= paths; _iter; _iter = _iter->next)
+    GList* _iter= paths;
+    lua_createtable (L, num, 0);
+    for (int i = 1; i <= num; i ++)
     {
         const char *path = (char *)_iter->data;
         lua_pushstring (L, path);
+        lua_rawseti (L, -2, i);
+        _iter = _iter->next;
     }
     g_list_free_full (paths, free);
-    return num;
+    return 1;
 }
 
 int
@@ -133,6 +158,7 @@ luaopen_libapteryx(lua_State *L)
     lua_register (L, "apteryx_prune", lua_apteryx_prune);
     lua_register (L, "apteryx_set", lua_apteryx_set);
     lua_register (L, "apteryx_get", lua_apteryx_get);
+    lua_register (L, "apteryx_get_int", lua_apteryx_get_int);
     lua_register (L, "apteryx_search", lua_apteryx_search);
     return 0;
 }

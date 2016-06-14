@@ -33,61 +33,30 @@
 #include "internal.h"
 #include "apteryx.pb-c.h"
 #include "apteryx.h"
+#include <glib.h>
 
 /* Configuration */
-bool debug = false;                      /* Debug enabled */
+bool apteryx_debug = false;                      /* Debug enabled */
 static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
-static int stopfd = -1;                 /* Used to stop the RPC server service */
-static pthread_t client_id = 0;        /* Thread to process Apteryx events */
-static pthread_t worker_id = 0;        /* Worker to handle watch callbacks */
-static GList *pending_watches = NULL;   /* List of watches to process */
-static sem_t wake_worker;               /* How we wake up the watch callback handler */
-static volatile bool client_running = false;
-static volatile bool worker_running = false;
+static rpc_instance rpc = NULL;         /* RPC Service */
+static bool bound = false;              /* Do we have a listen socket open */
+static bool have_callbacks = false;     /* Have we ever registered any callbacks */
 
 static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
 static int pending_watch_count = 0;
 
-/* Callback */
-typedef struct _ccb_info_t
-{
-    apteryx_watch_callback cb;
-    const char *path;
-    char *value;
-} ccb_info_t;
-
-static void
-ccb_info_destroy (gpointer data)
-{
-    ccb_info_t *info = (ccb_info_t*)data;
-    free ((void *) info->path);
-    free ((void *) info->value);
-    free (info);
-}
-
-static gpointer
-ccb_info_create (const Apteryx__Watch *watch)
-{
-    ccb_info_t *info = calloc (1, sizeof (ccb_info_t));
-    info->cb = (apteryx_watch_callback) (long) watch->cb;
-    info->path = strdup (watch->path);
-    if (watch->value && watch->value[0] != '\0')
-        info->value = strdup (watch->value);
-    return (gpointer)info;
-}
-
 static const char *
-validate_path (const char *path, const char **url)
+validate_path (const char *path, char **url)
 {
     /* Database path or none at all */
     if (path && path[0] == '/')
     {
         /* Use the default URL */
         if (url)
-            *url = default_url;
+            *url = strdup(default_url);
         return path;
     }
     /* Check for a full URL */
@@ -96,11 +65,19 @@ validate_path (const char *path, const char **url)
        strncmp (path, "tcp://", 6) == 0))
     {
         if (url)
-            *url = path;
-        path = strrchr (path, ':') + 1;
+            *url = strdup (path);
+        path = strstr (path + 6, ":/") + 1;
+        char *tmp = strstr (*url + 6, ":/");
+        if (tmp)
+        {
+            tmp[0] = '\0';
+        }
         return path;
     }
-    ERROR ("Invalid path (%s)!\n", path);
+    else if (path)
+    {
+        ERROR ("Invalid path (%s)!\n", path);
+    }
     return NULL;
 }
 
@@ -146,28 +123,32 @@ apteryx__index (Apteryx__Client_Service *service,
 static void
 apteryx__watch (Apteryx__Client_Service *service,
                 const Apteryx__Watch *watch,
-                Apteryx__OKResult_Closure closure, void *closure_data)
+                Apteryx__NoResult_Closure closure, void *closure_data)
 {
-    Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
     (void) service;
+    char *value = NULL;
 
     DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
            watch->path, watch->value,
            watch->id, watch->cb);
 
+    if (watch->value && (watch->value[0] != '\0'))
+    {
+        value = watch->value;
+    }
+
     pthread_mutex_lock (&pending_watches_lock);
     ++pending_watch_count;
     pthread_mutex_unlock (&pending_watches_lock);
 
-    /* Queue the callback for processing */
-    pthread_mutex_lock (&lock);
-    if (pending_watches == NULL)
-        sem_post (&wake_worker);
-    pending_watches = g_list_append (pending_watches, ccb_info_create (watch));
-    pthread_mutex_unlock (&lock);
+    /* Call callback */
+    if (watch->cb)
+        ((apteryx_watch_callback) (long) watch->cb) (watch->path, value);
+    pthread_mutex_lock (&pending_watches_lock);
+    if (--pending_watch_count == 0)
+        pthread_cond_signal(&no_pending_watches);
+    pthread_mutex_unlock (&pending_watches_lock);
 
-    /* Return result */
-    closure (&result, closure_data);
     return;
 }
 
@@ -200,6 +181,7 @@ apteryx__validate (Apteryx__Client_Service *service,
     }
     else
         pthread_mutex_unlock (&pending_watches_lock);
+
 
     if (validate->value && (validate->value[0] != '\0'))
     {
@@ -239,186 +221,7 @@ apteryx__provide (Apteryx__Client_Service *service,
     return;
 }
 
-static void*
-worker_thread (void *data)
-{
-    GList *job;
-
-    /* Process callbacks while the client thread is running */
-    DEBUG ("Worker Thread: started...\n");
-    worker_running = true;
-    while (worker_running)
-    {
-        /* Wait for some work */
-        pthread_mutex_lock (&lock);
-        if (pending_watches == NULL)
-        {
-            pthread_mutex_unlock (&lock);
-            sem_wait (&wake_worker);
-            if (!worker_running)
-                break;
-            if (pending_watches == NULL)
-                continue;
-            pthread_mutex_lock (&lock);
-        }
-
-        /* Dequeue the work */
-        job = pending_watches;
-        pending_watches = g_list_remove_link (pending_watches, job);
-        pthread_mutex_unlock (&lock);
-
-        /* Process callback */
-        ccb_info_t *info = (ccb_info_t *) job->data;
-        if (info->cb)
-            info->cb (info->path, info->value);
-
-        /* Free this element */
-        ccb_info_destroy (job->data);
-        g_list_free_1 (job);
-
-        pthread_mutex_lock (&pending_watches_lock);
-        if (--pending_watch_count == 0)
-            pthread_cond_signal(&no_pending_watches);
-        pthread_mutex_unlock (&pending_watches_lock);
-    }
-    DEBUG ("Worker Thread: Exiting\n");
-    sem_destroy(&wake_worker);
-    worker_id = 0;
-    worker_running = false;
-    return NULL;
-}
-
-static void*
-client_thread (void *data)
-{
-    Apteryx__Client_Service service = APTERYX__CLIENT__INIT (apteryx__);
-    char service_name[64];
-    int pipefd[2];
-
-    /* Create fd to stop server */
-    if (pipe (pipefd) != 0)
-    {
-        ERROR ("Failed to create pipe\n");
-        return NULL;
-    }
-    stopfd = pipefd[1];
-
-    /* Create service and process requests */
-    DEBUG ("Watch/Provide/Validate Thread: started...\n");
-    client_running = true;
-    sprintf (service_name, APTERYX_SERVER ".%"PRIu64"", (uint64_t)getpid ());
-    if (!rpc_provide_service (service_name, (ProtobufCService *)&service, 0, pipefd[0]))
-    {
-        ERROR ("Watch/Provide/Validate Thread: Failed to start rpc service\n");
-    }
-
-    /* Clean up */
-    DEBUG ("Watch/Provide/Validate Thread: Exiting\n");
-    close (pipefd[0]);
-    close (pipefd[1]);
-    stopfd = -1;
-    client_id = 0;
-    client_running = false;
-    return NULL;
-}
-
-static void
-stop_client_threads (void)
-{
-    uint8_t dummy = 1;
-    int i;
-
-    /* Not from a callback please */
-    if (pthread_self () == worker_id)
-        return;
-
-    /* Stop the client thread */
-    if (client_running && client_id != 0)
-    {
-        /* Signal stop and wait */
-        client_running = false;
-        if (write (stopfd, &dummy, 1) != 1)
-            ERROR ("Failed to stop server\n");
-        for (i=0; i < 5000 && client_id != 0; i++)
-            usleep (1000);
-        if (client_id != 0)
-        {
-            DEBUG ("Shutdown: Killing Client thread\n");
-            pthread_cancel (client_id);
-            pthread_join (client_id, NULL);
-        }
-    }
-
-    /* Stop the worker thread */
-    if (worker_running && worker_id != 0)
-    {
-        /* Wait for the worker to exit */
-        worker_running = false;
-        sem_post (&wake_worker);
-        for (i=0; i < 5000 && worker_id != 0; i++)
-            usleep (1000);
-        if (worker_id != 0)
-        {
-            DEBUG ("Shutdown: Killing worker thread\n");
-            pthread_cancel (worker_id);
-            pthread_join (worker_id, NULL);
-        }
-        pthread_mutex_lock (&lock);
-        g_list_free_full (pending_watches, ccb_info_destroy);
-        pending_watches = NULL;
-        pthread_mutex_unlock (&lock);
-    }
-
-    /* Done */
-    worker_running = false;
-    client_running = false;
-    return;
-}
-
-static bool
-start_client_threads (void)
-{
-    int i;
-
-    /* Create threads if not already running */
-    pthread_mutex_lock (&lock);
-
-    /* Return early if we are shutting down */
-    if (ref_count == 0)
-    {
-        pthread_mutex_unlock (&lock);
-        return false;
-    }
-
-    if (!client_running)
-    {
-        /* Create the worker to process the watch callbacks */
-        sem_init (&wake_worker, 1, 0);
-        pthread_create (&worker_id, NULL, worker_thread, NULL);
-        for (i=0; i < 5000 && !worker_running; i++)
-            usleep (1000);
-        if (!worker_running || worker_id == 0)
-        {
-            ERROR ("Failed to create Apteryx worker thread\n");
-            pthread_mutex_unlock (&lock);
-            return false;
-        }
-
-        /* Create a thread to process Apteryx events */
-        pthread_create (&client_id, NULL, client_thread, NULL);
-        for (i=0; i < 5000 && !client_running; i++)
-            usleep (1000);
-        if (!client_running || client_id == 0)
-        {
-            pthread_mutex_unlock (&lock);
-            stop_client_threads ();
-            ERROR ("Failed to create Apteryx client thread\n");
-            return false;
-        }
-    }
-    pthread_mutex_unlock (&lock);
-    return true;
-}
+static Apteryx__Client_Service apteryx_client_service = APTERYX__CLIENT__INIT (apteryx__);
 
 static void
 handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
@@ -442,11 +245,43 @@ apteryx_init (bool debug_enabled)
     /* Increment refcount */
     pthread_mutex_lock (&lock);
     ref_count++;
-    debug |= debug_enabled;
+    apteryx_debug |= debug_enabled;
+    if (ref_count == 1)
+    {
+        char * uri = NULL;
+
+        /* Create RPC instance */
+        rpc = rpc_init ((ProtobufCService *)&apteryx_client_service, &apteryx__server__descriptor, RPC_CLIENT_TIMEOUT_US);
+        if (rpc == NULL)
+        {
+            ERROR ("Init: Failed to initialise RPC service\n");
+            ref_count--;
+            pthread_mutex_unlock (&lock);
+            return false;
+        }
+
+        /* Only need to bind if we have previously added callbacks */
+        if (have_callbacks)
+        {
+            /* Bind to the default uri for this client */
+            if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+                    || !rpc_server_bind (rpc, uri, uri))
+            {
+                ERROR ("Failed to bind uri %s\n", uri);
+                ref_count--;
+                pthread_mutex_unlock (&lock);
+                free ((void*) uri);
+                return false;
+            }
+            DEBUG ("Bound to uri %s\n", uri);
+            bound = true;
+            free ((void*) uri);
+        }
+    }
     pthread_mutex_unlock (&lock);
 
     /* Ready to go */
-    if (ref_count > 1)
+    if (ref_count == 1)
         DEBUG ("Init: Initialised\n");
     return true;
 }
@@ -454,12 +289,7 @@ apteryx_init (bool debug_enabled)
 bool
 apteryx_shutdown (void)
 {
-    /* Check if already shutdown */
-    if (ref_count <= 0)
-    {
-        ERROR ("Shutdown: Already shutdown\n");
-        return false;
-    }
+    ASSERT ((ref_count > 0), return false, "SHUTDOWN: Not initialised\n");
 
     /* Decrement ref count */
     pthread_mutex_lock (&lock);
@@ -469,34 +299,62 @@ apteryx_shutdown (void)
     /* Check if there are still other users */
     if (ref_count > 0)
     {
-        DEBUG ("Shutdown: More users (refcount=%d)\n", ref_count);
+        DEBUG ("SHUTDOWN: More users (refcount=%d)\n", ref_count);
         return true;
     }
 
     /* Shutdown */
-    DEBUG ("Shutdown: Shutting down\n");
-    stop_client_threads ();
-    DEBUG ("Shutdown: Shutdown\n");
-    assert (!client_running);
-    assert (!worker_running);
+    DEBUG ("SHUTDOWN: Shutting down\n");
+    rpc_shutdown (rpc);
+    bound = false;
+    DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
+}
+
+
+bool
+apteryx_shutdown_force (void)
+{
+    while (ref_count > 0)
+        apteryx_shutdown ();
+    return true;
+}
+
+int
+apteryx_process (bool poll)
+{
+    ASSERT ((ref_count > 0), return false, "PROCESS: Not initialised\n");
+    return rpc_server_process (rpc, poll);
 }
 
 bool
 apteryx_bind (const char *url)
 {
     char path[PATH_MAX];
+    bool result;
+
+    ASSERT ((ref_count > 0), return false, "BIND: Not initialised\n");
+    ASSERT (url, return false, "BIND: Invalid parameters\n");
+
+    DEBUG ("BIND: %s\n", url);
 
     if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
         return false;
-    return apteryx_set (path, url);
+    result = apteryx_set (path, url);
+    usleep (1000); /* Sockets need time to bind/unbind */
+    return result;
 }
 
 bool
 apteryx_unbind (const char *url)
 {
     char path[PATH_MAX];
+
+    ASSERT ((ref_count > 0), return false, "UNBIND: Not initialised\n");
+    ASSERT (url, return false, "UNBIND: Invalid parameters\n");
+
+    DEBUG ("UNBIND: %s\n", url);
 
     if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
             (size_t)g_str_hash (url)) <= 0)
@@ -507,10 +365,13 @@ apteryx_unbind (const char *url)
 bool
 apteryx_prune (const char *path)
 {
-    const char *url = NULL;
+    char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Prune prune = APTERYX__PRUNE__INIT;
     protobuf_c_boolean is_done = 0;
+
+    ASSERT ((ref_count > 0), return false, "PRUNE: Not initialised\n");
+    ASSERT (path, return false, "PRUNE: Invalid parameters\n");
 
     DEBUG ("PRUNE: %s\n", path);
 
@@ -519,25 +380,29 @@ apteryx_prune (const char *path)
     if (!path)
     {
         ERROR ("PRUNE: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
         return false;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("PRUNE: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return false;
     }
     prune.path = (char *) path;
     apteryx__server__prune (rpc_client, &prune, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
     if (!is_done)
     {
         ERROR ("PRUNE: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
         return false;
     }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
 
     /* Success */
     return true;
@@ -547,6 +412,10 @@ bool
 apteryx_dump (const char *path, FILE *fp)
 {
     char *value = NULL;
+
+    ASSERT ((ref_count > 0), return false, "DUMP: Not initialised\n");
+    ASSERT (path, return false, "DUMP: Invalid parameters\n");
+    ASSERT (fp, return false, "DUMP: Invalid parameters\n");
 
     DEBUG ("DUMP: %s\n", path);
 
@@ -581,14 +450,17 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_set (const char *path, const char *value)
+apteryx_cas (const char *path, const char *value, uint64_t ts)
 {
-    const char *url = NULL;
+    char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
     Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
     Apteryx__PathValue *pv[1] = {&_pv};
-    protobuf_c_boolean is_done = 0;
+    protobuf_c_boolean result = 0;
+
+    ASSERT ((ref_count > 0), return false, "SET: Not initialised\n");
+    ASSERT (path, return false, "SET: Invalid parameters\n");
 
     DEBUG ("SET: %s = %s\n", path, value);
 
@@ -597,35 +469,51 @@ apteryx_set (const char *path, const char *value)
     if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("SET: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        free (url);
+        assert (!apteryx_debug || path);
         return false;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SET: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("SET: Failed to connect to server: %s\n", strerror (errno));
+        free (url);
         return false;
     }
     pv[0]->path = (char *) path;
     pv[0]->value = (char *) value;
     set.n_sets = 1;
     set.sets = pv;
-    apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
-    if (!is_done)
+    set.ts = ts;
+    apteryx__server__set (rpc_client, &set, handle_ok_response, &result);
+    if (!result && errno == -ETIMEDOUT)
     {
-        DEBUG ("SET: Failed %s\n", strerror(errno));
+        DEBUG ("SET: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
         return false;
     }
+    else if (!result)
+    {
+        DEBUG ("SET: Error response: %s\n", strerror (errno));
+    }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
 
     /* Success */
-    return true;
+    return result;
 }
 
 bool
-apteryx_set_string (const char *path, const char *key, const char *value)
+apteryx_set (const char *path, const char *value)
+{
+    return apteryx_cas (path, value, UINT64_MAX);
+}
+
+bool
+apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
 {
     char *full_path;
     size_t len;
@@ -638,14 +526,20 @@ apteryx_set_string (const char *path, const char *key, const char *value)
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_set (full_path, value);
+        res = apteryx_cas (full_path, value, ts);
         free (full_path);
     }
     return res;
 }
 
 bool
-apteryx_set_int (const char *path, const char *key, int32_t value)
+apteryx_set_string (const char *path, const char *key, const char *value)
+{
+    return apteryx_cas_string (path, key, value, UINT64_MAX);
+}
+
+bool
+apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
 {
     char *full_path;
     size_t len;
@@ -663,12 +557,18 @@ apteryx_set_int (const char *path, const char *key, int32_t value)
         len = asprintf ((char **) &v, "%d", value);
         if (len)
         {
-            res = apteryx_set (full_path, v);
+            res = apteryx_cas (full_path, v, ts);
             free ((void *) v);
         }
         free (full_path);
     }
     return res;
+}
+
+bool
+apteryx_set_int (const char *path, const char *key, int32_t value)
+{
+    return apteryx_cas_int (path, key, value, UINT64_MAX);
 }
 
 typedef struct _get_data_t
@@ -681,26 +581,33 @@ static void
 handle_get_response (const Apteryx__GetResult *result, void *closure_data)
 {
     get_data_t *data = (get_data_t *)closure_data;
+    data->done = false;
     if (result == NULL)
     {
         ERROR ("GET: Error processing request.\n");
         errno = -ETIMEDOUT;
     }
-    else if (result->value && result->value[0] != '\0')
+    else
     {
-        data->value = strdup (result->value);
+        data->done = true;
+        if (result->value && result->value[0] != '\0')
+        {
+            data->value = strdup (result->value);
+        }
     }
-    data->done = true;
 }
 
 char *
 apteryx_get (const char *path)
 {
-    const char *url = NULL;
+    char *url = NULL;
     char *value = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
     get_data_t data = {0};
+
+    ASSERT ((ref_count > 0), return NULL, "GET: Not initialised\n");
+    ASSERT (path, return NULL, "GET: Invalid parameters\n");
 
     DEBUG ("GET: %s\n", path);
 
@@ -709,29 +616,32 @@ apteryx_get (const char *path)
     if (!path || path[strlen(path)-1] == '/')
     {
         ERROR ("GET: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        free (url);
+        assert (!apteryx_debug || path);
         return NULL;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("GET: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("GET: Failed to connect to server: %s\n", strerror (errno));
+        free (url);
         return NULL;
     }
     get.path = (char *) path;
     apteryx__server__get (rpc_client, &get, handle_get_response, &data);
-    protobuf_c_service_destroy (rpc_client);
     if (!data.done)
     {
         ERROR ("GET: No response\n");
-        errno = -ETIMEDOUT;
-        return NULL;
+        rpc_client_release (rpc, rpc_client, false);
     }
-
-    /* Result */
-    value = data.value;
+    else
+    {
+        rpc_client_release (rpc, rpc_client, true);
+        value = data.value;
+    }
+    free (url);
 
     DEBUG ("    = %s\n", value);
     return value;
@@ -786,6 +696,34 @@ apteryx_get_int (const char *path, const char *key)
     return value;
 }
 
+bool
+apteryx_has_value (const char *path)
+{
+    char *value = NULL;
+    value = apteryx_get (path);
+    if (value)
+    {
+        free (value);
+        return true;
+    }
+    return false;
+}
+
+GNode *
+apteryx_find_child (GNode *parent, char *name)
+{
+    GNode *node;
+
+    for (node = g_node_first_child (parent); node; node = node->next)
+    {
+        if (strcmp (APTERYX_NAME (node), name) == 0)
+        {
+            return node;
+        }
+    }
+    return NULL;
+}
+
 static inline gboolean
 _node_free (GNode *node, gpointer data)
 {
@@ -796,8 +734,69 @@ _node_free (GNode *node, gpointer data)
 void
 apteryx_free_tree (GNode* root)
 {
-    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_ALL, -1, _node_free, NULL);
-    g_node_destroy (root);
+    if (root)
+    {
+        g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_ALL, -1, _node_free, NULL);
+        g_node_destroy (root);
+    }
+}
+
+static GNode *
+merge (GNode *left, GNode *right, int (*cmp) (const char *a, const char *b))
+{
+    if (!left)
+        return right;
+    if (!right)
+        return left;
+    if (cmp (left->data, right->data) < 0)
+    {
+        left->next = merge (left->next, right, cmp);
+        left->next->prev = left;
+        left->prev = NULL;
+        return left;
+    }
+    else
+    {
+        right->next = merge (left, right->next, cmp );
+        right->next->prev = right;
+        right->prev = NULL;
+        return right;
+    }
+}
+
+static GNode *
+split (GNode *head)
+{
+    GNode *left, *right;
+    left = right = head;
+    while (right->next && right->next->next)
+    {
+        right = right->next->next;
+        left = left->next;
+    }
+    right = left->next;
+    left->next = NULL;
+    return right;
+}
+
+static GNode *
+merge_sort (GNode *head, int (*cmp) (const char *a, const char *b))
+{
+    GNode *left, *right;
+    if (!head || !head->next)
+        return head;
+    left = head;
+    right = split (left);
+    left = merge_sort (left, cmp);
+    right = merge_sort (right, cmp);
+    return merge (left, right, cmp);
+}
+
+void
+apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b))
+{
+    if (parent)
+        parent->children = merge_sort (parent->children, cmp);
 }
 
 static char *
@@ -852,38 +851,37 @@ _set_multi (GNode *node, gpointer data)
 }
 
 bool
-apteryx_set_tree (GNode* root)
+apteryx_cas_tree (GNode* root, uint64_t ts)
 {
     const char *path = NULL;
-    const char *url = NULL;
+    char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
     protobuf_c_boolean is_done = 0;
     bool rc = true;
     int i;
 
-    /* Check initialised */
-    if (ref_count <= 0)
-    {
-        ERROR ("SET_TREE: not initialised!\n");
-        assert(ref_count > 0);
-        return false;
-    }
+    ASSERT ((ref_count > 0), return false, "SET_TREE: Not initialised\n");
+    ASSERT (root, return false, "SET_TREE: Invalid parameters\n");
+
+    DEBUG ("SET_TREE: %d paths\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
     if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("SET_TREE: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        assert (!apteryx_debug || path);
+        free (url);
         return false;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("SET_TREE: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return false;
     }
 
@@ -892,13 +890,19 @@ apteryx_set_tree (GNode* root)
     set.sets = malloc (set.n_sets * sizeof (Apteryx__PathValue *));
     set.n_sets = 0;
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &set);
+    set.ts = ts;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
-    protobuf_c_service_destroy (rpc_client);
     if (!is_done)
     {
         DEBUG ("SET_TREE: Failed %s\n", strerror(errno));
+        rpc_client_release (rpc, rpc_client, false);
         rc = false;
     }
+    else
+    {
+        rpc_client_release (rpc, rpc_client, true);
+    }
+    free (url);
 
     /* Cleanup message */
     for (i=0; i<set.n_sets; i++)
@@ -913,77 +917,144 @@ apteryx_set_tree (GNode* root)
     return rc;
 }
 
-static bool
-_get_traverse (GNode* node, const char *path, int depth)
+bool
+apteryx_set_tree (GNode* root)
 {
-    char *_path;
-    char *key = "";
-    GList *children = NULL, *iter;
-    char *value = NULL;
+    return apteryx_cas_tree (root, UINT64_MAX);
+}
 
-    /* Get the key */
-    if (strrchr(path, '/'))
-        key = strrchr(path, '/') + 1;
+typedef struct _traverse_data_t
+{
+    GNode* root;
+    bool done;
+} traverse_data_t;
 
-    /* Get value and/or children */
-    if (!asprintf (&_path, "%s/", path))
-        return false;
-    children = apteryx_search (_path);
-    free (_path);
-    if (children == NULL)
-        value = apteryx_get (path);
+static void
+path_to_node (GNode* root, const char *path, const char *value)
+{
+    const char *next;
+    GNode *node;
 
-    /* Value or children */
-    if (children == NULL && value)
+    if (path && path[0] == '/')
     {
-        APTERYX_LEAF (node, strdup (key), value);
-    }
-    else if (children)
-    {
-        if (node->data == NULL)
-            node->data = (gpointer)strdup (path);
-        else
-            node = APTERYX_NODE (node, strdup (key));
-        for (iter = children; iter; iter = g_list_next (iter))
+        path++;
+        next = strchr (path, '/');
+        if (!next)
         {
-            _get_traverse (node, (const char *) iter->data, depth);
+            APTERYX_LEAF (root, strdup (path), strdup (value));
         }
-        g_list_free_full(children, free);
+        else
+        {
+            char *name = strndup (path, next - path);
+            for (node = g_node_first_child (root); node;
+                    node = g_node_next_sibling (node))
+            {
+                if (strcmp (APTERYX_NAME (node), name) == 0)
+                {
+                    root = node;
+                    free (name);
+                    break;
+                }
+            }
+            if (!node)
+            {
+                root = APTERYX_NODE (root, name);
+            }
+            path_to_node (root, next, value);
+        }
     }
-    return true;
+    return;
+}
+
+static void
+handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_data)
+{
+    traverse_data_t *data = (traverse_data_t *)closure_data;
+    const char *path = APTERYX_NAME (data->root);
+    int i;
+
+    data->done = false;
+    if (result == NULL)
+    {
+        ERROR ("TRAVERSE: Error processing request.\n");
+        errno = -ETIMEDOUT;
+        apteryx_free_tree (data->root);
+        data->root = NULL;
+    }
+    else if (result->pv == NULL)
+    {
+        DEBUG ("    = (null)\n");
+        apteryx_free_tree (data->root);
+        data->root = NULL;
+        data->done = true;
+    }
+    else if (result->n_pv == 1 &&
+        strcmp (path, result->pv[0]->path) == 0)
+    {
+        Apteryx__PathValue *pv = result->pv[0];
+        DEBUG ("  %s = %s\n", pv->path, pv->value);
+        g_node_append_data (data->root, (gpointer)strdup (pv->value));
+        data->done = true;
+    }
+    else if (result->n_pv != 0)
+    {
+        int slen = strlen (path);
+        for (i = 0; i < result->n_pv; i++)
+        {
+            Apteryx__PathValue *pv = result->pv[i];
+            DEBUG ("  %s = %s\n", pv->path + slen, pv->value);
+            path_to_node (data->root, pv->path + slen, pv->value);
+        }
+        data->done = true;
+    }
 }
 
 GNode*
-apteryx_get_tree (const char *path, int depth)
+apteryx_get_tree (const char *path)
 {
-    GNode* root = NULL;
+    char *url = NULL;
+    ProtobufCService *rpc_client;
+    Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
+    traverse_data_t data = {0};
+
+    ASSERT ((ref_count > 0), return NULL, "GET_TREE: Not initialised\n");
+    ASSERT (path, return NULL, "GET_TREE: Invalid parameters\n");
 
     DEBUG ("GET_TREE: %s\n", path);
 
-    /* Check initialised */
-    if (ref_count <= 0)
-    {
-        ERROR ("GET_TREE: not initialised!\n");
-        assert(ref_count > 0);
-        return false;
-    }
-
     /* Check path */
-    if (path[0] != '/' || path[strlen(path)-1] == '/')
+    path = validate_path (path, &url);
+    if (!path || path[strlen(path) - 1] == '/')
     {
         ERROR ("GET_TREE: invalid path (%s)!\n", path);
-        assert(!debug || path[0] == '/');
+        assert (!apteryx_debug || path);
+        free (url);
         return false;
     }
 
-    /* Traverse */
-    root = g_node_new (NULL);
-    if (!_get_traverse (root, path, depth))
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
     {
-        g_node_destroy (root);
-        root = NULL;
+        ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
+        return false;
     }
-    return root;
+    traverse.path = (char *) path;
+    data.root = g_node_new (strdup (path));
+    apteryx__server__traverse (rpc_client, &traverse, handle_traverse_response, &data);
+    if (!data.done)
+    {
+        ERROR ("TRAVERSE: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        apteryx_free_tree (data.root);
+        data.root = NULL;
+        free (url);
+        return NULL;
+    }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+    return data.root;
 }
 
 typedef struct _search_data_t
@@ -997,14 +1068,18 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
 {
     search_data_t *data = (search_data_t *)closure_data;
     int i;
+
+    data->done = false;
     data->paths = NULL;
     if (result == NULL)
     {
         ERROR ("SEARCH: Error processing request.\n");
+        errno = -ETIMEDOUT;
     }
     else if (result->paths == NULL)
     {
         DEBUG ("    = (null)\n");
+        data->done = true;
     }
     else if (result->n_paths != 0)
     {
@@ -1014,17 +1089,20 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
             data->paths = g_list_append (data->paths,
                               (gpointer) strdup (result->paths[i]));
         }
+        data->done = true;
     }
-    data->done = true;
 }
 
 GList *
 apteryx_search (const char *path)
 {
-    const char *url = NULL;
+    char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Search search = APTERYX__SEARCH__INIT;
     search_data_t data = {0};
+
+    ASSERT ((ref_count > 0), return NULL, "SEARCH: Not initialised\n");
+    ASSERT (path, return NULL, "SEARCH: Invalid parameters\n");
 
     DEBUG ("SEARCH: %s\n", path);
 
@@ -1033,7 +1111,8 @@ apteryx_search (const char *path)
     if (!path)
     {
         ERROR ("SEARCH: invalid root (%s)!\n", path);
-        assert (!debug || path);
+        free (url);
+        assert (!apteryx_debug || path);
         return false;
     }
 
@@ -1050,28 +1129,250 @@ apteryx_search (const char *path)
              path[strlen (path) - 1] != '/' ||
              strstr (path, "//") != NULL)
     {
+        free (url);
         ERROR ("SEARCH: invalid root (%s)!\n", path);
-        assert(!debug || path[0] == '/');
-        assert(!debug || path[strlen (path) - 1] == '/');
-        assert(!debug || strstr (path, "//") == NULL);
+        assert(!apteryx_debug || path[0] == '/');
+        assert(!apteryx_debug || path[strlen (path) - 1] == '/');
+        assert(!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SEARCH: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("SEARCH: Failed to connect to server: %s\n", strerror (errno));
+        free (url);
         return false;
     }
     search.path = (char *) path;
     apteryx__server__search (rpc_client, &search, handle_search_response, &data);
-    protobuf_c_service_destroy (rpc_client);
     if (!data.done)
     {
         ERROR ("SEARCH: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
         return NULL;
     }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+
+    /* Result */
+    return data.paths;
+}
+
+char *
+apteryx_search_simple (const char *path)
+{
+    GList *paths = apteryx_search (path);
+    char *tmp = NULL, *result = NULL;
+    GList *iter;
+
+    if (!paths)
+    {
+        return NULL;
+    }
+    for (iter = g_list_first (paths); iter; iter = g_list_next (iter))
+    {
+        if (result)
+        {
+            ASSERT (asprintf (&tmp, "%s\n%s", result, (char *) iter->data) > 0,
+                    tmp = NULL, "SEARCH: Memory allocation failure\n");
+        }
+        else
+        {
+            ASSERT (asprintf (&tmp, "%s", (char *) iter->data) > 0, tmp = NULL,
+                    tmp = NULL, "SEARCH: Memory allocation failure\n");
+        }
+        if (result)
+            free (result);
+        result = tmp;
+        tmp = NULL;
+    }
+    g_list_free_full (paths, free);
+
+    return result;
+}
+
+
+GList *
+apteryx_find (const char *path, const char *value)
+{
+    char *url = NULL;
+    ProtobufCService *rpc_client;
+    Apteryx__Find find = APTERYX__FIND__INIT;
+    search_data_t data = {0};
+    Apteryx__PathValue pv = {
+            .base.descriptor = &apteryx__path_value__descriptor,
+            .path = (char*) path,
+            .value = (char*) value
+    };
+
+    char *tmp_path = NULL;
+
+    ASSERT ((ref_count > 0), return NULL, "FIND: Not initialised\n");
+    ASSERT (path, return NULL, "FIND: Invalid parameters\n");
+    ASSERT (value, return NULL, "FIND: Invalid parameters\n");
+
+    DEBUG ("FIND: %s = %s\n", path, value);
+
+    /* Check path */
+    path = validate_path (path, &url);
+    if (!path)
+    {
+        ERROR ("FIND: invalid root (%s)!\n", path);
+        free (url);
+        assert (!apteryx_debug || path);
+        return false;
+    }
+
+    /* Validate path */
+    if (!path ||
+        strcmp (path, "/") == 0 ||
+        strcmp (path, "/*") == 0 ||
+        strcmp (path, "*") == 0 ||
+        strlen (path) == 0)
+    {
+        path = "";
+    }
+    else if (path[0] != '/' ||
+             strstr (path, "//") != NULL)
+    {
+        free (url);
+        ERROR ("FIND: invalid root (%s)!\n", path);
+        assert(!apteryx_debug || path[0] == '/');
+        assert(!apteryx_debug || strstr (path, "//") == NULL);
+        return NULL;
+    }
+
+    /* Remove the trailing key */
+    tmp_path = strdup (path);
+    if (strrchr (tmp_path, '*'))
+        *strrchr (tmp_path, '*') = '\0';
+
+    find.path = tmp_path;
+    find.n_matches = 1;
+    find.matches = malloc (find.n_matches * sizeof (Apteryx__PathValue *));
+    find.matches[0] = &pv;
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
+    {
+        ERROR ("FIND: Failed to connect to server: %s\n", strerror (errno));
+        free (url);
+        free (tmp_path);
+        return false;
+    }
+
+    apteryx__server__find (rpc_client, &find, handle_search_response, &data);
+    if (!data.done)
+    {
+        ERROR ("FIND: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
+        free (tmp_path);
+        return NULL;
+    }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+
+    free (tmp_path);
+    free (find.matches);
+
+    /* Result */
+    return data.paths;
+}
+
+static gboolean
+_find_multi (GNode *node, gpointer data)
+{
+    Apteryx__Find *find = (Apteryx__Find *)data;
+
+    if (APTERYX_HAS_VALUE(node))
+    {
+        char *path = apteryx_node_path (node);
+        Apteryx__PathValue *pv = calloc (1, sizeof (Apteryx__PathValue));
+        DEBUG ("FIND_TREE: %s = %s\n", path, APTERYX_VALUE (node));
+        pv->base.descriptor = &apteryx__path_value__descriptor;
+        pv->path = (char *) path;
+        pv->value = (char *) APTERYX_VALUE (node);
+        find->matches[find->n_matches++] = pv;
+    }
+    return FALSE;
+}
+
+GList *
+apteryx_find_tree (GNode *root)
+{
+    char *url = NULL;
+    ProtobufCService *rpc_client;
+    Apteryx__Find find = APTERYX__FIND__INIT;
+    search_data_t data = {0};
+    const char *path = APTERYX_NAME(root);
+    int i;
+
+    ASSERT ((ref_count > 0), return NULL, "FIND: Not initialised\n");
+    ASSERT (path, return NULL, "FIND: Invalid parameters\n");
+
+    DEBUG ("FIND_TREE: %s\n", path);
+
+    /* Check path */
+    path = validate_path (path, &url);
+
+    /* Validate path */
+    if (!path ||
+        strcmp (path, "/") == 0 ||
+        strcmp (path, "/*") == 0 ||
+        strcmp (path, "*") == 0 ||
+        strlen (path) == 0)
+    {
+        path = "";
+    }
+    else if (path[0] != '/' ||
+             strstr (path, "//") != NULL)
+    {
+        free (url);
+        ERROR ("FIND: invalid root (%s)!\n", path);
+        assert(!apteryx_debug || path[0] == '/');
+        assert(!apteryx_debug || strstr (path, "//") == NULL);
+        return NULL;
+    }
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
+    {
+        ERROR ("FIND: Failed to connect to server: %s\n", strerror (errno));
+        free (url);
+        return false;
+    }
+
+    find.path = (char *) path;
+    find.n_matches = g_node_n_nodes (root, G_TRAVERSE_LEAVES);
+    find.matches = malloc (find.n_matches * sizeof (Apteryx__PathValue *));
+    find.n_matches = 0;
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _find_multi, &find);
+
+    apteryx__server__find (rpc_client, &find, handle_search_response, &data);
+    if (!data.done)
+    {
+        ERROR ("FIND: No response\n");
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
+        return NULL;
+    }
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+
+    /* Cleanup message */
+    for (i = 0; i < find.n_matches; i++)
+    {
+        Apteryx__PathValue *pv = find.matches[i];
+        free (pv->path);
+        free (pv);
+    }
+    free (find.matches);
 
     /* Result */
     return data.paths;
@@ -1083,18 +1384,49 @@ add_callback (const char *type, const char *path, void *cb)
     size_t pid = getpid ();
     char _path[PATH_MAX];
 
+    ASSERT ((ref_count > 0), return false, "ADD_CB: Not initialised\n");
+    ASSERT (type, return false, "ADD_CB: Invalid type\n");
+    ASSERT (path, return false, "ADD_CB: Invalid path\n");
+    ASSERT (cb, return false, "ADD_CB: Invalid callback\n");
+
+    if (!bound)
+    {
+        char * uri = NULL;
+
+        /* Bind to the default uri for this client */
+        pthread_mutex_lock (&lock);
+        if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+                || !rpc_server_bind (rpc, uri, uri))
+        {
+            ERROR ("Failed to bind uri %s\n", uri);
+            pthread_mutex_unlock (&lock);
+            free ((void*) uri);
+            return false;
+        }
+        DEBUG ("Bound to uri %s\n", uri);
+        pthread_mutex_unlock (&lock);
+        free ((void*) uri);
+        bound = true;
+    }
+
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
         return false;
-    return start_client_threads ();
+    have_callbacks = true;
+    return true;
 }
 
 static bool
 delete_callback (const char *type, const char *path,  void *cb)
 {
     char _path[PATH_MAX];
+
+    ASSERT ((ref_count > 0), return false, "DEL_CB: Not initialised\n");
+    ASSERT (type, return false, "DEL_CB: Invalid type\n");
+    ASSERT (path, return false, "DEL_CB: Invalid path\n");
+    ASSERT (cb, return false, "DEL_CB: Invalid callback\n");
 
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
@@ -1107,7 +1439,6 @@ delete_callback (const char *type, const char *path,  void *cb)
 bool
 apteryx_index (const char *path, apteryx_index_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unindex
     return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb);
 }
 
@@ -1120,7 +1451,6 @@ apteryx_unindex (const char *path, apteryx_index_callback cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unwatch
     return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
@@ -1133,7 +1463,6 @@ apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unvalidate
     return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb);
 }
 
@@ -1146,7 +1475,6 @@ apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 bool
 apteryx_provide (const char *path, apteryx_provide_callback cb)
 {
-    assert (cb != NULL); // use apteryx_unprovide
     return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
 }
 
@@ -1161,7 +1489,7 @@ apteryx_proxy (const char *path, const char *url)
 {
     bool res = false;
     char *value = NULL;
-    assert (url != NULL);
+
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = add_callback (APTERYX_PROXIES_PATH, value,
@@ -1175,7 +1503,7 @@ apteryx_unproxy (const char *path, const char *url)
 {
     bool res = false;
     char *value = NULL;
-    assert (url != NULL);
+
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = delete_callback (APTERYX_PROXIES_PATH, value,
@@ -1188,42 +1516,55 @@ static void
 handle_timestamp_response (const Apteryx__TimeStampResult *result, void *closure_data)
 {
     uint64_t *data = (uint64_t *)closure_data;
+
     if (result == NULL)
     {
         ERROR ("TIMESTAMP: Error processing request.\n");
+        errno = -ETIMEDOUT;
     }
-    *data = result->value;
+    else
+    {
+        *data = result->value;
+    }
 }
 
 uint64_t
 apteryx_timestamp (const char *path)
 {
-    const char *url = NULL;
+    char *url = NULL;
     uint64_t value = 0;
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
+
+    ASSERT ((ref_count > 0), return 0, "TIMESTAMP: Not initialised\n");
+    ASSERT (path, return 0, "TIMESTAMP: Invalid parameters\n");
 
     DEBUG ("TIMESTAMP: %s\n", path);
 
     /* Check path */
     path = validate_path (path, &url);
-    if (!path || path[strlen(path)-1] == '/')
+    /* if path is empty, or path ends in '/' but is not the root db path (ie "/") */
+    if (!path ||
+        ((path[strlen(path)-1] == '/') && strlen(path) > 1))
     {
         ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
-        assert (!debug || path);
+        free (url);
+        assert (!apteryx_debug || path);
         return 0;
     }
 
     /* IPC */
-    rpc_client = rpc_connect_service (url, &apteryx__server__descriptor);
+    rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
         ERROR ("TIMESTAMP: Falied to connect to server: %s\n", strerror (errno));
+        free (url);
         return 0;
     }
     get.path = (char *) path;
     apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
-    protobuf_c_service_destroy (rpc_client);
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
 
     DEBUG ("    = %"PRIu64"\n", value);
     return value;

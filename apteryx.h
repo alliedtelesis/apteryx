@@ -68,6 +68,7 @@
 #define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
 #define APTERYX_PROXIES_PATH                     "/apteryx/proxies"
 #define APTERYX_COUNTERS                         "/apteryx/counters"
+#define APTERYX_SYNC_PATH                        "/apteryx/sync"
 
 /** Initialise this instance of the Apteryx library.
  * @param debug verbose debug to stdout
@@ -80,6 +81,37 @@ bool apteryx_init (bool debug);
  * @return true on success
  */
 bool apteryx_shutdown (void);
+
+/**
+ * Shutdown all instances of the Apteryx library.
+ * NOTE: This function should only be called as a process exits,
+ *       as subsequent library calls will fail.
+ * @return true on success
+ */
+bool apteryx_shutdown_force (void);
+
+/**
+ * Process callback requests in client thread context.
+ * Example:
+    int fd = 0;
+    struct pollfd pfd;
+    uint8_t dummy = 0;
+    while (fd >= 0)
+    {
+        fd = apteryx_process (true);
+        CU_ASSERT (fd >= 0);
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        poll (&pfd, 1, 0);
+        if (read (fd, &dummy, 1) == 0)
+        {
+            ERROR ("Poll/Read error: %s\n", strerror (errno));
+        }
+    }
+ * @param poll enable polling and disable multi-threaded callbacks
+ * @return fd for using select for detecting there is work to process
+ */
+int apteryx_process (bool poll);
 
 /**
  * Bind the Apteryx server to accepts connections on the specified URL.
@@ -135,6 +167,62 @@ char *apteryx_get_string (const char *path, const char *key);
 int32_t apteryx_get_int (const char *path, const char *key);
 
 /**
+ * Check if a path has a value in Apteryx
+ * @param path path to check that it exists and has a value
+ * @return true if the path exists and has a value
+ * @return false if the path is invalid or has no value
+ */
+bool apteryx_has_value (const char *path);
+
+/**
+ * Get the last change timestamp of a given path
+ * @param path path to get the timestamp for
+ * @return 0 if the path doesn't exist, last change timestamp otherwise
+ */
+uint64_t apteryx_timestamp (const char *path);
+
+/**
+ * Set a path/value in Apteryx, but only if the existing
+ * value has not changed since the specified timestamp.
+ * Can be used for a Compare-And-Swap operation.
+ * Example: Safely reserve the next free row in a table
+    uint32_t index = 1;
+    while (index > 0) {
+        if (apteryx_cas_int (path, key, index, 0))
+            break;
+        index++;
+    }
+ * Example: Safely updating a 32-bit bitmap
+    while (1) {
+        uint64_t ts = apteryx_timestamp (path);
+        uint32_t bitmap = 0;
+        char *value = apteryx_get (path);
+        if (value)
+        {
+            sscanf (value, "%"PRIx32, &bitmap);
+            free (value);
+        }
+        bitmap = (bitmap & ~clear) | set;
+        if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
+            bool success = apteryx_cas (path, value, ts);
+            free (value);
+            if (success || errno != -EBUSY)
+                return success;
+        }
+    }
+ * @param path path to the value to set
+ * @param value value to set at the specified path
+ * @param ts timestamp to be compared to the paths last change time
+ * @return true on a successful set
+ * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
+ */
+bool apteryx_cas (const char *path, const char *value, uint64_t ts);
+/** Helper to extend the path with the specified key */
+bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts);
+/** Helper to store a simple int at an extended path */
+bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts);
+
+/**
  * Helpers for generating and parsing an Apteryx tree.
  * Can be used to set/get multiple values at once.
  * Uses GLIB's GNode based N-ary trees.
@@ -158,9 +246,9 @@ int32_t apteryx_get_int (const char *path, const char *key);
     g_node_destroy (root);
  */
 #define APTERYX_NODE(p,n) \
-    (p ? (g_node_append_data (p, (gpointer)n)) : (g_node_new (n)))
+    (p ? (g_node_prepend_data (p, (gpointer)n)) : (g_node_new (n)))
 #define APTERYX_LEAF(p,n,v) \
-    (g_node_append_data (g_node_append_data (p, (gpointer)n), (gpointer)v))
+    (g_node_prepend_data (g_node_prepend_data (p, (gpointer)n), (gpointer)v))
 #define APTERYX_NUM_NODES(p) \
     (g_node_n_nodes (p, G_TRAVERSE_NON_LEAVES))
 #define APTERYX_NAME(n) \
@@ -169,10 +257,36 @@ int32_t apteryx_get_int (const char *path, const char *key);
     (g_node_first_child (n) && G_NODE_IS_LEAF (g_node_first_child (n)))
 #define APTERYX_VALUE(n) \
     ((char*)g_node_first_child (n)->data)
+#define APTERYX_CHILD_VALUE(n,k) ({ \
+    char *__ret = NULL;\
+    GNode *__c = apteryx_find_child (n,k);\
+    if (__c) { __ret = APTERYX_VALUE (__c); }\
+    __ret;\
+})
+
 /** Free an N-ary tree of nodes when the data need freeing (e.g. from apteryx_get_tree) */
 void apteryx_free_tree (GNode* root);
+/** Find the child of the node with the specified name */
+GNode *apteryx_find_child (GNode *parent, char *name);
+/** Sort the children of a node using the supplied compare function */
+void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b));
 /** Get the full path of an Apteryx node in an N-ary tree */
 char* apteryx_node_path (GNode* node);
+
+/**
+ * Find a list of paths that match this tree below the root path given 
+ * @param root pointer to the N-ary tree of nodes with a wildcard root path
+ * @return GList of paths where this tree can be found
+ */
+GList *apteryx_find_tree (GNode *root);
+
+/**
+ * Find a list of paths that match this wildcard path + value
+ * @param path Path to match (with one or more * wildcard)
+ * @param value Value to match path against
+ * @return GList of paths where this value can be found
+ */
+GList *apteryx_find (const char *path, const char *value);
 
 /**
  * Set a tree of multiple values in Apteryx.
@@ -185,10 +299,19 @@ bool apteryx_set_tree (GNode* root);
 /**
  * Get a tree of multiple values from Apteryx.
  * @param path path to the root of the tree to return.
- * @param depth depth of the tree to traverse (-1 means keep going).
  * @return N-ary tree of nodes.
  */
-GNode* apteryx_get_tree (const char *path, int depth);
+GNode* apteryx_get_tree (const char *path);
+
+/**
+ * Set a tree of multiple values in Apteryx, but only if
+ * the existing value has not changed since the specified timestamp.
+ * @param root pointer to the N-ary tree of nodes.
+ * @param ts timestamp to be compared to the paths last change time
+ * @return true on a successful set.
+ * @return false on failure.
+ */
+bool apteryx_cas_tree (GNode* root, uint64_t ts);
 
 /**
  * Search for all children that start with the root path.
@@ -202,6 +325,19 @@ GNode* apteryx_get_tree (const char *path, int depth);
  * @return GList of full paths
  */
 GList *apteryx_search (const char *root);
+
+/**
+ * Search for all children that start with the root path.
+ * Does not go further than one level down.
+ * example:
+    "/entity/zones/private/description" = "lan"
+    "/entity/zones/private/networks/description" = "engineers"
+    "/entity/zones/public/description" = "wan"
+ *  apteryx_search_simple ("/entity/zones/") = "/entity/zones/private\n/entity/zones/public"
+ * @param root root path to search on
+ * @return newline separated full paths
+ */
+char *apteryx_search_simple (const char *root);
 
 /**
  * Callback function to be called when a
@@ -268,6 +404,11 @@ typedef int (*apteryx_validate_callback) (const char *path, const char *value);
  * path and new value
  * examples: (using imaginary usage example)
  * - apteryx_validate("/entity/zones/red/networks/*", network_validate);
+ * WARNING: The validate callback is not processed until all watch callbacks have
+ * completed. This is to ensure local state is correct when doing the validation
+ * operation. The side effect of this is that if the validation callback is
+ * called due to a set operation from a watch callback in the same process, then
+ * the validation callback will be blocked and time out.
  * @param path path to the value to be validated
  * @param cb function to call when the value changes
  * @return true on successful registration
@@ -310,12 +451,5 @@ bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
 bool apteryx_proxy (const char *path, const char *url);
 /** Remove the proxy for this path */
 bool apteryx_unproxy (const char *path, const char *url);
-
-/**
- * Get the last change timestamp of a given path
- * @param path path to get the timestamp for
- * @return 0 if the path doesn't exist, last change timestamp otherwise
- */
-uint64_t apteryx_timestamp (const char *path);
 
 #endif /* _APTERYX_H_ */

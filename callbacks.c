@@ -34,11 +34,12 @@ cb_info_t *
 cb_create (GList **list, const char *guid, const char *path,
         uint64_t id, uint64_t callback)
 {
-    cb_info_t *cb = (cb_info_t *) calloc (1, sizeof (cb_info_t));
+    cb_info_t *cb = (cb_info_t *) g_malloc0 (sizeof (cb_info_t));
     cb->active = true;
-    cb->guid = strdup (guid);
-    cb->path = strdup (path);
+    cb->guid = g_strdup (guid);
+    cb->path = g_strdup (path);
     cb->id = id;
+    cb->uri = g_strdup_printf (APTERYX_SERVER".%"PRIu64, cb->id);
     cb->cb = callback;
     cb->list = list;
     cb->refcnt = 1;
@@ -56,12 +57,12 @@ cb_free (gpointer data, void *param)
     if (cb->list)
         *cb->list = g_list_remove (*cb->list, cb);
     if (cb->guid)
-        free ((void *) cb->guid);
+        g_free ((void *) cb->guid);
     if (cb->path)
-        free ((void *) cb->path);
+        g_free ((void *) cb->path);
     if (cb->uri)
-        free ((void *) cb->uri);
-    free (cb);
+        g_free ((void *) cb->uri);
+    g_free (cb);
 }
 
 void
@@ -88,10 +89,10 @@ cb_info_t *
 cb_find (GList **list, const char *guid)
 {
     GList *iter = NULL;
-    cb_info_t *cb;
+    cb_info_t *cb = NULL;
 
     pthread_mutex_lock (&list_lock);
-    for (iter = *list; iter; iter = iter->next)
+    for (iter = *list; iter; iter = g_list_next (iter))
     {
         cb = (cb_info_t *) iter->data;
         if (cb->active && cb->guid && strcmp (cb->guid, guid) == 0)
@@ -123,9 +124,15 @@ cb_match (GList **list, const char *path, int criteria)
         if (!cb->active)
             continue;
 
-        /* Part match */
+        /* Part match on path */
         if ((criteria & CB_MATCH_PART) &&
             strncmp (cb->path, path, strlen (path)) == 0)
+        {
+            match = true;
+        }
+        /* Part match on cb->path */
+        else if ((criteria & CB_PATH_MATCH_PART) &&
+            strncmp (cb->path, path, strlen (cb->path)) == 0)
         {
             match = true;
         }
@@ -153,7 +160,7 @@ cb_match (GList **list, const char *path, int criteria)
                   (ptr = strchr(cb->path, '*')) != NULL)
         {
             /* Match up to the '*' */
-            if (strncmp(path, cb->path, ptr - cb->path - 1) == 0)
+            if (strncmp(path, cb->path, ptr - cb->path) == 0)
             {
                 const char *after_needle = ptr + 1;
                 const char *after_haystack = path + strlen(path) - strlen(after_needle);
@@ -162,6 +169,43 @@ cb_match (GList **list, const char *path, int criteria)
                 if (strcmp(after_needle, after_haystack) == 0)
                 {
                     match = true;
+                }
+                else
+                {
+                    const char *pattern = cb->path;
+                    const char *p = path;
+
+                    while (*pattern && *p)
+                    {
+                        if (*pattern == '*')
+                        {
+                            /* skip to '/' */
+                            while (*p && *p != '/') p++;
+                            pattern++;
+                        }
+                        else if (*pattern == *p)
+                        {
+                            pattern++;
+                            p++;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+
+                    if (*pattern == '\0' && *p && !strcmp (pattern - 1, "*"))
+                    {
+                        match = true;
+                    }
+                    else if (*pattern == '\0' && *p == '\0')
+                    {
+                        match = true;
+                    }
+                    else
+                    {
+                        match = false;
+                    }
                 }
             }
         }

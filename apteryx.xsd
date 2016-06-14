@@ -9,11 +9,20 @@
 			<xs:attribute name="help" type="xs:string" use="optional" />
 		</xs:complexType>
 	</xs:element>
+	<xs:element name="PROVIDE">
+	</xs:element>
+	<xs:element name="INDEX">
+	</xs:element>
+	<xs:element name="WATCH">
+	</xs:element>
 	<xs:element name="NODE">
 		<xs:complexType>
 			<xs:sequence>
 				<xs:element ref="NODE" minOccurs="0" maxOccurs="unbounded" />
 				<xs:element ref="VALUE" minOccurs="0" maxOccurs="unbounded" />
+				<xs:element ref="WATCH" minOccurs="0" maxOccurs="1" />
+				<xs:element ref="PROVIDE" minOccurs="0" maxOccurs="1" />
+				<xs:element ref="INDEX" minOccurs="0" maxOccurs="1" />
 			</xs:sequence>
 			<xs:attribute name="name" type="xs:string" use="required" />
 			<xs:attribute name="default" type="xs:string" use="optional" />
@@ -28,9 +37,12 @@
 			</xs:attribute>
 		</xs:complexType>
 	</xs:element>
+	<xs:element name="SCRIPT">
+	</xs:element>
 	<xs:element name="MODULE">
 		<xs:complexType>
 			<xs:sequence>
+				<xs:element ref="SCRIPT" minOccurs="0" maxOccurs="unbounded"/>
 				<xs:element ref="NODE" minOccurs="0" maxOccurs="unbounded"/>
 			</xs:sequence>
 		</xs:complexType>

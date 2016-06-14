@@ -28,7 +28,7 @@
 #include "apteryx.pb-c.h"
 
 /* Debug enabled */
-bool debug = false;
+bool apteryx_debug = false;
 
 /* Run while true */
 static bool running = true;
@@ -101,7 +101,7 @@ main (int argc, char **argv)
         switch (c)
         {
         case 'd':
-            debug = true;
+            apteryx_debug = true;
             break;
         case 's':
             mode = MODE_SET;
@@ -169,7 +169,7 @@ main (int argc, char **argv)
             usage ();
             return 0;
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         if ((param = apteryx_get (path)))
         {
             printf ("%s\n", param);
@@ -185,7 +185,7 @@ main (int argc, char **argv)
             usage ();
             return 0;
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         if (!apteryx_set (path, param))
             printf ("Failed\n");
         apteryx_shutdown ();
@@ -196,7 +196,7 @@ main (int argc, char **argv)
             usage ();
             return 0;
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         GList *paths = apteryx_search (path);
         for (_iter = paths; _iter; _iter = _iter->next)
             printf ("  %s\n", (char *) _iter->data);
@@ -213,7 +213,7 @@ main (int argc, char **argv)
         {
             path = "";
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         apteryx_dump (path, stdout);
         apteryx_shutdown ();
         break;
@@ -227,7 +227,7 @@ main (int argc, char **argv)
         {
             path = "/";
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         apteryx_watch (path, watch_callback);
         while (running)
             pause ();
@@ -240,7 +240,7 @@ main (int argc, char **argv)
             usage ();
             return 0;
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         provide_value = param;
         apteryx_provide (path, provide_callback);
         while (running)
@@ -254,7 +254,7 @@ main (int argc, char **argv)
             usage ();
             return 0;
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         apteryx_proxy (path, param);
         apteryx_shutdown ();
         break;
@@ -268,7 +268,7 @@ main (int argc, char **argv)
         {
             path = "";
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         value = apteryx_timestamp (path);
         printf ("%"PRIu64"\n", value);
         apteryx_shutdown ();
@@ -279,7 +279,7 @@ main (int argc, char **argv)
             usage ();
             return 0;
         }
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         run_unit_tests (filter);
         usleep (100000);
         apteryx_shutdown ();

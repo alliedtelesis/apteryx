@@ -21,14 +21,17 @@
 #include "apteryx.h"
 #include "internal.h"
 
+/* RPC Service */
+extern rpc_instance rpc;
+
 static bool
 handle_debug_set (const char *path, const char *value)
 {
     if (value)
-        debug = atoi (value);
+        apteryx_debug = atoi (value);
     else
-        debug = false;
-    DEBUG ("DEBUG %s\n", debug ? "enabled" : "disabled");
+        apteryx_debug = false;
+    DEBUG ("DEBUG %s\n", apteryx_debug ? "enabled" : "disabled");
     return true;
 }
 
@@ -41,9 +44,9 @@ handle_sockets_set (const char *path, const char *value)
     DEBUG ("SOCKET %s:%s\n", guid, value);
 
     if (value)
-        res = rpc_bind_url (guid, value);
+        res = rpc_server_bind (rpc, guid, value);
     else
-        res = rpc_unbind_url (guid, value);
+        res = rpc_server_release (rpc, guid);
 
     return res;
 }
@@ -166,8 +169,8 @@ handle_proxies_set (const char *path, const char *value)
         }
         path = strrchr (value, ':') + 1;
         if (cb->uri)
-            free ((void *) cb->uri);
-        cb->uri = strndup (value, strlen (value) - strlen (path) - 1);
+            g_free ((void *) cb->uri);
+        cb->uri = g_strndup (value, strlen (value) - strlen (path) - 1);
         strcpy ((char*)cb->path, path);
         DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
     }

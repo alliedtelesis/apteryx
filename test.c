@@ -25,17 +25,23 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <sys/un.h>
+#include <sys/poll.h>
 #include <assert.h>
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
 #include "apteryx.h"
 #include "internal.h"
+#include "apteryx.pb-c.h"
 
 #define TEST_PATH           "/test"
 #define TEST_ITERATIONS     1000
 #define TEST_SLEEP_TIMEOUT  100000
 #define TEST_TCP_URL        "tcp://127.0.0.1:9999"
 #define TEST_TCP6_URL       "tcp://[::1]:9999"
+#define TEST_RPC_PATH       "/tmp/apteryx.test"
+#define TEST_PORT_NUM       9999
+#define TEST_MESSAGE_SIZE   100
 
 static bool
 assert_apteryx_empty (void)
@@ -55,6 +61,20 @@ assert_apteryx_empty (void)
     }
     g_list_free_full (paths, free);
     return ret;
+}
+
+void
+test_init ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/name";
+    char *value = NULL;
+
+    apteryx_shutdown ();
+    CU_ASSERT (apteryx_set (path, "private") == FALSE);
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    CU_ASSERT (apteryx_set (path, NULL) == FALSE);
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_init (apteryx_debug);
 }
 
 void
@@ -83,6 +103,47 @@ test_set_get_raw ()
     CU_ASSERT (value && strlen (value) == 4);
     CU_ASSERT (value && memcmp (value, bytes, 4) == 0);
     free ((void *) value);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_set_get_long_path ()
+{
+    char *path = NULL;
+    char *value = NULL;
+    int i;
+
+    CU_ASSERT (asprintf (&path, "%s", TEST_PATH));
+    for (i=0; i<1024; i++)
+    {
+        char *old = path;
+        CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
+        free (old);
+    }
+    CU_ASSERT (apteryx_set (path, "private"));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "private") == 0);
+    free ((void *) value);
+    CU_ASSERT (apteryx_set (path, NULL));
+    free ((void *) path);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_set_get_large_value ()
+{
+    const char *path = TEST_PATH"/value";
+    char *svalue, *gvalue;
+    int len = 1024*1024;
+
+    svalue = calloc (1, len);
+    memset (svalue, 'a', len-1);
+    CU_ASSERT (apteryx_set (path, svalue));
+    CU_ASSERT ((gvalue = apteryx_get (path)) != NULL);
+    CU_ASSERT (gvalue && strcmp (gvalue, svalue) == 0);
+    free ((void *) gvalue);
+    free ((void *) svalue);
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -202,12 +263,13 @@ test_process_multi_write ()
         writers[i] = fork ();
         if (writers[i] == 0)
         {
-            apteryx_init (debug);
+            apteryx_init (apteryx_debug);
             _multi_write_thread ((void *) i);
+            apteryx_shutdown ();
             exit (0);
         }
     }
-    apteryx_init (debug);
+    apteryx_init (apteryx_debug);
 
     for (i = 0; i < thread_count; i++)
     {
@@ -484,6 +546,21 @@ test_set_get_string ()
 }
 
 void
+test_set_has_value ()
+{
+    const char *path = TEST_PATH"/entity/zones";
+    const char *value = "123456";
+
+    CU_ASSERT (apteryx_set (path, value));
+
+    CU_ASSERT (apteryx_has_value (path) == true);
+
+    CU_ASSERT (apteryx_prune (path));
+
+    CU_ASSERT (apteryx_has_value (path) == false);
+}
+
+void
 test_search_paths ()
 {
     GList *paths = NULL;
@@ -602,6 +679,27 @@ test_index_cb_wild (const char *path)
     return paths;
 }
 
+static GList*
+test_index_cb_always_slash (const char *path)
+{
+    GList *paths = NULL;
+    if (strcmp (path, TEST_PATH"/ends/with/slash/") == 0)
+    {
+        paths = g_list_append (paths, strdup (TEST_PATH"/ends/with/slash/yes"));
+    }
+    return paths;
+}
+
+static char*
+test_index_cb_always_slash_provide (const char *path)
+{
+    if (strcmp (path, TEST_PATH"/ends/with/slash/yes") == 0)
+    {
+        return strdup ("yes");
+    }
+    return NULL;
+}
+
 void
 test_index ()
 {
@@ -713,6 +811,32 @@ test_index_remove_handler ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_index_always_ends_with_slash ()
+{
+    char *path = TEST_PATH"/ends/with/slash/*";
+    GList *paths = NULL;
+    GNode *root = NULL;
+
+    CU_ASSERT (apteryx_index (path, test_index_cb_always_slash));
+    CU_ASSERT (apteryx_provide (path, test_index_cb_always_slash_provide));
+
+    /* apteryx_search */
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/ends/with/slash/")) != NULL);
+    g_list_free_full (paths, free);
+
+    /* apteryx_get_tree */
+    root = apteryx_get_tree (TEST_PATH"/ends/with/slash");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/ends/with/slash") == 0);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unindex (path, test_index_cb_always_slash));
+    CU_ASSERT (apteryx_unprovide (path, test_index_cb_always_slash_provide));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char *
 _dummy_provide(const char *d)
 {
@@ -757,6 +881,125 @@ test_prune ()
     CU_ASSERT (g_list_length (paths) == 2);
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_prune (TEST_PATH"/entities"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_cas ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/ifindex";
+    char *value;
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_cas (path, "1", 0));
+    CU_ASSERT (!apteryx_cas (path, "2", 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas (path, "3", ts));
+    CU_ASSERT (!apteryx_cas (path, "4", ts));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "3") == 0);
+    free ((void *) value);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_cas_string ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char *value;
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_cas_string (path, "ifindex", "1", 0));
+    CU_ASSERT (!apteryx_cas_string (path, "ifindex", "2", 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas_string (path, "ifindex", "3", ts));
+    CU_ASSERT (!apteryx_cas_string (path, "ifindex", "4", ts));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((value = apteryx_get_string (path, "ifindex")) != NULL);
+    CU_ASSERT (value && strcmp (value, "3") == 0);
+    free ((void *) value);
+
+    CU_ASSERT (apteryx_set_string (path, "ifindex", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_cas_int ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_cas_int (path, "ifindex", 1, 0));
+    CU_ASSERT (!apteryx_cas_int (path, "ifindex", 2, 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas_int (path, "ifindex", 3, ts));
+    CU_ASSERT (!apteryx_cas_int (path, "ifindex", 4, ts));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT (apteryx_get_int (path, "ifindex") == 3);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+#define bitmap_path TEST_PATH"/interfaces/eth0/status"
+#define bitmap_bits 32
+int
+_bitmap_thread (void *data)
+{
+    int id = (long int) data;
+    uint32_t set = (1 << id);
+    uint32_t clear = (1 << (bitmap_bits/2 + id));
+    const char *path = bitmap_path;
+
+    while (1) {
+        uint64_t ts = apteryx_timestamp (path);
+        char *value = apteryx_get (path);
+        uint32_t bitmap = 0;
+        if (value)
+        {
+            sscanf (value, "%"PRIx32, &bitmap);
+            free (value);
+        }
+        bitmap = (bitmap & ~clear) | set;
+        if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
+            bool success = apteryx_cas (path, value, ts);
+            free (value);
+            if (success || errno != -EBUSY)
+                break;
+        }
+    }
+    return 0;
+}
+
+void
+test_bitmap ()
+{
+    const char *path = bitmap_path;
+    char *value = NULL;
+    pthread_t writers[bitmap_bits];
+    uint32_t bitmap = 0;
+    long int i;
+
+    CU_ASSERT (asprintf (&value, "%"PRIx32, (uint32_t)0xFFFF0000) > 0);
+    CU_ASSERT (apteryx_set (path, value));
+    free (value);
+    for (i = 0; i < bitmap_bits/2; i++)
+    {
+        pthread_create (&writers[i], NULL, (void *) &_bitmap_thread, (void *) i);
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && sscanf (value, "%"PRIx32, &bitmap) == 1)
+    CU_ASSERT (bitmap == 0x0000FFFF)
+    free (value);
+
+    CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -850,18 +1093,17 @@ test_watch_fork ()
     apteryx_shutdown ();
     if ((pid = fork ()) == 0)
     {
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         usleep (TEST_SLEEP_TIMEOUT);
         apteryx_set_string (path, NULL, "down");
-        while (1);
+        apteryx_shutdown ();
+        exit (0);
     }
     else if (pid > 0)
     {
-        apteryx_init (debug);
-        //CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+        apteryx_init (apteryx_debug);
         CU_ASSERT (apteryx_watch (path, test_watch_callback));
         usleep (TEST_SLEEP_TIMEOUT * 2);
-        kill (pid, 15);
         waitpid (pid, &status, 0);
         CU_ASSERT (WEXITSTATUS (status) == 0);
     }
@@ -973,6 +1215,24 @@ test_watch_one_level_path_prune ()
 }
 
 void
+test_watch_wildpath ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/interface/state";
+
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/*/interface/*", test_watch_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "down"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "down") == 0);
+
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/*/interface/*", test_watch_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, NULL));
+    _watch_cleanup ();
+}
+
+void
 test_watch_wildcard ()
 {
     _path = _value = NULL;
@@ -990,7 +1250,7 @@ test_watch_wildcard ()
     _watch_cleanup ();
 }
 
-/* We now only support wildcards on the end. This test confirms that we don't support this.
+/* We now support wildcards in the watch path
  */
 void
 test_watch_wildcard_not_last ()
@@ -1003,7 +1263,7 @@ test_watch_wildcard_not_last ()
                (TEST_PATH"/entity/zones/*/state", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_path == NULL);
+    CU_ASSERT (_path && strcmp(_path, path) == 0);
     CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/*/state", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     _watch_cleanup ();
@@ -1057,24 +1317,57 @@ test_watch_set_callback_get ()
 }
 
 static bool
-test_watch_set_callback_set_cb (const char *path, const char *value)
+test_watch_set_callback_set_recursive_cb (const char *path, const char *value)
 {
     apteryx_set_string (path, NULL, "down");
     return true;
 }
 
 void
-test_watch_set_callback_set ()
+test_watch_set_callback_set_recursive ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
-    CU_ASSERT (apteryx_watch (path, test_watch_set_callback_set_cb));
+    CU_ASSERT (apteryx_watch (path, test_watch_set_callback_set_recursive_cb));
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (apteryx_unwatch (path, test_watch_set_callback_set_cb));
+    CU_ASSERT (apteryx_unwatch (path, test_watch_set_callback_set_recursive_cb));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     usleep (2*RPC_TIMEOUT_US); /* At least */
     _watch_cleanup ();
+}
+
+static bool
+test_watch_set_multi_callback_set_cb (const char *path, const char *value)
+{
+    usleep (TEST_SLEEP_TIMEOUT);
+    apteryx_set_string (TEST_PATH"/entity/zones/public", "state", "down");
+    return true;
+}
+
+void
+test_watch_set_multi_callback_set ()
+{
+    GNode* root;
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_watch_set_multi_callback_set_cb));
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "4", "4");
+    APTERYX_LEAF (root, "5", "5");
+    APTERYX_LEAF (root, "6", "6");
+    APTERYX_LEAF (root, "7", "7");
+    APTERYX_LEAF (root, "8", "8");
+    APTERYX_LEAF (root, "9", "9");
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (10 * TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_watch_set_multi_callback_set_cb));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    apteryx_set_string (TEST_PATH"/entity/zones/public", "state", NULL);
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
 }
 
 static bool
@@ -1203,14 +1496,18 @@ test_watch_removes_all_watches ()
     _watch_cleanup ();
 }
 
+static pthread_mutex_t watch_count_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static bool
 test_watch_count_callback (const char *path, const char *value)
 {
     char *v;
+    pthread_mutex_lock (&watch_count_lock);
     CU_ASSERT ((asprintf ((char **) &v, "%d", _cb_count)+1) != 0);
     CU_ASSERT (strcmp ((char*)value, v) == 0);
     free (v);
     _cb_count++;
+    pthread_mutex_unlock (&watch_count_lock);
     return true;
 }
 
@@ -1244,7 +1541,91 @@ test_watch_when_busy ()
     _watch_cleanup ();
 }
 
+void
+test_watch_order ()
+{
+    int count = 1000;
+    int i;
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_watch (TEST_PATH"/interfaces/eth0/packets", test_watch_count_callback));
+    rpc_test_random_watch_delay = true;
+    for (i=0; i<count; i++)
+    {
+        CU_ASSERT (apteryx_set_int (TEST_PATH"/interfaces/eth0/packets", NULL, i));
+    }
+    usleep (TEST_SLEEP_TIMEOUT + count * RPC_TEST_DELAY_MASK);
+    rpc_test_random_watch_delay = false;
+
+    CU_ASSERT (_cb_count == count);
+    CU_ASSERT (apteryx_get_int (TEST_PATH"/interfaces/eth0/packets", NULL) == count - 1);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/interfaces/eth0/packets", test_watch_count_callback));
+    apteryx_set (TEST_PATH"/interfaces/eth0/packets", NULL);
+    _watch_cleanup ();
+}
+
+void
+test_watch_rpc_restart ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (apteryx_watch (path, test_watch_callback));
+    apteryx_shutdown ();
+    apteryx_init (apteryx_debug);
+    CU_ASSERT (apteryx_set_string (path, NULL, "down"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "down") == 0);
+    apteryx_shutdown ();
+    apteryx_init (apteryx_debug);
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "up") == 0);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_cleanup ();
+}
+
 static pthread_mutex_t watch_lock;
+static int watch_count;
+
+static bool
+test_watch_block_callback (const char *path, const char *value)
+{
+    pthread_mutex_lock (&watch_lock);
+    watch_count++;
+    pthread_mutex_unlock (&watch_lock);
+    return true;
+}
+
+void
+test_watch_myself_blocked ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    int i;
+
+    pthread_mutex_init (&watch_lock, NULL);
+    pthread_mutex_lock (&watch_lock);
+    watch_count = 0;
+    CU_ASSERT (apteryx_watch (path, test_watch_block_callback));
+    for (i = 0; i < 30; i++)
+    {
+        CU_ASSERT (apteryx_set (path, "down"));
+    }
+    pthread_mutex_unlock (&watch_lock);
+    usleep (TEST_SLEEP_TIMEOUT);
+    pthread_mutex_lock (&watch_lock);
+    pthread_mutex_unlock (&watch_lock);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_count == 30);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_block_callback));
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static bool
 test_perf_watch_callback (const char *path, const char *value)
 {
@@ -1372,7 +1753,8 @@ test_validate_conflicting_callback(const char *path, const char *value)
 static bool
 test_validate_test_watch_callback (const char *path, const char *value)
 {
-    usleep (900000);
+    /* Block long enough to serialise the 2nd validate, avoiding RPC timeout */
+    usleep (RPC_TIMEOUT_US - 10000);
     already_set++;
     return true;
 }
@@ -1395,12 +1777,170 @@ test_validate_conflicting ()
     pthread_create (&client2, NULL, (void *) &test_validate_thread_client, "down");
     pthread_join (client1, NULL);
     pthread_join (client2, NULL);
-    CU_ASSERT (failed == -EPERM);
+    CU_ASSERT (failed == -EPERM || failed == -ETIMEDOUT);
     usleep (TEST_SLEEP_TIMEOUT);
 
     CU_ASSERT (apteryx_unvalidate (path, test_validate_conflicting_callback));
     CU_ASSERT (apteryx_unwatch (path, test_validate_test_watch_callback));
     apteryx_set_string (path, NULL, NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_validate_tree ()
+{
+    GNode* root;
+
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/private/*", test_validate_callback));
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "4", "4");
+    APTERYX_LEAF (root, "5", "5");
+    APTERYX_LEAF (root, "6", "6");
+    APTERYX_LEAF (root, "7", "7");
+    APTERYX_LEAF (root, "8", "8");
+    APTERYX_LEAF (root, "9", "9");
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/private/*", test_validate_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static bool
+test_set_from_watch_cb (const char *path, const char *value)
+{
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public", "name", "public") == false);
+    CU_ASSERT (errno == -ETIMEDOUT);
+    return true;
+}
+
+void
+test_validate_from_watch_callback ()
+{
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", "link", "up"));
+    usleep (1.1 * RPC_TIMEOUT_US);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", "link", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_validate_from_many_watches ()
+{
+    GNode* root;
+
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "4", "4");
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (5 * RPC_TIMEOUT_US);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int test_validate_order_index;
+
+int
+test_validate_order_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT (index == test_validate_order_index);
+    return 0;
+}
+
+static bool
+test_validate_order_watch_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT (index == test_validate_order_index);
+    test_validate_order_index++;
+    return true;
+}
+
+void
+test_validate_ordering ()
+{
+    char *path;
+    int i;
+
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_validate_order_watch_callback));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/private/*", test_validate_order_callback));
+    test_validate_order_index = 0;
+    for (i=0; i<100; i++)
+    {
+        CU_ASSERT (asprintf (&path, TEST_PATH"/entity/zones/private/%d", i) > 0);
+        CU_ASSERT (apteryx_set_int (path, NULL, i));
+        free (path);
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/private/*", test_validate_order_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_validate_order_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_validate_order_tree_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT (index == test_validate_order_index);
+    test_validate_order_index++;
+    return 0;
+}
+
+static bool
+test_validate_order_tree_watch_callback (const char *path, const char *value)
+{
+    int index;
+    CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
+    CU_ASSERT ((index + 10) == test_validate_order_index);
+    test_validate_order_index++;
+    return true;
+}
+
+void
+test_validate_ordering_tree ()
+{
+    GNode* root;
+
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_watch_callback));
+    CU_ASSERT (apteryx_validate (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_callback));
+    root = APTERYX_NODE (NULL, TEST_PATH"/entity/zones/private");
+    APTERYX_LEAF (root, "9", "9");
+    APTERYX_LEAF (root, "8", "8");
+    APTERYX_LEAF (root, "7", "7");
+    APTERYX_LEAF (root, "6", "6");
+    APTERYX_LEAF (root, "5", "5");
+    APTERYX_LEAF (root, "4", "4");
+    APTERYX_LEAF (root, "3", "3");
+    APTERYX_LEAF (root, "2", "2");
+    APTERYX_LEAF (root, "1", "1");
+    APTERYX_LEAF (root, "0", "0");
+    test_validate_order_index = 0;
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_callback));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_validate_order_tree_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    g_node_destroy (root);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1473,7 +2013,7 @@ test_provide_remove_handler ()
 static char*
 test_provide_timeout_cb (const char *path)
 {
-    sleep (1.2);
+    usleep (1.1 * RPC_TIMEOUT_US);
     return strdup ("down");
 }
 
@@ -1543,16 +2083,17 @@ test_provide_different_process ()
     apteryx_shutdown ();
     if ((pid = fork ()) == 0)
     {
-        apteryx_init (debug);
+        apteryx_init (apteryx_debug);
         CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
-        usleep (100000);
+        usleep (RPC_TIMEOUT_US);
         apteryx_unprovide (path, test_provide_callback_up);
+        apteryx_shutdown ();
         exit (0);
     }
     else if (pid > 0)
     {
-        apteryx_init (debug);
-        usleep (50000);
+        apteryx_init (apteryx_debug);
+        usleep (RPC_TIMEOUT_US / 2);
         CU_ASSERT ((value = apteryx_get (path)) != NULL);
         CU_ASSERT (value && strcmp (value, "up") == 0);
         if (value)
@@ -1656,10 +2197,63 @@ test_provide_after_db ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static char*
+test_provide_wildcard_callback (const char *path)
+{
+    return strdup ("matching");
+}
+
+void
+test_provider_wildcard ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/*";
+    const char *path2 = TEST_PATH"/interfaces/eth0/state";
+    const char *path3 = TEST_PATH"/interfaces/eth0";
+    char *value = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_wildcard_callback));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path2)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path3)) == NULL);
+    if (value)
+        free (value);
+    apteryx_unprovide (path, test_provide_wildcard_callback);
+}
+
+void
+test_provider_wildcard_internal ()
+{
+    const char *path = TEST_PATH"/a/b/*/f";
+    const char *path2 = TEST_PATH"/a/b/e/f";
+    const char *path3 = TEST_PATH"/a/bcd/e/f";
+    GList *search_result = NULL;
+    char *value = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_wildcard_callback));
+
+    /* The provided value should NOT show in search */
+    search_result = apteryx_search (TEST_PATH"/a/b/");
+    CU_ASSERT (g_list_length (search_result) == 0);
+    g_list_free_full (search_result, free);
+
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path2)) != NULL);
+    free (value);
+    CU_ASSERT ((value = apteryx_get (path3)) == NULL);
+    if (value)
+        free (value);
+    apteryx_unprovide (path, test_provide_wildcard_callback);
+};
+
+
 void
 test_tree_nodes ()
 {
     GNode* root;
+    GNode* node;
 
     root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
     APTERYX_LEAF (root, "state", "up");
@@ -1669,15 +2263,27 @@ test_tree_nodes ()
     CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 3);
     CU_ASSERT (g_node_n_children (root) == 3);
     CU_ASSERT (!APTERYX_HAS_VALUE(root));
-    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 0)), "state") == 0);
-    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 0)));
-    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 0)), "up") == 0);
-    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 1)), "speed") == 0);
-    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 1)));
-    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 1)), "1000") == 0);
-    CU_ASSERT (strcmp (APTERYX_NAME (g_node_nth_child (root, 2)), "duplex") == 0);
-    CU_ASSERT (APTERYX_HAS_VALUE(g_node_nth_child (root, 2)));
-    CU_ASSERT (strcmp (APTERYX_VALUE (g_node_nth_child (root, 2)), "full") == 0);
+    node = root ? g_node_first_child (root) : NULL;
+    while (node)
+    {
+        if (strcmp (APTERYX_NAME (node), "state") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "up") == 0);
+        }
+        else if (strcmp (APTERYX_NAME (node), "speed") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "1000") == 0);
+        }
+        else if (strcmp (APTERYX_NAME (node), "duplex") == 0)
+        {
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "full") == 0);
+        }
+        else
+        {
+            CU_ASSERT (node == NULL);
+        }
+        node = node->next;
+    }
     g_node_destroy (root);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1714,8 +2320,8 @@ test_tree_nodes_deep ()
 void
 test_tree_nodes_wide ()
 {
-    GNode *root, *node;
-    char *name, *value, *path;
+    GNode *root;
+    char *name, *value;
     int i;
 
     CU_ASSERT ((name = strdup (TEST_PATH"/root")) != NULL);
@@ -1727,19 +2333,80 @@ test_tree_nodes_wide ()
         CU_ASSERT (asprintf (&value, "%d", i));
         APTERYX_LEAF (root, name, value);
     }
-    CU_ASSERT ((node = g_node_first_child (root)) != NULL);
-    path = apteryx_node_path (node);
-    CU_ASSERT (strlen (path) == 12);
-    free (path);
-    CU_ASSERT ((node = g_node_last_child (root)) != NULL);
-    path = apteryx_node_path (node);
-    CU_ASSERT (strlen (path) == 15);
-    free (path);
     CU_ASSERT (APTERYX_NUM_NODES (root) == 1025);
     CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_ALL) == 2049);
     CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAVES) == 1024);
     CU_ASSERT (g_node_n_children (root) == 1024);
     CU_ASSERT (!APTERYX_HAS_VALUE(root));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_tree_find_children ()
+{
+    GNode* root;
+    GNode* node;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
+    APTERYX_LEAF (root, "state", "up");
+    APTERYX_LEAF (root, "speed", "1000");
+    APTERYX_LEAF (root, "duplex", "full");
+    CU_ASSERT ((node = apteryx_find_child (root, "duplex")) != NULL);
+    CU_ASSERT ((node = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT ((node = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "state"), "up") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "speed"), "1000") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "duplex"), "full") == 0);
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_tree_sort (const char *a, const char *b)
+{
+    unsigned int id1 = atoi (a);
+    unsigned int id2 = atoi (b);
+    return id1 - id2;
+}
+
+static void
+test_tree_check_sorted (GNode *node, gpointer data)
+{
+    unsigned int *max = (unsigned int *) data;
+    unsigned int name = atoi (APTERYX_NAME (node));
+    unsigned int child = atoi (APTERYX_NAME (node->children));
+    unsigned int value = atoi (APTERYX_VALUE (node->children));
+    CU_ASSERT ((*max == 0 && node->prev == NULL) || node->prev->next == node);
+    CU_ASSERT (node->children->parent == node);
+    CU_ASSERT (node->children->children->parent == node->children);
+    CU_ASSERT (name == child);
+    CU_ASSERT (child == value);
+    CU_ASSERT (*max <= value);
+    *max = value;
+}
+
+void
+test_tree_sort_children ()
+{
+    GNode *root;
+    int count = 1024;
+    char *name;
+    unsigned int i;
+
+    CU_ASSERT ((name = strdup (TEST_PATH"/root")) != NULL);
+    CU_ASSERT ((root = APTERYX_NODE (NULL, name)) != NULL);
+    for (i=0; i<count; i++)
+    {
+        name = NULL;
+        CU_ASSERT (asprintf (&name, "%d", (unsigned int) rand ()));
+        APTERYX_LEAF (APTERYX_NODE (root, name), strdup (name), strdup (name));
+    }
+    CU_ASSERT (g_node_n_children (root) == count);
+    apteryx_sort_children (root, test_tree_sort);
+    i = 0;
+    g_node_children_foreach (root, G_TRAVERSE_ALL,
+            test_tree_check_sorted, (gpointer) &i);
     apteryx_free_tree (root);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1791,14 +2458,14 @@ test_get_tree ()
     CU_ASSERT (apteryx_set_string (path, "state", "up"));
     CU_ASSERT (apteryx_set_string (path, "speed", "1000"));
     CU_ASSERT (apteryx_set_string (path, "duplex", "full"));
-    root = apteryx_get_tree (TEST_PATH"/interfaces", -1);
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
     CU_ASSERT (root != NULL);
     CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/interfaces") == 0);
-    CU_ASSERT (g_node_n_children (root) == 1);
-    node = g_node_first_child (root);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
     CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
-    CU_ASSERT (g_node_n_children (node) == 3);
-    node = g_node_first_child (node);
+    CU_ASSERT (node && g_node_n_children (node) == 3);
+    node = node ? g_node_first_child (node) : NULL;
     while (node)
     {
         if (strcmp (APTERYX_NAME (node), "state") == 0)
@@ -1821,6 +2488,459 @@ test_get_tree ()
     }
     CU_ASSERT (apteryx_prune (path));
     apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_get_tree_single_node ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+
+    CU_ASSERT (apteryx_set (path, "up"));
+    root = apteryx_get_tree (path);
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && APTERYX_HAS_VALUE (root));
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), path) == 0);
+    if (root && APTERYX_HAS_VALUE (root))
+    {
+        CU_ASSERT (root && strcmp (APTERYX_VALUE (root), "up") == 0);
+    }
+    CU_ASSERT (apteryx_set (path, NULL));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_get_tree_null ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+
+    root = apteryx_get_tree (path);
+    CU_ASSERT (root == NULL);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_cas_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    GNode* root;
+    uint64_t ts;
+
+    root = APTERYX_NODE (NULL, (char*)path);
+    APTERYX_LEAF (root, "state", "up");
+    APTERYX_LEAF (root, "speed", "1000");
+    APTERYX_LEAF (root, "duplex", "full");
+
+    CU_ASSERT (apteryx_cas_tree (root, 0));
+    CU_ASSERT (!apteryx_cas_tree (root, 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas_tree (root, ts));
+    CU_ASSERT (!apteryx_cas_tree (root, ts));
+    CU_ASSERT (errno == -EBUSY);
+
+    CU_ASSERT (apteryx_prune (path));
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static bool atomic_tree_running = true;
+static pthread_mutex_t atomic_tree_set_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t atomic_tree_prune_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t atomic_tree_set_cond = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t atomic_tree_prune_cond = PTHREAD_COND_INITIALIZER;
+static GNode *atomic_tree_root = NULL;
+
+static int
+tree_atomic_set (void *data)
+{
+    while (atomic_tree_running)
+    {
+        pthread_cond_wait (&atomic_tree_set_cond, &atomic_tree_set_lock);
+        //printf ("prune ");
+        CU_ASSERT (apteryx_set_tree (atomic_tree_root));
+        pthread_mutex_unlock (&atomic_tree_set_lock);
+    }
+    return 0;
+}
+
+static int
+tree_atomic_prune (void *data)
+{
+    uint64_t time = (int) (size_t) data;
+    while (atomic_tree_running)
+    {
+        pthread_cond_wait (&atomic_tree_prune_cond, &atomic_tree_prune_lock);
+        uint64_t wait = (time / 2) + (rand () & (time / 2));
+        //printf ("wait:%zd ", wait);
+        usleep (wait);
+        apteryx_prune (TEST_PATH"/interfaces/eth0");
+        pthread_mutex_unlock (&atomic_tree_prune_lock);
+    }
+    return 0;
+}
+
+void
+test_tree_atomic ()
+{
+    uint64_t start, time = 1;
+    char *name, *value;
+    int count = 1000;
+    uint64_t iterations;
+    pthread_t prune_thread, set_thread;
+    GList *paths;
+    int i;
+
+    /* Generate test tree */
+    CU_ASSERT ((name = strdup (TEST_PATH"/interfaces/eth0")) != NULL);
+    CU_ASSERT ((atomic_tree_root = APTERYX_NODE (NULL, name)) != NULL);
+    for (i=0; i<count; i++)
+    {
+        name = value = NULL;
+        CU_ASSERT (asprintf (&name, "%d", i));
+        CU_ASSERT (asprintf (&value, "%d", i));
+        APTERYX_LEAF (atomic_tree_root, name, value);
+    }
+
+    /* Calculate time to set tree */
+    start = get_time_us ();
+    CU_ASSERT (apteryx_set_tree (atomic_tree_root));
+    time = (get_time_us () - start);
+    //printf ("\nTime: %"PRIu64"us ...\n", time);
+    apteryx_prune (TEST_PATH"/interfaces/eth0");
+    iterations = 1000000 / time;
+    if (iterations < 50)
+        iterations = 50;
+    if (iterations > 200)
+        iterations = 200;
+    //printf ("Iterations: %"PRIu64"\n", iterations);
+
+    /* Start the set/prune threads */
+    atomic_tree_running = true;
+    pthread_create (&set_thread, NULL, (void *) &tree_atomic_set, (void *) (size_t) time);
+    pthread_create (&prune_thread, NULL, (void *) &tree_atomic_prune, (void *) (size_t) time);
+    usleep (TEST_SLEEP_TIMEOUT);
+
+    for (i=0; i<iterations;i++)
+    {
+        pthread_cond_signal (&atomic_tree_prune_cond);
+        pthread_cond_signal (&atomic_tree_set_cond);
+        usleep (100);
+        pthread_mutex_lock (&atomic_tree_prune_lock);
+        pthread_mutex_lock (&atomic_tree_set_lock);
+        usleep (2 * time);
+        paths = apteryx_search (TEST_PATH"/interfaces/eth0/");
+        CU_ASSERT (g_list_length (paths) == 0 || g_list_length (paths) == count);
+        //printf("len:%d\n", g_list_length (paths));
+        g_list_free_full (paths, free);
+        apteryx_prune (TEST_PATH"/interfaces/eth0");
+        pthread_mutex_unlock (&atomic_tree_prune_lock);
+        pthread_mutex_unlock (&atomic_tree_set_lock);
+    }
+
+    atomic_tree_running = false;
+    pthread_cond_signal (&atomic_tree_set_cond);
+    pthread_cond_signal (&atomic_tree_prune_cond);
+    pthread_join (set_thread, NULL);
+    pthread_join (prune_thread, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    apteryx_prune (TEST_PATH"/interfaces/eth0");
+    apteryx_free_tree (atomic_tree_root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_find_one_star ()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT(apteryx_set_tree(root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT(apteryx_set_tree(root));
+    g_node_destroy (root);
+
+    GList *paths = apteryx_find (TEST_PATH"/routing/ipv4/rib/*/ifname", "eth0");
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+
+    apteryx_prune (TEST_PATH);
+}
+
+
+void
+test_find_two_star ()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "fc00:1::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "fc00:2::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    GList *paths = apteryx_find (TEST_PATH"/routing/*/rib/*/ifname", "eth1");
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+
+    apteryx_prune(TEST_PATH);
+}
+
+void
+test_find_tree_one_star()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+
+    GList *paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_find_tree_two_star()
+{
+    GNode* root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "fc00:1::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv6/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "fc00:2::/64");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+
+    GList *paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
+
+void
+test_find_tree_null_values()
+{
+    GNode* root = NULL;
+    GList *paths = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/0");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/3");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth10");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    /* Find the entry with a NULL ifname */
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "");
+    paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    /* Find the entry the eth1 entry (miss eth10) */
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    /* No entries exist with bpg as proto */
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/*/rib/*");
+    APTERYX_LEAF (root, "proto", "bgp");
+    paths = apteryx_find_tree (root);
+    CU_ASSERT (g_list_length (paths) == 0);
+    g_list_free_full (paths, free);
+    g_node_destroy (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
+static char*
+test_provide_callback_100 (const char *path)
+{
+    return strdup ("100");
+}
+
+static char*
+test_provide_callback_1000 (const char *path)
+{
+    return strdup ("1000");
+}
+
+void
+test_get_tree_indexed_provided ()
+{
+    GNode *root, *node, *child;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
+
+    root = apteryx_get_tree (TEST_PATH"/counters");
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    node = root ? g_node_first_child (root) : NULL;
+    while (node)
+    {
+        if (strcmp (APTERYX_NAME (node), "rx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else if (strcmp (APTERYX_NAME (node), "tx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else
+        {
+            CU_ASSERT (node == NULL);
+        }
+        node = node->next;
+    }
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters", test_index_cb));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1903,7 +3023,7 @@ test_perf_get_tree ()
     start = get_time_us ();
     for (i = 0; i < (TEST_ITERATIONS/10); i++)
     {
-        root = apteryx_get_tree (path, -1);
+        CU_ASSERT ((root = apteryx_get_tree (path)) != NULL);
         if (!root)
             goto exit;
         apteryx_free_tree (root);
@@ -1922,7 +3042,7 @@ test_perf_get_tree_5000 ()
     char value[32];
     GNode* root;
     uint64_t start, time;
-    int count = TEST_ITERATIONS;
+    int count = 5000;
     int i;
 
     for (i=0; i<count; i++)
@@ -1931,7 +3051,7 @@ test_perf_get_tree_5000 ()
         CU_ASSERT (apteryx_set_string (path, value, value));
     }
     start = get_time_us ();
-    root = apteryx_get_tree (path, -1);
+    CU_ASSERT ((root = apteryx_get_tree (path)) != NULL)
     if (!root)
         goto exit;
     time = (get_time_us () - start);
@@ -1981,6 +3101,47 @@ test_proxy_get ()
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
     CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
     CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_tree_get ()
+{
+    const char *value = NULL;
+    GNode *root = NULL;
+
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu1", "spam"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu2", "eggsandspam"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu3", "eggspamspamandeggs"))
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu4", "spamspameggsspamspamspameggsandspam"));
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+
+    /* Get menu item 1 via proxy */
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote"TEST_PATH"/local/foo/menu1")) != NULL);
+    CU_ASSERT (value && strcmp (value, "spam") == 0);
+    if (value)
+        free ((void *) value);
+
+    /* Test local tree */
+    root = apteryx_get_tree (TEST_PATH"/local");
+    CU_ASSERT (root && APTERYX_NUM_NODES (root) == 7);
+    if (root)
+        apteryx_free_tree (root);
+
+    /* Test same tree via proxy */
+    root = apteryx_get_tree (TEST_PATH"/remote"TEST_PATH"/local");
+    CU_ASSERT (root && APTERYX_NUM_NODES (root) == 7);
+    if (root)
+        apteryx_free_tree (root);
+    else
+        printf("No tree in result");
+
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+
+    apteryx_debug = false;
 }
 
 void
@@ -2128,6 +3289,32 @@ test_proxy_timestamp ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_proxy_cas ()
+{
+    const char *path = TEST_PATH"/remote/test/local";
+    char *value = NULL;
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+
+    value = g_strdup_printf ("%d", 1);
+    CU_ASSERT (apteryx_cas (path, value, 0));
+    CU_ASSERT (!apteryx_cas (path, value, 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    CU_ASSERT (apteryx_cas (path, value, ts));
+    CU_ASSERT (!apteryx_cas (path, value, ts));
+    CU_ASSERT (errno == -EBUSY);
+    g_free (value);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
@@ -2149,18 +3336,19 @@ test_deadlock ()
         free (path);
     }
     CU_ASSERT (apteryx_prune(TEST_PATH));
-    usleep(1000);
-    apteryx_shutdown();
-    apteryx_init(false);
+    usleep (1000);
+    apteryx_shutdown ();
+    apteryx_init (false);
 
+    usleep (5 * 1000 * 1000);
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/zones/private/state/%d", i) > 0);
+        CU_ASSERT (asprintf (&path, TEST_PATH"/zones/private/state/%d", i) > 0);
         CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
         free (path);
     }
-    CU_ASSERT (apteryx_prune(TEST_PATH));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -2190,6 +3378,7 @@ test_deadlock2 ()
     apteryx_shutdown ();
     apteryx_init (false);
 
+    usleep (5 * 1000 * 1000);
     for (i = 0; i < 1000; i++)
     {
         char *path = NULL;
@@ -2201,6 +3390,49 @@ test_deadlock2 ()
     CU_ASSERT (apteryx_prune (TEST_PATH));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_double_fork ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/age";
+    int status;
+    int pid;
+
+    CU_ASSERT (apteryx_set_int (path, NULL, 1));
+    if ((pid = fork ()) == 0)
+    {
+        /* Child */
+        apteryx_set_int (path, NULL, apteryx_get_int (path, NULL) + 1);
+        if ((pid = fork ()) == 0)
+        {
+            /* Grandchild */
+            apteryx_set_int (path, NULL, apteryx_get_int (path, NULL) + 1);
+            exit (0);
+        }
+        waitpid (pid, &status, 0);
+        exit (0);
+    }
+    waitpid (pid, &status, 0);
+    CU_ASSERT (WEXITSTATUS (status) == 0);
+    CU_ASSERT ((apteryx_get_int (path, NULL)) == 3);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_remote_path_colon ()
+{
+    char *path = TEST_TCP_URL":"TEST_PATH "/2001:db8::1/test";
+    char *value = NULL;
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_set (path, "hello"));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL && strcmp (value, "hello") == 0);
+    free (value);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
 }
 
 void
@@ -2264,6 +3496,479 @@ test_docs ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_socket_latency (int family, bool cd, bool req, bool resp)
+{
+    int iterations = 2 * TEST_ITERATIONS;
+    char buf[TEST_MESSAGE_SIZE] = {};
+    union
+    {
+        struct sockaddr_in addr_in;
+        struct sockaddr_in6 addr_in6;
+        struct sockaddr_un addr_un;
+    } server, client;
+    socklen_t address_len, len;
+    int64_t start, i, s, s2 = -1;
+    int on = 1;
+    int pid;
+    int status;
+    int ret;
+
+    if (family == AF_UNIX)
+    {
+        server.addr_un.sun_family = AF_UNIX;
+        strcpy (server.addr_un.sun_path, TEST_RPC_PATH);
+        unlink (server.addr_un.sun_path);
+        address_len = sizeof (server.addr_un);
+    }
+    else if (family == AF_INET)
+    {
+        server.addr_in.sin_family = AF_INET;
+        server.addr_in.sin_port = htons (TEST_PORT_NUM);
+        server.addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address_len = sizeof (server.addr_in);
+        client = server;
+        client.addr_in.sin_port = htons (TEST_PORT_NUM+1);
+    }
+    else
+    {
+        CU_ASSERT (family == AF_UNIX || family == AF_INET);
+        return;
+    }
+    CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+    CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
+    CU_ASSERT ((ret = bind (s, (struct sockaddr *)&server, address_len)) >= 0);
+    CU_ASSERT ((ret = listen (s, 5)) >= 0);
+    if (ret < 0)
+        return;
+
+    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=1 > /dev/null 2>&1") == 0);
+    if ((pid = fork ()) == 0)
+    {
+        if (!cd)
+        {
+            len = address_len;
+            CU_ASSERT ((s2 = accept (s, (struct sockaddr *)&client, &len)) >= 0);
+            if (s2 < 0)
+                exit (-1);
+        }
+        for (i = 0; i < iterations; i++)
+        {
+            if (cd)
+            {
+                len = address_len;
+                CU_ASSERT ((s2 = accept (s, (struct sockaddr *)&client, &len)) >= 0);
+                if (s2 < 0)
+                    exit (-1);
+            }
+            if (req)
+                CU_ASSERT (read (s2, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (resp)
+                CU_ASSERT (write (s2, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (cd)
+                close (s2);
+        }
+        if (!cd)
+            close (s2);
+        close (s);
+        exit (0);
+    }
+    else
+    {
+        close (s);
+        if (!cd)
+        {
+            CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+            CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
+            CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
+            if (ret)
+                goto exit;
+        }
+        start = get_time_us ();
+        for (i = 0; i < iterations; i++)
+        {
+            if (cd)
+            {
+                CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+                CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
+                CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
+                if (ret)
+                    goto exit;
+            }
+            if (req)
+                CU_ASSERT (write (s, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (resp)
+                CU_ASSERT (read (s, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
+            if (cd)
+                close (s);
+        }
+        printf ("%"PRIu64"us ... ", (get_time_us () - start) / iterations);
+        if (!cd)
+            close (s);
+    }
+exit:
+    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=0 > /dev/null 2>&1") == 0);
+    kill (pid, 9);
+    waitpid (pid, &status, 0);
+    if (family == AF_UNIX)
+        unlink (TEST_RPC_PATH);
+}
+
+void
+test_unix_req_latency ()
+{
+    test_socket_latency (AF_UNIX, false, true, false);
+}
+
+void
+test_unix_req_resp_latency ()
+{
+    test_socket_latency (AF_UNIX, false, true, true);
+}
+
+void
+test_unix_con_disc_latency ()
+{
+    test_socket_latency (AF_UNIX, true, false, false);
+}
+
+void
+test_unix_con_req_resp_disc_latency ()
+{
+    test_socket_latency (AF_UNIX, true, true, true);
+}
+
+void
+test_tcp_req_latency ()
+{
+    test_socket_latency (AF_INET, false, true, false);
+}
+
+void
+test_tcp_req_resp_latency ()
+{
+    test_socket_latency (AF_INET, false, true, true);
+}
+
+void
+test_tcp_con_disc_latency ()
+{
+    test_socket_latency (AF_INET, true, false, false);
+}
+
+void
+test_tcp_con_req_resp_disc_latency ()
+{
+    test_socket_latency (AF_INET, true, true, true);
+}
+
+static void
+apteryx__ping (Apteryx__Test_Service *service,
+              const Apteryx__Ping *ping,
+              Apteryx__Ping_Closure closure, void *closure_data)
+{
+    closure (ping, closure_data);
+    return;
+}
+
+static Apteryx__Test_Service test_service = APTERYX__TEST__INIT (apteryx__);
+
+typedef struct _ping_data_t
+{
+    char *value;
+    bool done;
+} ping_data_t;
+
+static void
+handle_ping_response (const Apteryx__Ping *result, void *closure_data)
+{
+    ping_data_t *data = (ping_data_t *)closure_data;
+    data->done = false;
+    if (result == NULL)
+    {
+        ERROR ("PING: Error processing request.\n");
+        errno = -ETIMEDOUT;
+    }
+    else
+    {
+        data->done = true;
+        if (result->value && result->value[0] != '\0')
+        {
+            data->value = strdup (result->value);
+        }
+    }
+}
+
+void
+test_rpc_init ()
+{
+    rpc_instance rpc;
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_bind ()
+{
+    char *url = APTERYX_SERVER".test";
+    rpc_instance rpc;
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_connect ()
+{
+    char *url = APTERYX_SERVER".test";
+    ProtobufCService *rpc_client;
+    rpc_instance rpc;
+
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
+    rpc_client_release (rpc, rpc_client, false);
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_ping ()
+{
+    Apteryx__Ping ping = APTERYX__PING__INIT;
+    char *test_string = "testing123...";
+    char *url = APTERYX_SERVER".test";
+    ProtobufCService *rpc_client;
+    rpc_instance rpc;
+    ping_data_t data = {0};
+
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
+    ping.value = test_string;
+    apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
+    CU_ASSERT (data.done);
+    CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
+    free (data.value);
+    rpc_client_release (rpc, rpc_client, false);
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_double_bind ()
+{
+    char *url = APTERYX_SERVER".test";
+    rpc_instance rpc;
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT (!rpc_server_bind (rpc,  url, url));
+    CU_ASSERT (rpc_server_release (rpc, url));
+    rpc_shutdown (rpc);
+}
+
+void
+test_rpc_perf ()
+{
+    Apteryx__Ping ping = APTERYX__PING__INIT;
+    char *test_string = "testing123...";
+    char *url = APTERYX_SERVER".test";
+    ProtobufCService *rpc_client;
+    rpc_instance rpc;
+    uint64_t start;
+    int i;
+
+    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT (rpc_server_bind (rpc,  url, url));
+    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
+
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        ping_data_t data = {0};
+        ping.value = test_string;
+        apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
+        CU_ASSERT (data.done);
+        CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
+        free (data.value);
+        if (!data.done || !data.value)
+            goto exit;
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    rpc_client_release (rpc, rpc_client, false);
+    rpc_shutdown (rpc);
+}
+
+static pthread_t single_thread = -1;
+static int
+_single_thread (void *data)
+{
+    int fd = 0;
+    struct pollfd pfd;
+    uint8_t dummy = 0;
+
+    while (fd >= 0)
+    {
+        fd = apteryx_process (true);
+        CU_ASSERT (fd >= 0);
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        poll (&pfd, 1, 0);
+        if (read (fd, &dummy, 1) == 0)
+        {
+            ERROR ("Poll/Read error: %s\n", strerror (errno));
+        }
+    }
+    return 0;
+}
+
+static void
+start_single_threading ()
+{
+    CU_ASSERT (pthread_create (&single_thread, NULL, (void *) &_single_thread, (void *) NULL) == 0);
+}
+
+static void
+stop_single_threading ()
+{
+    pthread_cancel (single_thread);
+    pthread_join (single_thread, NULL);
+    CU_ASSERT (apteryx_process (false) == -1);
+}
+
+void
+test_single_index()
+{
+    start_single_threading ();
+    test_index ();
+    stop_single_threading ();
+}
+
+void
+test_single_index_no_polling ()
+{
+    char *path = TEST_PATH"/counters/";
+    GList *paths = NULL;
+
+    apteryx_process (true);
+    CU_ASSERT (apteryx_index (path, test_index_cb));
+    CU_ASSERT ((paths = apteryx_search (path)) == NULL);
+    CU_ASSERT (apteryx_unindex (path, test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
+void
+test_single_watch ()
+{
+    start_single_threading ();
+    test_watch ();
+    stop_single_threading ();
+}
+
+void
+test_single_watch_no_polling ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    apteryx_process (true);
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (apteryx_watch (path, test_watch_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "down"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (_value  == NULL);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_cleanup ();
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
+void
+test_single_validate()
+{
+    start_single_threading ();
+    test_validate ();
+    stop_single_threading ();
+}
+
+void
+test_single_validate_no_polling ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    apteryx_process (true);
+    CU_ASSERT (apteryx_validate (path, test_validate_callback));
+    CU_ASSERT (!apteryx_set_string (path, NULL, "down"));
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    CU_ASSERT (!apteryx_set_string (path, NULL, "up"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_callback));
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
+    apteryx_set_string (path, NULL, NULL);
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
+void
+test_single_provide()
+{
+    start_single_threading ();
+    test_provide ();
+    stop_single_threading ();
+}
+
+void
+test_single_provide_no_polling ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *value = NULL;
+    apteryx_process (true);
+    CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    apteryx_unprovide (path, test_provide_callback_up);
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+    usleep (1.1 * RPC_TIMEOUT_US);
+}
+
+static bool
+test_single_watch_myself_callback (const char *path, const char *value)
+{
+    watch_count++;
+    return true;
+}
+
+void
+test_single_watch_myself ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    int count = 64;
+    int i;
+
+    apteryx_process (true);
+    watch_count = 0;
+    CU_ASSERT (apteryx_watch (path, test_single_watch_myself_callback));
+    for (i = 0; i < count; i++)
+    {
+        CU_ASSERT (apteryx_set (path, "down"));
+    }
+    for (i = 0; i < count; i++)
+    {
+        apteryx_process (true);
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_count == count);
+    CU_ASSERT (apteryx_unwatch (path, test_single_watch_myself_callback));
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+}
+
 static int
 suite_init (void)
 {
@@ -2278,11 +3983,15 @@ suite_clean (void)
 
 static CU_TestInfo tests_api[] = {
     { "doc example", test_docs },
+    { "initialisation", test_init },
     { "set and get", test_set_get },
-    { "set and get raw byte streams", test_set_get_raw },
+    { "raw byte streams", test_set_get_raw },
+    { "long path", test_set_get_long_path },
+    { "large value", test_set_get_large_value },
     { "multiple leaves", test_multiple_leaves },
     { "set/get string", test_set_get_string },
     { "set/get int", test_set_get_int },
+    { "has_value", test_set_has_value },
     { "get no value", test_get_no_value },
     { "overwrite", test_overwrite },
     { "delete", test_delete },
@@ -2291,8 +4000,14 @@ static CU_TestInfo tests_api[] = {
     { "multi threads writing to same table", test_thread_multi_write },
     { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
+    { "cas", test_cas },
+    { "cas string", test_cas_string },
+    { "cas int", test_cas_int },
+    { "bitmap", test_bitmap },
     { "shutdown deadlock", test_deadlock },
     { "shutdown deadlock 2", test_deadlock2 },
+    { "remote path contains colon", test_remote_path_colon },
+    { "double fork", test_double_fork },
     CU_TEST_INFO_NULL,
 };
 
@@ -2304,6 +4019,7 @@ static CU_TestInfo tests_api_index[] = {
     { "index no handler", test_index_no_handler },
     { "index remove handler", test_index_remove_handler },
     { "index x/* with provide x/*", test_index_and_provide },
+    { "index path ends with /", test_index_always_ends_with_slash },
     CU_TEST_INFO_NULL,
 };
 
@@ -2316,16 +4032,21 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
     { "watch one level path", test_watch_one_level_path },
     { "watch_one_level_path_prune", test_watch_one_level_path_prune},
+    { "watch wildpath", test_watch_wildpath },
     { "watch wildcard", test_watch_wildcard },
     { "watch wildcard not last", test_watch_wildcard_not_last },
     { "watch wildcard miss", test_watch_wildcard_miss },
     { "watch set callback get", test_watch_set_callback_get },
     { "watch set callback unwatch", test_watch_set_callback_unwatch },
-    { "watch set callback set recursive", test_watch_set_callback_set },
+    { "watch set callback set recursive", test_watch_set_callback_set_recursive },
+    { "watch set multi callback set", test_watch_set_multi_callback_set },
     { "watch and set from another thread", test_watch_set_thread },
     { "watch adds / removes watches", test_watch_adds_watch },
     { "watch removes multiple watches", test_watch_removes_all_watches },
     { "watch when busy", test_watch_when_busy },
+    { "watch order", test_watch_order },
+    { "watch rpc restart", test_watch_rpc_restart },
+    { "watch myself blocked", test_watch_myself_blocked },
     CU_TEST_INFO_NULL,
 };
 
@@ -2335,6 +4056,11 @@ static CU_TestInfo tests_api_validate[] = {
     { "validate wildcard", test_validate_wildcard },
     { "validate wildcard internal", test_validate_wildcard_internal },
     { "validate conflicting", test_validate_conflicting },
+    { "validate tree", test_validate_tree },
+    { "validate from watch callback", test_validate_from_watch_callback },
+    { "validate from many watches", test_validate_from_many_watches },
+    { "validate set order", test_validate_ordering },
+    { "validate tree order", test_validate_ordering_tree },
     CU_TEST_INFO_NULL,
 };
 
@@ -2351,11 +4077,14 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide search", test_provide_search },
     { "provide and db search", test_provide_search_db },
     { "provide after db", test_provide_after_db },
+    { "provider wildcard", test_provider_wildcard },
+    { "provider wildcard internal", test_provider_wildcard_internal },
     CU_TEST_INFO_NULL,
 };
 
 static CU_TestInfo tests_api_proxy[] = {
     { "proxy get", test_proxy_get },
+    { "proxy tree get", test_proxy_tree_get },
     { "proxy set", test_proxy_set },
     { "proxy not listening", test_proxy_not_listening },
     { "proxy before db get", test_proxy_before_db_get },
@@ -2364,6 +4093,7 @@ static CU_TestInfo tests_api_proxy[] = {
     { "proxy search", test_proxy_search },
     { "proxy prune", test_proxy_prune },
     { "proxy timestamp", test_proxy_timestamp },
+    { "proxy cas", test_proxy_cas },
     CU_TEST_INFO_NULL,
 };
 
@@ -2372,8 +4102,37 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes", test_tree_nodes },
     { "tree nodes deep", test_tree_nodes_deep },
     { "tree nodes wide", test_tree_nodes_wide },
+    { "tree find children", test_tree_find_children },
+    { "tree sort children", test_tree_sort_children },
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },
+    { "get tree single node", test_get_tree_single_node },
+    { "get tree null", test_get_tree_null },
+    { "get tree indexed/provided", test_get_tree_indexed_provided },
+    { "cas tree", test_cas_tree},
+    { "tree atomic", test_tree_atomic},
+    CU_TEST_INFO_NULL,
+};
+
+static CU_TestInfo tests_find[] = {
+    { "simple find", test_find_one_star },
+    { "multi * find", test_find_two_star },
+    { "simple tree find", test_find_tree_one_star },
+    { "multi * tree find", test_find_tree_two_star },
+    { "find with null entry", test_find_tree_null_values },
+    CU_TEST_INFO_NULL,
+};
+
+static CU_TestInfo tests_single_threaded[] = {
+    { "single-threaded index", test_single_index },
+    { "single-threaded index no polling", test_single_index_no_polling },
+    { "single-threaded watch", test_single_watch },
+    { "single-threaded watch no polling", test_single_watch_no_polling },
+    { "single-threaded validate", test_single_validate },
+    { "single-threaded validate no polling", test_single_validate_no_polling },
+    { "single-threaded provide", test_single_provide },
+    { "single-threaded provide no polling", test_single_provide_no_polling },
+    { "single-threaded watch myself", test_single_watch_myself },
     CU_TEST_INFO_NULL,
 };
 
@@ -2396,6 +4155,24 @@ static CU_TestInfo tests_performance[] = {
     CU_TEST_INFO_NULL,
 };
 
+CU_TestInfo tests_rpc[] = {
+    { "unix req", test_unix_req_latency },
+    { "unix req/resp", test_unix_req_resp_latency },
+    { "unix con/disc", test_unix_con_disc_latency },
+    { "unix c/r/r/d", test_unix_con_req_resp_disc_latency},
+    { "tcp req", test_tcp_req_latency },
+    { "tcp req/resp", test_tcp_req_resp_latency },
+    { "tcp con/disc", test_tcp_con_disc_latency },
+    { "tcp c/r/r/d", test_tcp_con_req_resp_disc_latency},
+    { "rpc init", test_rpc_init },
+    { "rpc bind", test_rpc_bind },
+    { "rpc connect", test_rpc_connect },
+    { "rpc ping", test_rpc_ping },
+    { "rpc double bind", test_rpc_double_bind },
+    { "rpc perf", test_rpc_perf },
+    CU_TEST_INFO_NULL,
+};
+
 extern CU_TestInfo tests_database_internal[];
 extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
@@ -2404,6 +4181,7 @@ static CU_SuiteInfo suites[] = {
     { "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
+    { "RPC", suite_init, suite_clean, tests_rpc },
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
     { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },
@@ -2411,6 +4189,8 @@ static CU_SuiteInfo suites[] = {
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
     { "Apteryx API Proxy", suite_init, suite_clean, tests_api_proxy },
+    { "Apteryx API Find", suite_init, suite_clean, tests_find },
+    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
     { "Apteryx Performance", suite_init, suite_clean, tests_performance },
     CU_SUITE_INFO_NULL,
 };
@@ -2423,6 +4203,9 @@ run_unit_tests (const char *filter)
         return;
     assert (NULL != CU_get_registry ());
     assert (!CU_is_test_running ());
+
+    /* Make some random numbers */
+    srand (time (NULL));
 
     /* Add tests */
     CU_SuiteInfo *suite = &suites[0];

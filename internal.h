@@ -33,6 +33,7 @@
 #include <syslog.h>
 #include <glib.h>
 #include <protobuf-c/protobuf-c.h>
+#include "common.h"
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
@@ -53,52 +54,6 @@ typedef enum
     MODE_TIMESTAMP,
     MODE_TEST,
 } APTERYX_MODE;
-
-/* Debug */
-extern bool debug;
-static inline uint64_t
-get_time_us (void)
-{
-    struct timeval tv;
-    gettimeofday (&tv, NULL);
-    return (tv.tv_sec * (uint64_t) 1000000 + tv.tv_usec);
-}
-
-static inline uint32_t htol32 (uint32_t v)
-{
-    if (htons(1) == 1)
-        return ((v>>24)&0xff) | ((v>>8)&0xff00) | ((v<<8)&0xff0000) | ((v << 24)&0xff000000);
-    else
-        return v;
-}
-#define ltoh32 htol32
-
-#define DEBUG(fmt, args...) \
-    if (debug) \
-    { \
-        syslog (LOG_DEBUG, fmt, ## args); \
-        printf ("[%"PRIu64":%d] ", get_time_us (), getpid ()); \
-        printf (fmt, ## args); \
-    }
-#define ERROR(fmt, args...) \
-    { \
-        syslog (LOG_ERR, fmt, ## args); \
-        if (debug) \
-        { \
-            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
-            fprintf (stderr, "ERROR: "); \
-            fprintf (stderr, fmt, ## args); \
-        } \
-    }
-
-#define FATAL(fmt, args...) \
-    { \
-        syslog (LOG_CRIT, fmt, ## args); \
-        fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
-        fprintf (stderr, "ERROR: "); \
-        fprintf (stderr, fmt, ## args); \
-        running = false; \
-    }
 
 /* Callback */
 typedef struct _cb_info_t
@@ -123,6 +78,8 @@ typedef struct _cb_info_t
     X(uint32_t, get_invalid) \
     X(uint32_t, search) \
     X(uint32_t, search_invalid) \
+    X(uint32_t, traverse) \
+    X(uint32_t, traverse_invalid) \
     X(uint32_t, indexed) \
     X(uint32_t, indexed_no_handler) \
     X(uint32_t, indexed_timeout) \
@@ -140,6 +97,8 @@ typedef struct _cb_info_t
     X(uint32_t, proxied_timeout) \
     X(uint32_t, prune) \
     X(uint32_t, prune_invalid) \
+    X(uint32_t, find) \
+    X(uint32_t, find_invalid) \
     X(uint32_t, timestamp) \
     X(uint32_t, timestamp_invalid)
 
@@ -156,20 +115,30 @@ typedef struct _counters_t
 extern counters_t counters;
 
 /* Database API */
+extern pthread_rwlock_t db_lock;
 void db_init (void);
 void db_shutdown (void);
-bool db_add (const char *path, const unsigned char *value, size_t length);
-bool db_delete (const char *path);
+bool db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+bool db_delete (const char *path, uint64_t ts);
+bool db_delete_no_lock (const char *path, uint64_t ts);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000
-bool rpc_provide_service (const char *url, ProtobufCService *service, int num_threads, int stopfd);
-bool rpc_bind_url (const char *id, const char *url);
-bool rpc_unbind_url (const char *id, const char *url);
-ProtobufCService *rpc_connect_service (const char *url, const ProtobufCServiceDescriptor *descriptor);
+#define RPC_CLIENT_TIMEOUT_US 1000000
+typedef struct rpc_instance_s *rpc_instance;
+#define RPC_TEST_DELAY_MASK 0x7FF
+extern bool rpc_test_random_watch_delay;
+rpc_instance rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descriptor, int timeout);
+void rpc_shutdown (rpc_instance rpc);
+bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
+bool rpc_server_release (rpc_instance rpc, const char *guid);
+int rpc_server_process (rpc_instance rpc, bool poll);
+ProtobufCService *rpc_client_connect (rpc_instance rpc, const char *url);
+void rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep);
 
 /* Apteryx configuration */
 void config_init (void);
@@ -190,6 +159,7 @@ cb_info_t * cb_find (GList **list, const char *guid);
 #define CB_MATCH_WILD       (1<<2)
 #define CB_MATCH_CHILD      (1<<3)
 #define CB_MATCH_WILD_PATH  (1<<4)
+#define CB_PATH_MATCH_PART  (1<<5)
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
 
