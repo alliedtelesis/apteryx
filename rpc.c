@@ -59,6 +59,7 @@ typedef struct rpc_client_t
     uint32_t refcount;
     char *url;
     uint64_t timeout;
+    int pid;
 } rpc_client_t;
 
 /* Message header */
@@ -575,7 +576,7 @@ rpc_client_connect (rpc_instance rpc, const char *url)
         client->refcount++;
 
         /* Check the attached socket is still valid */
-        if (client->sock != NULL && !client->sock->dead)
+        if (client->sock != NULL && !client->sock->dead && client->pid == getpid ())
         {
             /* This client will do */
             pthread_mutex_unlock (&rpc->lock);
@@ -612,6 +613,7 @@ rpc_client_connect (rpc_instance rpc, const char *url)
     client->refcount = 1;
     client->url = g_strdup (url);
     client->timeout = rpc->timeout;
+    client->pid = getpid ();
 
     DEBUG ("RPC[%d]: New client to %s\n", sock->sock, url);
 
