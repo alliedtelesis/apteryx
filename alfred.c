@@ -519,17 +519,16 @@ load_config_files (alfred_instance alfred, const char *path)
     /* Load all XML files */
     for (entry = readdir (dir); entry; entry = readdir (dir))
     {
-        const char *ext = strrchr (entry->d_name, '.');
-        if (ext && strcmp (".xml", ext) == 0)
+        const char *ext = strchr (entry->d_name, '.');
+        if (ext && ((strcmp (".xml", ext) == 0) || (strcmp (".xml.gz", ext) == 0)))
         {
             /* Full path */
             char *filename = g_strdup_printf ("%s%s%s", path,
                 path[strlen (path) - 1] == '/' ? "" : "/", entry->d_name);
 
             DEBUG ("ALFRED: Parse XML file \"%s\"\n", filename);
-
             /* Parse the file */
-            xmlDoc *doc = xmlReadFile (filename, NULL, 0);
+            xmlDoc *doc = xmlParseFile (filename);
             if (doc == NULL)
             {
                 ERROR ("ALFRED: Invalid file \"%s\"\n", filename);
