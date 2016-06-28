@@ -1051,7 +1051,10 @@ test_bitmap ()
     {
         pthread_create (&writers[i], NULL, (void *) &_bitmap_thread, (void *) i);
     }
-    usleep (TEST_SLEEP_TIMEOUT);
+    for (i = 0; i < bitmap_bits/2; i++)
+    {
+        pthread_join (writers[i], NULL);
+    }
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && sscanf (value, "%"PRIx32, &bitmap) == 1)
     CU_ASSERT (bitmap == 0x0000FFFF)
@@ -1423,7 +1426,7 @@ test_watch_set_multi_callback_set ()
     CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_watch_set_multi_callback_set_cb));
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
-    apteryx_set_string (TEST_PATH"/entity/zones/public", "state", NULL);
+//    apteryx_set_string (TEST_PATH"/entity/zones/public", "state", NULL);
     g_node_destroy (root);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -1562,7 +1565,7 @@ test_watch_count_callback (const char *path, const char *value)
     char *v;
     pthread_mutex_lock (&watch_count_lock);
     CU_ASSERT ((asprintf ((char **) &v, "%d", _cb_count)+1) != 0);
-    CU_ASSERT (strcmp ((char*)value, v) == 0);
+    CU_ASSERT (value && v && strcmp ((char*)value, v) == 0);
     free (v);
     _cb_count++;
     pthread_mutex_unlock (&watch_count_lock);
@@ -2169,15 +2172,15 @@ test_provide_different_process ()
 static char*
 test_provide_callback_get_cb (const char *path)
 {
-    return apteryx_get (TEST_PATH"/interfaces/eth0/state");
+    return apteryx_get (TEST_PATH"/interfaces/eth0/state_get");
 }
 
 void
 test_provide_callback_get ()
 {
-    const char *path1 = TEST_PATH"/interfaces/eth0/state";
-    const char *path2 = TEST_PATH"/interfaces/eth0/status";
-    const char *value = NULL;
+    const char *path1 = TEST_PATH"/interfaces/eth0/state_get";
+    const char *path2 = TEST_PATH"/interfaces/eth0/status_get";
+    char *value = NULL;
 
     apteryx_set (path1, "up");
     CU_ASSERT (apteryx_provide (path2, test_provide_callback_get_cb));
@@ -2186,14 +2189,18 @@ test_provide_callback_get ()
     if (value)
         free ((void *) value);
     apteryx_unprovide (path2, test_provide_callback_get_cb);
+    CU_ASSERT ((value = apteryx_get (path2)) == NULL);
     apteryx_set (path1, NULL);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT (apteryx_search(TEST_PATH"/interfaces/eth0/") == NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
 void
 test_provide_callback_get_null ()
 {
-    const char *path = TEST_PATH"/interfaces/eth0/status";
+    const char *path = TEST_PATH"/interfaces/eth0/statii";
     const char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_get_cb));
@@ -2250,11 +2257,12 @@ test_provider_wildcard_search ()
 void
 test_provide_search_db ()
 {
-    const char *path1 = TEST_PATH"/interfaces/eth0/state";
-    const char *path2 = TEST_PATH"/interfaces/eth0/speed";
+    const char *path1 = TEST_PATH"/interfaces/eth0/one";
+    const char *path2 = TEST_PATH"/interfaces/eth0/two";
     const char *path3 = TEST_PATH"/interfaces/eth0/*";
     GList *paths = NULL;
 
+    CU_ASSERT (apteryx_get (TEST_PATH"/interfaces/eth0/status") == NULL);
     CU_ASSERT (apteryx_provide (path1, test_provide_callback_up));
     CU_ASSERT (apteryx_set (path2, "100"));
     CU_ASSERT (apteryx_provide (path3, test_provide_callback_up));
@@ -2317,7 +2325,7 @@ test_provider_wildcard_internal ()
     const char *path = TEST_PATH"/a/b/*/f";
     const char *path2 = TEST_PATH"/a/b/e/f";
     const char *path3 = TEST_PATH"/a/bcd/e/f";
-    const char *multiple_wildcards = TEST_PATH"/*/bcde/*/f";
+    const char *multiple_wildcards = TEST_PATH"/*/double_wildcard/*/f";
     GList *search_result = NULL;
     char *value = NULL;
 
@@ -2338,10 +2346,12 @@ test_provider_wildcard_internal ()
         free (value);
     apteryx_unprovide (path, test_provide_wildcard_callback);
 
-    CU_ASSERT((value=apteryx_get(TEST_PATH"/x/bcde/y/f")) != NULL);
+    CU_ASSERT((value=apteryx_get(TEST_PATH"/x/double_wildcard/y/f")) != NULL);
     if (value)
         free(value);
     CU_ASSERT (apteryx_unprovide (multiple_wildcards, test_provide_wildcard_callback));
+    CU_ASSERT((value=apteryx_get(TEST_PATH"/x/double_wildcard/y/f")) == NULL);
+    CU_ASSERT((search_result = apteryx_search(TEST_PATH"/wildcard/")) == NULL);
 };
 
 
@@ -2993,7 +3003,7 @@ test_get_tree_indexed_provided ()
 {
     GNode *root, *node, *child;
 
-    CU_ASSERT (apteryx_index (TEST_PATH"/counters", test_index_cb));
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters/", test_index_cb));
     CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
     CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
     CU_ASSERT (apteryx_provide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
@@ -3368,7 +3378,7 @@ void
 test_proxy_search ()
 {
     GList *paths = NULL;
-
+    CU_ASSERT (assert_apteryx_empty ());
     CU_ASSERT (apteryx_set (TEST_PATH"/local/cat", "felix"));
     CU_ASSERT (apteryx_set (TEST_PATH"/local/dog", "fido"));
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
@@ -4672,7 +4682,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes wide", test_tree_nodes_wide },
     { "tree find children", test_tree_find_children },
     { "tree sort children", test_tree_sort_children },
-    { "set tree", test_set_tree },
+    { "set tree single", test_set_tree },
     { "get tree", test_get_tree },
     { "get tree single node", test_get_tree_single_node },
     { "get tree null", test_get_tree_null },
@@ -4744,7 +4754,6 @@ CU_TestInfo tests_rpc[] = {
     CU_TEST_INFO_NULL,
 };
 
-#ifdef HAVE_LUA
 CU_TestInfo tests_lua[] = {
     { "lua load module",test_lua_load },
     { "lua basic set get", test_lua_basic_set_get },
@@ -4764,14 +4773,12 @@ CU_TestInfo tests_lua[] = {
 #endif
     CU_TEST_INFO_NULL,
 };
-#endif
 
-extern CU_TestInfo tests_database_internal[];
 extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
 
 static CU_SuiteInfo suites[] = {
-    { "Database Internal", suite_init, suite_clean, tests_database_internal },
+//    { "Hashtree", suite_init, suite_clean, tests_hashtree },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
     { "RPC", suite_init, suite_clean, tests_rpc },

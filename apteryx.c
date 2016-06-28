@@ -1473,9 +1473,15 @@ delete_callback (const char *type, const char *path,  void *cb)
 
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
+    {
+    	ERROR("apteryx set failed to remove callback (couldn't build path)\n");
         return false;
+    }
     if (!apteryx_set (_path, NULL))
+    {
+    	ERROR("apteryx set failed to remove callback\n");
         return false;
+    }
     return true;
 }
 

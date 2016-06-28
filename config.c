@@ -24,6 +24,14 @@
 /* RPC Service */
 extern rpc_instance rpc;
 
+/* Callback structures */
+static struct callback_node *watch_list;
+static struct callback_node *validation_list;
+static struct callback_node *provide_list;
+static struct callback_node *index_list;
+static struct callback_node *proxy_list;
+static GHashTable *guid_to_callback = NULL;
+
 static bool
 handle_debug_set (const char *path, const char *value)
 {
@@ -52,7 +60,16 @@ handle_sockets_set (const char *path, const char *value)
 }
 
 static cb_info_t *
-update_callback (GList **list, const char *guid, const char *value)
+find_callback(const char *guid)
+{
+    cb_info_t *found = g_hash_table_lookup(guid_to_callback, guid);
+    if (found)
+        cb_take(found);
+    return found;
+}
+
+static cb_info_t *
+update_callback (struct callback_node *list, const char *guid, const char *value)
 {
     cb_info_t *cb;
     uint64_t pid, callback, hash;
@@ -66,16 +83,17 @@ update_callback (GList **list, const char *guid, const char *value)
     }
 
     /* Find an existing callback */
-    cb = cb_find (list, guid);
+    cb = find_callback (guid);
     if (!cb && !value)
     {
-        DEBUG ("Non-existant Callback GUID(%s)\n", guid);
+        DEBUG ("Attempting to remove non-existant Callback GUID(%s)\n", guid);
         return NULL;
     }
     else if (cb && value)
     {
         DEBUG ("Callback GUID(%s) already exists - releasing old version\n", guid);
-        cb_destroy (cb);
+        g_hash_table_remove(guid_to_callback, (char*)cb->guid);
+        cb_disable (cb);
         cb_release (cb);
     }
 
@@ -84,13 +102,26 @@ update_callback (GList **list, const char *guid, const char *value)
     {
         /* Create a callback */
         DEBUG ("Callback GUID(%s) created\n", guid);
+        if (cb)
+        {
+            cb_disable(cb);
+            cb_release(cb);
+        }
         cb = cb_create (list, guid, value, pid, callback);
+
+        /* This will either replace the entry removed above, or add a new one. */
+        g_hash_table_replace(guid_to_callback, (char*)cb->guid, cb);
     }
     else
     {
         /* Remove the callback */
         DEBUG ("Callback GUID(%s) released\n", guid);
-        cb_destroy (cb);
+        if (cb)
+        {
+            g_hash_table_remove(guid_to_callback, (char*)cb->guid);
+            cb_disable (cb);
+            cb_release (cb);
+        }
     }
 
     /* Return the reference */
@@ -105,7 +136,7 @@ handle_indexers_set (const char *path, const char *value)
 
     DEBUG ("CFG-Index: %s = %s\n", guid, value);
 
-    cb = update_callback (&index_list, guid, value);
+    cb = update_callback (index_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -118,7 +149,7 @@ handle_watchers_set (const char *path, const char *value)
 
     DEBUG ("CFG-Watch: %s = %s\n", guid, value);
 
-    cb = update_callback (&watch_list, guid, value);
+    cb = update_callback (watch_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -131,7 +162,7 @@ handle_providers_set (const char *path, const char *value)
 
     DEBUG ("CFG-Provide: %s = %s\n", guid, value);
 
-    cb = update_callback (&provide_list, guid, value);
+    cb = update_callback (provide_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -144,7 +175,7 @@ handle_validators_set (const char *path, const char *value)
 
     DEBUG ("CFG-Validate: %s = %s\n", guid, value);
 
-    cb = update_callback (&validation_list, guid, value);
+    cb = update_callback (validation_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -157,36 +188,26 @@ handle_proxies_set (const char *path, const char *value)
 
     DEBUG ("CFG-Proxy: %s = %s\n", guid, value);
 
-    /* If this proxy is being deleted, then close the connect to it */
-    if (!value)
+    if (value)
     {
-        cb = cb_find (&proxy_list, guid);
-        if (cb && cb->uri)
-        {
-            ProtobufCService *rpc_client = rpc_client_connect (proxy_rpc, cb->uri);
-            if (rpc_client)
-            {
-                rpc_client_release (proxy_rpc, rpc_client, false);
-            }
-        }
-    }
-
-    cb = update_callback (&proxy_list, guid, value);
-    if (cb && value)
-    {
-        if (strncmp (value, "unix://", 7) != 0 &&
+        if (value &&
+            strncmp (value, "unix://", 7) != 0 &&
             strncmp (value, "tcp://", 6) != 0)
         {
             ERROR ("Invalid Callback URL (%s)\n", value);
-            cb_release (cb);
             return false;
         }
         path = strrchr (value, ':') + 1;
+        cb = update_callback (proxy_list, guid, path);
         if (cb->uri)
             g_free ((void *) cb->uri);
         cb->uri = g_strndup (value, strlen (value) - strlen (path) - 1);
         strcpy ((char*)cb->path, path);
         DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
+    }
+    else
+    {
+        cb = find_callback(guid);
     }
     cb_release (cb);
     return true;
@@ -219,50 +240,95 @@ handle_counters_get (const char *path)
 }
 
 void
+config_shutdown ()
+{
+    cb_shutdown(watch_list);
+    cb_shutdown(validation_list);
+    cb_shutdown(provide_list);
+    cb_shutdown(index_list);
+    cb_shutdown(proxy_list);
+}
+
+GList *config_get_indexers (const char *path)
+{
+    return cb_match(index_list, path);
+}
+GList *config_search_providers (const char *path)
+{
+    return cb_search(provide_list, path);
+}
+GList *config_get_providers (const char *path)
+{
+    return cb_match(provide_list, path);
+}
+GList *config_get_proxies (const char *path)
+{
+    return cb_match(proxy_list, path);
+}
+GList *config_get_watchers (const char *path)
+{
+    return cb_match(watch_list, path);
+}
+GList *config_get_validators (const char *path)
+{
+    return cb_match(validation_list, path);
+}
+
+void
 config_init (void)
 {
     cb_info_t *cb;
 
+    watch_list = cb_init();
+    validation_list = cb_init();
+    provide_list = cb_init();
+    index_list = cb_init();
+    proxy_list = cb_init();
+
+    guid_to_callback = g_hash_table_new(g_str_hash, g_str_equal);
+
     /* Debug set */
-    cb = cb_create (&watch_list, "debug", APTERYX_DEBUG_PATH,
+    cb = cb_create (watch_list, "debug", APTERYX_DEBUG_PATH,
             (uint64_t) getpid (), (uint64_t) (size_t) handle_debug_set);
     cb_release (cb);
 
     /* Counters */
-    cb = cb_create (&index_list, "counters", APTERYX_COUNTERS"/",
+    cb = cb_create (index_list, "counters", APTERYX_COUNTERS"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_index);
     cb_release (cb);
-    cb = cb_create (&provide_list, "counters", APTERYX_COUNTERS"/",
+    cb = cb_create (provide_list, "counters", APTERYX_COUNTERS"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
     cb_release (cb);
 
     /* Sockets */
-    cb = cb_create (&watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
+    cb = cb_create (watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
     cb_release (cb);
 
     /* Indexers */
-    cb = cb_create (&watch_list, "indexers", APTERYX_INDEXERS_PATH"/",
+    cb = cb_create (watch_list, "indexers", APTERYX_INDEXERS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set);
     cb_release (cb);
 
     /* Watchers */
-    cb = cb_create (&watch_list, "watchers", APTERYX_WATCHERS_PATH"/",
+    cb = cb_create (watch_list, "watchers", APTERYX_WATCHERS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set);
     cb_release (cb);
 
     /* Providers */
-    cb = cb_create (&watch_list, "providers", APTERYX_PROVIDERS_PATH"/",
+    cb = cb_create (watch_list, "providers", APTERYX_PROVIDERS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_providers_set);
     cb_release (cb);
 
     /* Validators */
-    cb = cb_create (&watch_list, "validators", APTERYX_VALIDATORS_PATH"/",
+    cb = cb_create (watch_list, "validators", APTERYX_VALIDATORS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set);
     cb_release (cb);
 
     /* Proxies */
-    cb = cb_create (&watch_list, "proxies", APTERYX_PROXIES_PATH"/",
+    cb = cb_create (watch_list, "proxies", APTERYX_PROXIES_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set);
     cb_release (cb);
+    if (!cb)
+    	return;
 }

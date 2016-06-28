@@ -55,11 +55,11 @@ libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o schem
 %.pb-c.c : %.proto
 	$(Q)$(PROTOC_C) --c_out=. $<
 
-apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
+apteryxd: apteryxd.c apteryx.pb-c.c hashtree.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
-apteryx: apteryxc.c database.c callbacks.c libapteryx.so $(EXTRA_CSRC)
+apteryx: apteryxc.c hashtree.c database.c callbacks.c libapteryx.so $(EXTRA_CSRC)
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
@@ -67,7 +67,7 @@ apteryx-sync: syncer.c libapteryx.so
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
 
-alfred: alfred.c callbacks.c libapteryx.so
+alfred: alfred.c callbacks.c hashtree.c libapteryx.so
 	@echo "Building $@"
 	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
