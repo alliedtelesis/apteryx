@@ -544,8 +544,6 @@ gc_clients (rpc_instance rpc)
             DEBUG ("RPC[%d]: Collecting dead socket for %s\n", client->sock->sock, client->url);
             if (client->refcount < 2)
                 client_release (rpc, client, false);
-            else
-                client->refcount--;
         }
         g_list_free (dead);
 
