@@ -21,8 +21,8 @@ PROTOC_C ?= protoc-c
 
 CFLAGS := $(CFLAGS) -g -O2
 EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
-EXTRA_CFLAGS += -I. -I/usr/include/google `$(PKG_CONFIG) --cflags glib-2.0`
-EXTRA_LDFLAGS := `$(PKG_CONFIG) --libs glib-2.0` -lpthread
+EXTRA_CFLAGS += -I. -I/usr/include/google $(shell $(PKG_CONFIG) --cflags glib-2.0)
+EXTRA_LDFLAGS := $(shell $(PKG_CONFIG) --libs glib-2.0) -lpthread
 EXTRA_LDFLAGS += -lrt -lprotobuf-c -lgcc_s
 ifneq ($(HAVE_LUA),no)
 LUAVERSION := $(shell $(PKG_CONFIG) --exists lua && echo lua || ($(PKG_CONFIG) --exists lua5.2 && echo lua5.2 || echo none))
