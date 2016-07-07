@@ -1309,7 +1309,7 @@ _search_paths (GList **paths, const char *path)
     {
         _search_paths (paths, (const char *) iter->data);
     }
-    *paths = g_list_concat (*paths, children);
+    *paths = g_list_concat (children, *paths);
 }
 
 static void

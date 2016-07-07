@@ -3086,6 +3086,29 @@ exit:
 }
 
 void
+test_perf_prune ()
+{
+    const char *path = TEST_PATH"/neighbour/";
+    uint64_t start, time;
+    int count = 10000;
+    int i;
+
+    for (i=0; i<count; i++)
+    {
+        char p2[128];
+        sprintf (p2, "%svalue%d", path,i);
+        CU_ASSERT (apteryx_set_int (p2, "data_point_1", 1));
+        CU_ASSERT (apteryx_set_int (p2, "data_point_2", 1));
+    }
+    start = get_time_us ();
+    CU_ASSERT (apteryx_prune(TEST_PATH));
+    time = (get_time_us () - start);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_proxy_get ()
 {
     const char *value = NULL;
@@ -4152,6 +4175,7 @@ static CU_TestInfo tests_performance[] = {
     { "search", test_perf_search },
     { "watch", test_perf_watch },
     { "provide", test_perf_provide },
+    { "large prune (10000 level 1 nodes, 20000 level 2 nodes)", test_perf_prune },
     CU_TEST_INFO_NULL,
 };
 
