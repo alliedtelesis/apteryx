@@ -523,6 +523,27 @@ test_set_get_int ()
 
     CU_ASSERT ((v = apteryx_get_int (path, "count")) == value);
 
+    /* test correct behavior with strings */
+    char *strvalue = "illegal";
+
+    CU_ASSERT (apteryx_set_string (path, "count", strvalue));
+
+    v = 0;
+
+    CU_ASSERT((v = apteryx_get_int (path, "count")) == -1);
+
+    CU_ASSERT((errno == -ERANGE));
+
+    strvalue = "123illegal";
+
+    CU_ASSERT (apteryx_set_string (path, "count", strvalue));
+
+    v = 0;
+
+    CU_ASSERT((v = apteryx_get_int (path, "count")) == -1);
+
+    CU_ASSERT((errno == -ERANGE));
+
     CU_ASSERT (apteryx_set_string (path, "count", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }

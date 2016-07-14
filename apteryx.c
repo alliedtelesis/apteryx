@@ -677,7 +677,8 @@ apteryx_get_int (const char *path, const char *key)
     char *full_path;
     size_t len;
     char *v = NULL;
-    int value = -1;
+    char *rem = NULL;
+    int32_t value = -1;
 
     /* Create full path */
     if (key)
@@ -686,11 +687,33 @@ apteryx_get_int (const char *path, const char *key)
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
+        if (apteryx_debug)
+        {
+            errno = 0;
+        }
+
         if ((v = apteryx_get (full_path)))
         {
-            value = atoi ((char *) v);
+            value = strtol ((char *) v, &rem, 0);
+
+            if (*rem != '\0')
+            {
+                errno = -ERANGE;
+                value = -1;
+            }
+
             free (v);
         }
+        else
+        {
+            errno = -ERANGE;
+        }
+
+        if (apteryx_debug && errno == -ERANGE)
+        {
+            DEBUG ("Cannot represent value as int: %s\n", v);
+        }
+
         free (full_path);
     }
     return value;
