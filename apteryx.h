@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <errno.h>
 #include <glib.h>
 
 /** Apteryx configuration
