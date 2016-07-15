@@ -687,13 +687,13 @@ apteryx_get_int (const char *path, const char *key)
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
+        if (apteryx_debug)
+        {
+            errno = 0;
+        }
+
         if ((v = apteryx_get (full_path)))
         {
-            if (apteryx_debug)
-            {
-                errno = 0;
-            }
-
             value = strtol ((char *) v, &rem, 0);
 
             if (*rem != '\0')
@@ -701,14 +701,19 @@ apteryx_get_int (const char *path, const char *key)
                 errno = -ERANGE;
                 value = -1;
             }
-
-            if (apteryx_debug && errno == -ERANGE)
-            {
-                DEBUG ("Cannot represent value as int: %s\n", v);
-            }
-
+            
             free (v);
         }
+        else
+        {
+            errno = -ERANGE;
+        }
+
+        if (apteryx_debug && errno == -ERANGE)
+        {
+            DEBUG ("Cannot represent value as int: %s\n", v);
+        }
+
         free (full_path);
     }
     return value;
