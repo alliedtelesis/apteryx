@@ -384,10 +384,9 @@ db_search (const char *path)
     children = g_hash_table_get_values (node->children);
     for (iter = children; iter; iter = g_list_next (iter))
     {
-        char *value = NULL;
-        struct database_node *node = iter->data;
-        db_node_to_path (node, &value);
-        values = g_list_append (values, value);
+        values = g_list_prepend (values,
+                                 g_strdup_printf("%s%s", strlen(path) > 0 ? path : "/",
+                                                 ((struct database_node*)iter->data)->key));
     }
     g_list_free (children);
     pthread_rwlock_unlock (&db_lock);

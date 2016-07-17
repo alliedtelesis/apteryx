@@ -1086,7 +1086,7 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
         for (i = 0; i < result->n_paths; i++)
         {
             DEBUG ("    = %s\n", result->paths[i]);
-            data->paths = g_list_append (data->paths,
+            data->paths = g_list_prepend (data->paths,
                               (gpointer) strdup (result->paths[i]));
         }
         data->done = true;

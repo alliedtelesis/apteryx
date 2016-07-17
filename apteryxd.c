@@ -111,7 +111,7 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
     {
         for (i = 0; i < result->n_paths; i++)
         {
-            data->paths = g_list_append (data->paths,
+            data->paths = g_list_prepend (data->paths,
                               (gpointer) g_strdup (result->paths[i]));
         }
         data->done = true;
@@ -154,7 +154,7 @@ handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_d
             pv->path = strdup (pvread->path + slen);
             pv->value = strdup (pvread->value);
             DEBUG ("  %s = %s\n", pv->path, pv->value);
-            data->paths = g_list_append (data->paths, pv);
+            data->paths = g_list_prepend (data->paths, pv);
         }
         data->done = true;
     }
@@ -997,7 +997,7 @@ search_path (const char *path)
                 if ((ptr = strchr (&provider_path[len ? len : len+1], '/')) != 0)
                     *ptr = '\0';
                 if (!g_list_find_custom (results, provider_path, (GCompareFunc) strcmp))
-                    results = g_list_append (results, provider_path);
+                    results = g_list_prepend (results, provider_path);
                 else
                     g_free (provider_path);
             }
@@ -1344,7 +1344,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     }
 
     /* Collect the list of deleted paths for notification */
-    paths = g_list_append(paths, g_strdup(prune->path));
+    paths = g_list_prepend(paths, g_strdup(prune->path));
     _search_paths (&paths, prune->path);
 
     /* Prune from database */
