@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <errno.h>
 #include <glib.h>
 
 /** Apteryx configuration
@@ -163,7 +164,10 @@ bool apteryx_set_int (const char *path, const char *key, int32_t value);
 char *apteryx_get (const char *path);
 /** Helper to retrieve the value using an extended path based on the specified key */
 char *apteryx_get_string (const char *path, const char *key);
-/** Helper to retrieve a simple integer from an extended path */
+/** 
+ * Helper to retrieve a simple integer from an extended path 
+ * @return -1 if the value cannot be represented as an int (and set errno to -ERANGE)
+ */
 int32_t apteryx_get_int (const char *path, const char *key);
 
 /**
