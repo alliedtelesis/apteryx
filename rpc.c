@@ -1,6 +1,6 @@
 /**
  * @file rpc.c
- * RPC implementation for for Apteryx.
+ * RPC implementation for Apteryx.
  *
  * Copyright 2015, Allied Telesis Labs New Zealand, Ltd
  *

@@ -388,7 +388,7 @@ apteryx_prune (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("PRUNE: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("PRUNE: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return false;
     }
@@ -478,7 +478,7 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SET: Failed to connect to server: %s\n", strerror (errno));
+        ERROR ("SET: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return false;
     }
@@ -625,7 +625,7 @@ apteryx_get (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("GET: Failed to connect to server: %s\n", strerror (errno));
+        ERROR ("GET: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return NULL;
     }
@@ -903,7 +903,7 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SET_TREE: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("SET_TREE: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return false;
     }
@@ -1059,7 +1059,7 @@ apteryx_get_tree (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("TRAVERSE: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("TRAVERSE: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return false;
     }
@@ -1164,7 +1164,7 @@ apteryx_search (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SEARCH: Failed to connect to server: %s\n", strerror (errno));
+        ERROR ("SEARCH: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return false;
     }
@@ -1282,7 +1282,7 @@ apteryx_find (const char *path, const char *value)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("FIND: Failed to connect to server: %s\n", strerror (errno));
+        ERROR ("FIND: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         free (tmp_path);
         return false;
@@ -1366,7 +1366,7 @@ apteryx_find_tree (GNode *root)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("FIND: Failed to connect to server: %s\n", strerror (errno));
+        ERROR ("FIND: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return false;
     }
@@ -1580,7 +1580,7 @@ apteryx_timestamp (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("TIMESTAMP: Falied to connect to server: %s\n", strerror (errno));
+        ERROR ("TIMESTAMP: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
         free (url);
         return 0;
     }
