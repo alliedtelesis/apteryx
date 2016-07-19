@@ -58,28 +58,6 @@ db_calculate_timestamp (void)
     return micros;
 }
 
-static char *
-db_node_to_path (struct database_node *node, char **buf)
-{
-    /* don't put a trailing / on */
-    char end = 0;
-    if (!*buf)
-    {
-        *buf = g_strdup ("");
-        end = 1;
-    }
-
-    if (node && node->parent)
-        db_node_to_path (node->parent, buf);
-
-    char *tmp = g_strdup_printf ("%s%s%s",
-            *buf ? : "", node ? node->key : "/", end ? "" : "/");
-    g_free (*buf);
-    *buf = tmp;
-
-    return tmp;
-}
-
 static struct database_node *
 db_path_to_node (const char *path, uint64_t timestamp)
 {
@@ -412,25 +390,6 @@ test_db_internal_delete ()
     db_node_delete (node);
 }
 
-void
-test_db_node_to_path ()
-{
-    db_init ();
-    struct database_node *node = db_node_add (NULL, "test_node");
-    struct database_node *one = db_node_add (root, "one");
-    struct database_node *two = db_node_add (one, "two");
-    struct database_node *three = db_node_add (two, "three");
-    char *path = NULL;
-    db_node_to_path (node, &path);
-    CU_ASSERT (strcmp (path, "test_node") == 0);
-    g_free (path);
-    path = NULL;
-    db_node_to_path (three, &path);
-    CU_ASSERT (strcmp (path, "/one/two/three") == 0);
-    g_free (path);
-    db_node_delete (three);
-    db_node_delete (node);
-}
 
 void
 test_db_path_to_node ()
@@ -792,7 +751,6 @@ test_db_timestamping ()
 
 CU_TestInfo tests_database_internal[] = {
     { "delete", test_db_internal_delete },
-    { "node_to_path", test_db_node_to_path },
     { "path_to_node", test_db_path_to_node },
     { "init", test_db_internal_init },
     CU_TEST_INFO_NULL,
