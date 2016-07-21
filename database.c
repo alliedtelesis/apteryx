@@ -351,6 +351,8 @@ db_get (const char *path, unsigned char **value, size_t *length)
 GList *
 db_search (const char *path)
 {
+    bool end_with_slash = strlen(path) > 0 ? path[strlen (path)-1] == '/' : false;
+
     pthread_rwlock_rdlock (&db_lock);
     GList *children, *iter, *values = NULL;
     struct database_node *node = db_path_to_node (path, 0);
@@ -363,7 +365,7 @@ db_search (const char *path)
     for (iter = children; iter; iter = g_list_next (iter))
     {
         values = g_list_prepend (values,
-                                 g_strdup_printf("%s%s", strlen(path) > 0 ? path : "/",
+                                 g_strdup_printf("%s%s%s", path, end_with_slash ? "" : "/",
                                                  ((struct database_node*)iter->data)->key));
     }
     g_list_free (children);
@@ -677,6 +679,12 @@ test_db_search ()
     CU_ASSERT (g_list_length (paths) == 1);
     CU_ASSERT (g_list_find_custom (paths, "/database/test", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, g_free);
+
+    CU_ASSERT ((paths = db_search ("/database")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, "/database/test", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, g_free);
+
     CU_ASSERT (db_delete (path, UINT64_MAX));
     db_shutdown ();
 }
