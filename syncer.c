@@ -148,27 +148,29 @@ sp_path (sync_partner *sp, const char *path)
 bool
 apteryx_prune_sp (sync_partner *sp, const char *path)
 {
+    bool res = false;
     char *full_path = sp_path (sp, path);
     if (!full_path)
     {
         return false;
     }
-    apteryx_prune (full_path);
+    res = apteryx_prune (full_path);
     free (full_path);
-    return true;
+    return res;
 }
 
 bool
 apteryx_set_sp (sync_partner *sp, const char *path, const char *value)
 {
+    bool res = false;
     char *full_path = sp_path (sp, path);
     if (!full_path)
     {
         return false;
     }
-    apteryx_set (full_path, value);
+    res = apteryx_set (full_path, value);
     free (full_path);
-    return true;
+    return res;
 }
 
 bool
@@ -217,7 +219,15 @@ sync_recursive (sync_partner *sp, const char *path)
     if (value)
     {
         /* only sync non-null values or you'll inadvertently prune */
-        apteryx_set_sp (sp, get_path, value);
+        if (!apteryx_set_sp (sp, get_path, value))
+        {
+            if(errno == EHOSTUNREACH)
+            {
+                free(value);
+                free(get_path);
+                return false;
+            }
+        }
         free (value);
     }
     free (get_path);
@@ -245,7 +255,10 @@ resync (sync_partner *sp)
         for (GList *iter = paths; iter; iter = iter->next)
         {
             DEBUG ("About to sync path %s to node %s\n", (char *)iter->data, sp->socket);
-            sync_recursive (sp, iter->data);
+            if (!sync_recursive (sp, iter->data))
+            {
+                break;
+            }
         }
         pthread_rwlock_unlock (&paths_lock);
     }
