@@ -66,8 +66,14 @@ validate_path (const char *path, char **url)
     {
         if (url)
             *url = strdup (path);
-        path = strstr (path + 6, ":/") + 1;
-        char *tmp = strstr (*url + 6, ":/");
+        char *tmp = strstr (path + 6, ":/");
+        if (!tmp)
+        {
+            ERROR ("Invalid path (%s)!\n", path);
+            return NULL;
+        }
+        path = tmp + 1;
+        tmp = strstr (*url + 6, ":/");
         if (tmp)
         {
             tmp[0] = '\0';
