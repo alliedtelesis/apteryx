@@ -991,8 +991,11 @@ search_path (const char *path)
                 int len = strlen (path);
                 /* If there is a provider for a single node below here it may
                  * show as a "*" entry in this list, which is not desirable */
-                if (strchr (provider->path, '*'))
+                if (strlen (provider->path) > strlen (path) &&
+                    provider->path[strlen (path)] == '*')
+                {
                     continue;
+                }
                 char *ptr, *provider_path = g_strdup (provider->path);
                 if ((ptr = strchr (&provider_path[len ? len : len+1], '/')) != 0)
                     *ptr = '\0';
