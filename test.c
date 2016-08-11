@@ -2182,15 +2182,45 @@ test_provide_search ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+char *test_provide_cb(const char *path)
+{
+	return strdup("tmp");
+}
+
+void
+test_provider_wildcard_search ()
+{
+    const char *path = TEST_PATH"/atmf/backups/locations/*";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/atmf/backups/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/atmf/backups/locations", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+
+    /* We don't want the * to show up - that should come from the indexer */
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/atmf/backups/locations/")) == NULL);
+    CU_ASSERT (g_list_length (paths) == 0);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/atmf/backups/locations/*", (GCompareFunc) strcmp) == NULL);
+    g_list_free_full (paths, free);
+
+    apteryx_unprovide (path, test_provide_cb);
+    CU_ASSERT (assert_apteryx_empty ());
+
+}
+
 void
 test_provide_search_db ()
 {
     const char *path1 = TEST_PATH"/interfaces/eth0/state";
     const char *path2 = TEST_PATH"/interfaces/eth0/speed";
+    const char *path3 = TEST_PATH"/interfaces/eth0/*";
     GList *paths = NULL;
 
     CU_ASSERT (apteryx_provide (path1, test_provide_callback_up));
     CU_ASSERT (apteryx_set (path2, "100"));
+    CU_ASSERT (apteryx_provide (path3, test_provide_callback_up));
     CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 2);
     CU_ASSERT (g_list_find_custom (paths, path1, (GCompareFunc) strcmp) != NULL);
@@ -2198,6 +2228,7 @@ test_provide_search_db ()
     g_list_free_full (paths, free);
     apteryx_unprovide (path1, test_provide_callback_up);
     CU_ASSERT (apteryx_set (path2, NULL));
+    apteryx_unprovide (path3, test_provide_callback_up);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -2249,10 +2280,12 @@ test_provider_wildcard_internal ()
     const char *path = TEST_PATH"/a/b/*/f";
     const char *path2 = TEST_PATH"/a/b/e/f";
     const char *path3 = TEST_PATH"/a/bcd/e/f";
+    const char *multiple_wildcards = TEST_PATH"/*/bcde/*/f";
     GList *search_result = NULL;
     char *value = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_wildcard_callback));
+    CU_ASSERT (apteryx_provide (multiple_wildcards, test_provide_wildcard_callback));
 
     /* The provided value should NOT show in search */
     search_result = apteryx_search (TEST_PATH"/a/b/");
@@ -2267,6 +2300,11 @@ test_provider_wildcard_internal ()
     if (value)
         free (value);
     apteryx_unprovide (path, test_provide_wildcard_callback);
+
+    CU_ASSERT((value=apteryx_get(TEST_PATH"/x/bcde/y/f")) != NULL);
+    if (value)
+        free(value);
+    CU_ASSERT (apteryx_unprovide (multiple_wildcards, test_provide_wildcard_callback));
 };
 
 
@@ -2533,11 +2571,33 @@ test_get_tree_single_node ()
 }
 
 void
+test_get_tree_provided ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && !APTERYX_HAS_VALUE (root));
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_get_tree_null ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/state";
     GNode *root = NULL;
-
     root = apteryx_get_tree (path);
     CU_ASSERT (root == NULL);
     CU_ASSERT (assert_apteryx_empty ());
@@ -4119,6 +4179,7 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide callback get", test_provide_callback_get },
     { "provide callback get null", test_provide_callback_get_null },
     { "provide search", test_provide_search },
+    { "provide wildcard + search", test_provider_wildcard_search },
     { "provide and db search", test_provide_search_db },
     { "provide after db", test_provide_after_db },
     { "provider wildcard", test_provider_wildcard },
@@ -4153,6 +4214,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree single node", test_get_tree_single_node },
     { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
+    { "get tree provided", test_get_tree_provided },
     { "cas tree", test_cas_tree},
     { "tree atomic", test_tree_atomic},
     CU_TEST_INFO_NULL,
