@@ -171,79 +171,30 @@ end
 function generate_defines(tbl, path, depth)
 	if not depth then depth = 0 end
 	if not path then path = "" end
-	local tab = string.rep("\t",depth)
 	if tbl["Name"] ~= "MODULE" and tbl["Attributes"] and tbl["Attributes"]["name"] then
 		local name = tbl["Attributes"]["name"]
 		path = path .. "/" .. name
-		path = path:gsub("*", "\"..name"..(depth-1).."..\"")
-		name = string.gsub(name, "-", "_")
-		if is_leaf(tbl) and name ~= "*" then
-			local line = tab.."[\"__"..name.."\"]"
-			line = line.."={path=\""..path.."\""
-			if tbl["Attributes"]["default"] then
-				line = line..",default=\""..tbl["Attributes"]["default"].."\""
-			end
-			local values = false
+		if is_leaf(tbl) then
+			local line = "apteryx_insert(\""..path.."\",{"
 			if tbl["ChildNodes"] ~= nil then
 				for i,field in pairs(tbl["ChildNodes"]) do
 					if field["Name"] == "VALUE" then
-						if not values then
-							line = line..",values={"
-						else
-							line = line..","
-						end 
 						line = line.."[\""..field["Attributes"]["name"].."\"]".."="
 						line = line.."\""..field["Attributes"]["value"].."\""
-						values = true
 					end
 				end
 			end
-			if values then
-				line = line.."}"
-			end
 			line = line.."},"
+			if tbl["Attributes"]["default"] then
+				line = line.."\""..tbl["Attributes"]["default"].."\")"
+			else
+				line = line.."\"\")"
+			end
 			print(line)
-		elseif is_list(tbl) then
-			if depth == 0 then
-				print("apteryx[\""..name.."\"]=function(name"..depth..",value)")
-			else
-				print(tab.."[\""..name.."\"]".."=function(name"..depth..",value)")
-			end
-			print(tab.."	if name"..depth.." == nil then")
-			print(tab.."		local search = apteryx_search(\""..path.."/\")")
-			print(tab.."		for i,item in pairs(search) do")
-			print(tab.."			search[i] = item:sub(item:match'^.*()/'+1)")
-			print(tab.."		end")
-			print(tab.."		table.sort(search)")
-			print(tab.."		return search")
-			print(tab.."	elseif value ~= nil then")
-			print(tab.."		apteryx_set(\""..path.."/\"..name"..depth..", value)")
-			print(tab.."		return")
-			print(tab.."	end")
-			for i,field in pairs(tbl["ChildNodes"]) do
-				generate_defines(field, path, depth+1);
-			end
-			print(tab.."end"..(depth == 0 and "" or ","))
-		elseif tbl["Attributes"]["name"] == "*" then
-			if tbl["ChildNodes"] ~= nil then
-				print(tab.."return setmetatable({")
-				for i,field in pairs(tbl["ChildNodes"]) do
-					generate_defines(field, path, depth+1);
-				end
-				print(tab.."}, __apteryx)")
-			else
-			print(tab.."return apteryx_get(\""..path.."\")")
-			end
 		else
-			if depth == 0 then
-				print("apteryx[\""..name.."\"]=setmetatable({")
-			else
-				print(tab.."[\""..name.."\"]".."=setmetatable({")
-			end
 			for i,field in pairs(tbl["ChildNodes"]) do
 				generate_defines(field, path, depth+1);
 			end
-			print(tab.."}, __apteryx)"..(depth == 0 and "" or ","))
 		end
 	elseif tbl["ChildNodes"] ~= nil then
 		for i,field in pairs(tbl["ChildNodes"]) do
