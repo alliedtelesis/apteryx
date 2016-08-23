@@ -593,7 +593,7 @@ delayed_work_add (int delay, const char *script)
     if (!found)
     {
         delayed_work = g_list_append (delayed_work, delay_script);
-        g_timeout_add (delay * SECONDS_TO_MILLI, delayed_work_process, (gpointer) delay_script);
+        g_timeout_add (delay, delayed_work_process, (gpointer) delay_script);
     }
     pthread_mutex_unlock (&delayed_work_lock);
 }
@@ -623,7 +623,7 @@ rate_limit (lua_State *ls)
         return 0;
     }
 
-    delayed_work_add (lua_tonumber (ls, 1), lua_tostring (ls, 2));
+    delayed_work_add (lua_tonumber (ls, 1) * SECONDS_TO_MILLI, lua_tostring (ls, 2));
 
     return 0;
 }
