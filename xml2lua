@@ -142,17 +142,16 @@ end
 end
 
 function is_leaf(tbl)
-	-- if not a table, then definitely it is a leaf
 	if tbl["ChildNodes"] == nil then
 		return true
-	end
-	-- iterate through the table, check if a child NODE exists
-	for i,field in pairs(tbl["ChildNodes"]) do
-		if field["Name"] == "NODE" then
-			return false
+	else
+		for i,field in pairs(tbl["ChildNodes"]) do
+			if field["Name"] == "VALUE" then
+				return true
+			end
 		end
 	end
-	return true
+	return false
 end
 
 function is_list(tbl)
