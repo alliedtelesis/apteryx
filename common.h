@@ -91,7 +91,6 @@ static inline uint32_t htol32 (uint32_t v)
         fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
         fprintf (stderr, "ERROR: "); \
         fprintf (stderr, fmt, ## args); \
-        running = false; \
     }
 
 #endif /* _COMMON_H_ */
