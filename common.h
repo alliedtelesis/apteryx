@@ -94,4 +94,12 @@ static inline uint32_t htol32 (uint32_t v)
         running = false; \
     }
 
+#define CRITICAL(fmt, args...) \
+    { \
+        syslog (LOG_CRIT, fmt, ## args); \
+        fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+        fprintf (stderr, "ERROR: "); \
+        fprintf (stderr, fmt, ## args); \
+    }
+
 #endif /* _COMMON_H_ */
