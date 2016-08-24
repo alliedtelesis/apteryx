@@ -1074,9 +1074,9 @@ test_simple_index ()
                    "  end\n"
                    "  </SCRIPT>\n"
                    "  <NODE name=\"test\">\n"
-                   "    <NODE name=\"*\" mode=\"rw\"  help=\"Set this node to test the watch function\">\n"
+                   "    <NODE name=\"*\" help=\"Set this node to test the watch function\">\n"
                    "      <INDEX>return test_index(_path)</INDEX>\n"
-                   "      <NODE name=\"id\"/>"
+                   "      <NODE name=\"id\" mode=\"rw\"/>\n"
                    "    </NODE>\n"
                    "  </NODE>\n"
                    "</MODULE>\n");
@@ -1162,9 +1162,9 @@ test_table_index ()
                    "  end\n"
                    "  </SCRIPT>\n"
                    "  <NODE name=\"test\">\n"
-                   "    <NODE name=\"*\" mode=\"rw\"  help=\"Set this node to test the watch function\">\n"
+                   "    <NODE name=\"*\" help=\"Set this node to test the watch function\">\n"
                    "      <INDEX>return test_index(_path)</INDEX>\n"
-                   "      <NODE name=\"id\"/>"
+                   "      <NODE name=\"id\" mode=\"rw\"/>\n"
                    "    </NODE>\n"
                    "  </NODE>\n"
                    "</MODULE>\n");
