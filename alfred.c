@@ -689,7 +689,7 @@ alfred_init (const char *path)
     luaL_openlibs (alfred_inst->ls);
     if (luaL_dostring (alfred_inst->ls, "require('api')") != 0)
     {
-        CRITICAL ("Lua: Failed to require('api')\n");
+        ERROR ("Lua: Failed to require('api')\n");
     }
 
     /* Add the rate_limit function to a Lua table so it can be called using Lua */
