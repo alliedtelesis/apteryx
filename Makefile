@@ -43,9 +43,10 @@ endif
 
 all: libapteryx.so apteryx apteryxd apteryx-sync alfred
 
-libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
+libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o schema.o lua.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
+	@ln -s -f $@ apteryx.so
 
 %.o: %.c
 	@echo "Compiling "$<""
@@ -112,6 +113,6 @@ install: all
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx.so apteryx apteryxd apteryx-sync alfred *.o *.pb-c.c *.pb-c.h
+	@rm -f libapteryx.so apteryx.so apteryx apteryxd apteryx-sync alfred *.o *.pb-c.c *.pb-c.h
 
 .PHONY: all clean
