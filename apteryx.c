@@ -739,7 +739,7 @@ apteryx_has_value (const char *path)
 }
 
 GNode *
-apteryx_find_child (GNode *parent, char *name)
+apteryx_find_child (GNode *parent, const char *name)
 {
     GNode *node;
 
@@ -883,6 +883,7 @@ bool
 apteryx_cas_tree (GNode* root, uint64_t ts)
 {
     const char *path = NULL;
+    char *old_root_name = NULL;
     char *url = NULL;
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
@@ -897,7 +898,13 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
-    if (!path || path[strlen(path) - 1] == '/')
+
+    if (path && strcmp (path, "/") == 0)
+    {
+        path = "";
+    }
+
+    if (!path || (strlen (path) > 0 && path[strlen(path) - 1] == '/'))
     {
         ERROR ("SET_TREE: invalid path (%s)!\n", path);
         assert (!apteryx_debug || path);
@@ -913,6 +920,10 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
         free (url);
         return false;
     }
+
+    /* Save sanitized root path (less URL) to root node */
+    old_root_name = APTERYX_NAME (root);
+    root->data = (char*) path;
 
     /* Create the list of Paths/Value's */
     set.n_sets = g_node_n_nodes (root, G_TRAVERSE_LEAVES);
@@ -941,6 +952,9 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
         free (pv);
     }
     free (set.sets);
+
+    /* Reinstate original root name */
+    root->data = old_root_name;
 
     /* Return result */
     return rc;
