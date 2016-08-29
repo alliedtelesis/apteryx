@@ -359,6 +359,36 @@ exit:
 }
 
 void
+test_perf_tcp_set_tree ()
+{
+    const char *path = TEST_TCP_URL":"TEST_PATH"/entity/zones";
+    uint64_t start;
+    int i;
+    bool res;
+
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    usleep (TEST_SLEEP_TIMEOUT);
+
+    GNode *root = APTERYX_NODE(NULL, (char*)path);
+    APTERYX_LEAF (root, "private", "crash");
+
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        CU_ASSERT ((res = apteryx_set_tree (root)));
+        if (!res)
+            goto exit;
+    }
+
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    g_node_destroy (root);
+    apteryx_prune(path);
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_perf_tcp6_set ()
 {
     const char *path = TEST_TCP6_URL":"TEST_PATH"/entity/zones/private/name";
@@ -4246,6 +4276,7 @@ static CU_TestInfo tests_performance[] = {
     { "dummy", test_perf_dummy },
     { "set", test_perf_set },
     { "set(tcp)", test_perf_tcp_set },
+    { "set tree (tcp)", test_perf_tcp_set_tree },
     { "set(tcp6)", test_perf_tcp6_set },
     { "set tree 50", test_perf_set_tree },
     { "set tree 5000", test_perf_set_tree_5000 },

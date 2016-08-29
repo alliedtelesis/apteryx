@@ -61,6 +61,17 @@ static inline uint32_t htol32 (uint32_t v)
         printf (fmt, ## args); \
     }
 
+#define NOTICE(fmt, args...) \
+    { \
+        syslog (LOG_NOTICE, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "NOTICE: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+    }
+
 #define ERROR(fmt, args...) \
     { \
         syslog (LOG_ERR, fmt, ## args); \

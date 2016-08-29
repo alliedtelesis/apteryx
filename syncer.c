@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <dirent.h>
 #include <apteryx.h>
+#include <glib-unix.h>
 #include "common.h"
 
 #define APTERYX_SYNC_PID "/var/run/apteryx-sync.pid"
@@ -14,7 +15,7 @@
 bool apteryx_debug = false;
 
 /* Run while true */
-static bool running = true;
+static GMainLoop* g_loop = NULL;
 
 typedef struct sync_partner_s
 {
@@ -26,10 +27,105 @@ typedef struct sync_partner_s
 /* keep a list of the partners we are syncing paths to */
 GList *partners = NULL;
 pthread_rwlock_t partners_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+/* keep pending changes (not yet pushed to clients)... */
+static GNode *pending = NULL;
+static guint pending_timer = 0;
+static uint64_t oldest_pending = 0;
+
 /* keep a list of the paths we are syncing */
 GList *paths = NULL;
 GList *excluded_paths = NULL;
 pthread_rwlock_t paths_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+static uint64_t
+now (void)
+{
+    struct timespec tms;
+    uint64_t micros = 0;
+    if (clock_gettime (CLOCK_MONOTONIC, &tms))
+    {
+        return 0;
+    }
+
+    micros = ((uint64_t) tms.tv_sec) * 1000000;
+    micros += tms.tv_nsec / 1000;
+    return micros;
+}
+
+static bool
+flush ()
+{
+    DEBUG ("Flushing...\n");
+    pthread_rwlock_wrlock (&partners_lock);
+    for (GList * iter = partners; iter; iter = iter->next)
+    {
+        if (pending)
+        {
+            /* Dirty hack to do set tree without a deep copy */
+            char *next_path = NULL;
+
+            if (asprintf (&next_path, "%s:/", ((sync_partner *) iter->data)->socket) > 0)
+            {
+                free (pending->data);
+                pending->data = next_path;
+                apteryx_set_tree (pending);
+            }
+        }
+    }
+    apteryx_free_tree (pending);
+    pending = NULL;
+
+    oldest_pending = 0;
+
+    if (pending_timer)
+    {
+        g_source_remove (pending_timer);
+    }
+    pending_timer = 0;
+    pthread_rwlock_unlock (&partners_lock);
+
+    return false;
+}
+
+static void
+add_data_point (const char *path, const char *value)
+{
+    pthread_rwlock_wrlock (&partners_lock);
+
+    if (apteryx_find_child (pending, path + 1))
+    {
+        DEBUG ("Flushing due to collision\n");
+        pthread_rwlock_unlock (&partners_lock);
+        flush ();
+        pthread_rwlock_wrlock (&partners_lock);
+    }
+
+    uint64_t n = now ();
+
+    if (pending == NULL)
+    {
+        pending = APTERYX_NODE (NULL, strdup ("/"));
+        oldest_pending = n;
+    }
+    APTERYX_LEAF (pending, strlen (path) > 0 ? strdup (path + 1) : strdup (""),
+                  value ? strdup (value) : NULL);
+
+    /* Convert 5 seconds to micro seconds... */
+    if (oldest_pending + (5 * 1000 * 1000) < n)
+    {
+        NOTICE ("Pending changes waiting in excess of 5 seconds\n");
+        oldest_pending = n;
+    }
+
+    if (pending_timer)
+    {
+        g_source_remove (pending_timer);
+    }
+    pending_timer = g_timeout_add (100 , (GSourceFunc) flush, NULL);
+    pthread_rwlock_unlock (&partners_lock);
+
+}
 
 bool
 syncer_add (sync_partner *sp)
@@ -287,14 +383,8 @@ periodic_syncer_thread (void *ign)
 bool
 new_change (const char *path, const char *value)
 {
-    pthread_rwlock_rdlock (&partners_lock);
-    for (GList *iter = partners; iter; iter = iter->next)
-    {
-        sync_partner *sp = iter->data;
-        DEBUG ("Pushing NEW_CHANGE on path %s, value %s to %s\n", path, value, sp->socket);
-        apteryx_set_sp (sp, path, value);
-    }
-    pthread_rwlock_unlock (&partners_lock);
+    DEBUG ("Pushing NEW_CHANGE on path %s, value %s to cache\n", path, value);
+    add_data_point (path, value);
     return true;
 }
 
@@ -448,10 +538,11 @@ parse_config_files (const char* config_dir)
     return TRUE;
 }
 
-void
-termination_handler (void)
+static gboolean
+termination_handler (gpointer arg1)
 {
-    running = false;
+    g_main_loop_quit (g_loop);
+    return false;
 }
 
 void
@@ -504,8 +595,8 @@ main (int argc, char *argv[])
     }
 
     /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
-    signal (SIGTERM, (__sighandler_t) termination_handler);
-    signal (SIGINT, (__sighandler_t) termination_handler);
+    g_unix_signal_add (SIGINT, termination_handler, g_loop);
+    g_unix_signal_add (SIGTERM, termination_handler, g_loop);
     signal (SIGPIPE, SIG_IGN);
 
     /* Daemonize */
@@ -539,10 +630,9 @@ main (int argc, char *argv[])
     pthread_t timer;
     pthread_create (&timer, NULL, periodic_syncer_thread, NULL);
 
-    while (running)
-    {
-        pause ();
-    }
+    g_loop = g_main_loop_new (NULL, FALSE);
+    g_main_loop_run (g_loop);
+    g_main_loop_unref (g_loop);
 
     pthread_cancel (timer);
     pthread_join (timer, NULL);
