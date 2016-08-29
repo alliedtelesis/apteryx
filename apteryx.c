@@ -73,6 +73,9 @@ validate_path (const char *path, char **url)
             return NULL;
         }
         path = tmp + 1;
+        /* Skip to the first real slash */
+        while (strlen(path) > 0 && path[1] == '/')
+            path++;
         tmp = strstr (*url + 6, ":/");
         if (tmp)
         {
@@ -739,7 +742,7 @@ apteryx_has_value (const char *path)
 }
 
 GNode *
-apteryx_find_child (GNode *parent, char *name)
+apteryx_find_child (GNode *parent, const char *name)
 {
     GNode *node;
 
@@ -857,8 +860,19 @@ char *
 apteryx_node_path (GNode* node)
 {
     char *path = NULL;
+    char *tmp;
+    char *url = NULL;
     _node_to_path (node, &path);
-    return path;
+
+    /* Remove the URL from the front of the path (if present) -
+     * we do not need to send this to the server. */
+    tmp = strdup (validate_path (path, &url));
+    free (path);
+    if (url)
+    {
+        free (url);
+    }
+    return tmp;
 }
 
 static gboolean
@@ -897,7 +911,7 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
-    if (!path || path[strlen(path) - 1] == '/')
+    if (!path)
     {
         ERROR ("SET_TREE: invalid path (%s)!\n", path);
         assert (!apteryx_debug || path);

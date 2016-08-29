@@ -271,7 +271,7 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
 /** Free an N-ary tree of nodes when the data need freeing (e.g. from apteryx_get_tree) */
 void apteryx_free_tree (GNode* root);
 /** Find the child of the node with the specified name */
-GNode *apteryx_find_child (GNode *parent, char *name);
+GNode *apteryx_find_child (GNode *parent, const char *name);
 /** Sort the children of a node using the supplied compare function */
 void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b));
 /** Get the full path of an Apteryx node in an N-ary tree */
