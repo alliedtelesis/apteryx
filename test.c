@@ -28,6 +28,11 @@
 #include <sys/un.h>
 #include <sys/poll.h>
 #include <assert.h>
+#ifdef HAVE_LUA
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
+#endif
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
 #include "apteryx.h"
@@ -42,6 +47,8 @@
 #define TEST_RPC_PATH       "/tmp/apteryx.test"
 #define TEST_PORT_NUM       9999
 #define TEST_MESSAGE_SIZE   100
+#define TEST_SCHEMA_PATH    "/etc/apteryx/schema:."
+#define TEST_SCHEMA_FILE    "./test.xml"
 
 static bool
 assert_apteryx_empty (void)
@@ -69,7 +76,7 @@ test_init ()
     const char *path = TEST_PATH"/entity/zones/private/name";
     char *value = NULL;
 
-    apteryx_shutdown ();
+    apteryx_shutdown_force ();
     CU_ASSERT (apteryx_set (path, "private") == FALSE);
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
     CU_ASSERT (apteryx_set (path, NULL) == FALSE);
@@ -4103,6 +4110,405 @@ test_single_watch_myself ()
     apteryx_process (false);
 }
 
+#ifdef HAVE_LUA
+#ifdef HAVE_LIBXML2
+static void
+_write_xml ()
+{
+    FILE *xml = fopen (TEST_SCHEMA_FILE, "w");
+    if (xml)
+    {
+        fprintf (xml,
+"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+"<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
+"    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+"    xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
+"    https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
+"    <NODE name=\"test\" help=\"this is a test node\">\n"
+"        <NODE name=\"debug\" mode=\"rw\" default=\"0\" help=\"Debug configuration\" pattern=\"^(0|1)$\">\n"
+"            <VALUE name=\"disable\" value=\"0\" help=\"Debugging is disabled\" />\n"
+"            <VALUE name=\"enable\" value=\"1\" help=\"Debugging is enabled\" />\n"
+"        </NODE>\n"
+"        <NODE name=\"list\" help=\"this is a list of stuff\">\n"
+"            <NODE name=\"*\" help=\"the list item\">\n"
+"                <NODE name=\"name\" mode=\"rw\" help=\"this is the list key\"/>\n"
+"                <NODE name=\"type\" mode=\"rw\" default=\"1\" help=\"this is the list type\">\n"
+"                    <VALUE name=\"big\" value=\"1\"/>\n"
+"                    <VALUE name=\"little\" value=\"2\"/>\n"
+"                </NODE>\n"
+"                <NODE name=\"sublist\" help=\"this is a list of stuff attached to a list\">\n"
+"                    <NODE name=\"*\" help=\"the sublist item\">\n"
+"                        <NODE name=\"i-d\" mode=\"rw\" help=\"this is the sublist key\"/>\n"
+"                    </NODE>\n"
+"                </NODE>\n"
+"            </NODE>\n"
+"        </NODE>\n"
+"    </NODE>\n"
+"</MODULE>\n");
+        fclose (xml);
+    }
+}
+#endif
+
+static bool
+_run_lua (char *script)
+{
+    char *buffer = strdup (script);
+    lua_State *L;
+    char *line;
+    int res = -1;
+
+    L = luaL_newstate ();
+    luaL_openlibs (L);
+    line = strtok (buffer, "\n");
+    while (line != NULL)
+    {
+        res = luaL_loadstring (L, line);
+        if (res == 0)
+            res = lua_pcall (L, 0, 0, 0);
+        if (res != 0)
+            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+        line = strtok (NULL,"\n");
+    }
+    lua_close (L);
+    free (buffer);
+    return res == 0;
+}
+
+void
+test_lua_load (void)
+{
+    CU_ASSERT (_run_lua ("apteryx = require('apteryx')"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_set_get (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "apteryx.set('"TEST_PATH"/debug', '1')                        \n"
+        "assert(apteryx.get('"TEST_PATH"/debug') == '1')              \n"
+        "apteryx.set('"TEST_PATH"/debug')                             \n"
+        "assert(apteryx.get('"TEST_PATH"/debug') == nil)              \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_search (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "apteryx.set('"TEST_PATH"/list/eth0/name', 'eth0')            \n"
+        "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
+        "assert(apteryx.search('"TEST_PATH"/list') == nil)            \n"
+        "paths = apteryx.search('"TEST_PATH"/list/')                  \n"
+        "assert(#paths == 2)                                          \n"
+        "apteryx.set('"TEST_PATH"/list/eth0/name')                    \n"
+        "apteryx.set('"TEST_PATH"/list/eth1/name')                    \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_prune (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "apteryx.set('"TEST_PATH"/list/eth0/name', 'eth0')            \n"
+        "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
+        "assert(apteryx.prune('"TEST_PATH"/list'))                    \n"
+        "paths = apteryx.search('"TEST_PATH"/')                       \n"
+        "assert(paths == nil)                                         \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static inline unsigned long
+_memory_usage (void)
+{
+    unsigned long memory;
+    FILE *f = fopen ("/proc/self/statm","r");
+    CU_ASSERT (1 == fscanf (f, "%*d %ld %*d %*d %*d %*d %*d", &memory))
+    fclose (f);
+    return memory * getpagesize () / 1024;
+}
+
+void
+test_lua_load_memory (void)
+{
+    lua_State *L;
+    unsigned long before;
+    unsigned long after;
+    int res = -1;
+
+    before = _memory_usage ();
+    L = luaL_newstate ();
+    luaL_openlibs (L);
+    res = luaL_loadstring (L, "apteryx = require('apteryx')");
+    if (res == 0)
+        res = lua_pcall (L, 0, 0, 0);
+    if (res != 0)
+        fprintf (stderr, "%s\n", lua_tostring(L, -1));
+    after = _memory_usage ();
+    lua_close (L);
+    printf ("%ldkb ... ", (after - before));
+    CU_ASSERT (res == 0);
+}
+
+void
+test_lua_load_performance (void)
+{
+    uint64_t start;
+    int i;
+
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        CU_ASSERT (_run_lua ("apteryx = require('apteryx')"));
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_perf_get ()
+{
+    lua_State *L;
+    uint64_t start;
+    int i;
+
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        apteryx_set (path, "private");
+        free (path);
+    }
+    L = luaL_newstate ();
+    luaL_openlibs (L);
+    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx')") == 0);
+    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *cmd = NULL;
+        int res;
+        CU_ASSERT (asprintf(&cmd, "assert(apteryx.get('"TEST_PATH"/list/%d/name') ~= nil)", i) > 0);
+        res = luaL_loadstring (L, cmd);
+        if (res == 0)
+            res = lua_pcall (L, 0, 0, 0);
+        if (res != 0)
+            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+        if (res != 0)
+            goto exit;
+        free (cmd);
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    lua_close (L);
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        CU_ASSERT (apteryx_set (path, NULL));
+        free (path);
+    }
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_perf_set ()
+{
+    lua_State *L;
+    uint64_t start;
+    int i;
+
+    L = luaL_newstate ();
+    luaL_openlibs (L);
+    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx')") == 0);
+    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *cmd = NULL;
+        int res;
+        CU_ASSERT (asprintf(&cmd, "assert(apteryx.set('"TEST_PATH"/list/%d/name', 'private'))", i) > 0);
+        res = luaL_loadstring (L, cmd);
+        if (res == 0)
+            res = lua_pcall (L, 0, 0, 0);
+        if (res != 0)
+            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+        if (res != 0)
+            goto exit;
+        free (cmd);
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    lua_close (L);
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        CU_ASSERT (apteryx_set (path, NULL));
+        free (path);
+    }
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+#ifdef HAVE_LIBXML2
+void
+test_lua_api_set_get (void)
+{
+    _write_xml ();
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')       \n"
+        "apteryx.test.debug = 'enable'                                \n"
+        "assert(apteryx.test.debug == 'enable')                       \n"
+        "apteryx.test.debug = nil                                     \n"
+        "assert(apteryx.test.debug == 'disable')                      \n"
+        "apteryx.test.list('cat').sublist('dog').i_d = '1'            \n"
+        "assert(apteryx.test.list('cat').sublist('dog').i_d == '1')   \n"
+        "apteryx.test.list('cat').sublist('dog').i_d = nil            \n"
+        "assert(apteryx.test.list('cat').sublist('dog').i_d == nil)   \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+    unlink (TEST_SCHEMA_FILE);
+}
+
+void
+test_lua_load_api_memory (void)
+{
+    lua_State *L;
+    unsigned long before;
+    unsigned long after;
+    int res = -1;
+
+    _write_xml ();
+    before = _memory_usage ();
+    L = luaL_newstate ();
+    luaL_openlibs (L);
+    res = luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')");
+    if (res == 0)
+        res = lua_pcall (L, 0, 0, 0);
+    if (res != 0)
+        fprintf (stderr, "%s\n", lua_tostring(L, -1));
+    after = _memory_usage ();
+    lua_close (L);
+    printf ("%ldkb ... ", (after - before));
+    CU_ASSERT (res == 0);
+    unlink (TEST_SCHEMA_FILE);
+}
+
+void
+test_lua_load_api_performance (void)
+{
+    uint64_t start;
+    int i;
+
+    _write_xml ();
+    start = get_time_us ();
+    for (i = 0; i < 10; i++)
+    {
+        CU_ASSERT (_run_lua ("apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')"));
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 10);
+    CU_ASSERT (assert_apteryx_empty ());
+    unlink (TEST_SCHEMA_FILE);
+}
+
+void
+test_lua_api_perf_get ()
+{
+    lua_State *L;
+    uint64_t start;
+    int i;
+
+    _write_xml ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        apteryx_set (path, "private");
+        free (path);
+    }
+    L = luaL_newstate ();
+    luaL_openlibs (L);
+    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')") == 0);
+    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *cmd = NULL;
+        int res;
+        CU_ASSERT (asprintf(&cmd, "assert(apteryx.test.list('%d').name == 'private')", i) > 0);
+        res = luaL_loadstring (L, cmd);
+        if (res == 0)
+            res = lua_pcall (L, 0, 0, 0);
+        if (res != 0)
+            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+        if (res != 0)
+            goto exit;
+        free (cmd);
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    lua_close (L);
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        CU_ASSERT (apteryx_set (path, NULL));
+        free (path);
+    }
+    CU_ASSERT (assert_apteryx_empty ());
+    unlink (TEST_SCHEMA_FILE);
+}
+
+void
+test_lua_api_perf_set ()
+{
+    lua_State *L;
+    uint64_t start;
+    int i;
+
+    _write_xml ();
+    L = luaL_newstate ();
+    luaL_openlibs (L);
+    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')") == 0);
+    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
+    start = get_time_us ();
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *cmd = NULL;
+        int res;
+        CU_ASSERT (asprintf(&cmd, "apteryx.test.list('%d').name = 'private'", i) > 0);
+        res = luaL_loadstring (L, cmd);
+        if (res == 0)
+            res = lua_pcall (L, 0, 0, 0);
+        if (res != 0)
+            fprintf (stderr, "%s\n", lua_tostring(L, -1));
+        if (res != 0)
+            goto exit;
+        free (cmd);
+    }
+    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
+exit:
+    lua_close (L);
+    for (i = 0; i < TEST_ITERATIONS; i++)
+    {
+        char *path = NULL;
+        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
+        CU_ASSERT (apteryx_set (path, NULL));
+        free (path);
+    }
+    CU_ASSERT (assert_apteryx_empty ());
+    unlink (TEST_SCHEMA_FILE);
+}
+#endif
+#endif
+
 static int
 suite_init (void)
 {
@@ -4311,6 +4717,27 @@ CU_TestInfo tests_rpc[] = {
     CU_TEST_INFO_NULL,
 };
 
+#ifdef HAVE_LUA
+CU_TestInfo tests_lua[] = {
+    { "lua load module",test_lua_load },
+    { "lua basic set get", test_lua_basic_set_get },
+    { "lua basic search", test_lua_basic_search },
+    { "lua basic prune", test_lua_basic_prune },
+    { "lua load memory usage", test_lua_load_memory },
+    { "lua load performance", test_lua_load_performance },
+    { "lua get performance", test_lua_perf_get },
+    { "lua set performance", test_lua_perf_set },
+#ifdef HAVE_LIBXML2
+    { "lua api set get", test_lua_api_set_get },
+    { "lua load api memory usage", test_lua_load_api_memory },
+    { "lua load api performance", test_lua_load_api_performance },
+    { "lua api get performance", test_lua_api_perf_get },
+    { "lua api set performance", test_lua_api_perf_set },
+#endif
+    CU_TEST_INFO_NULL,
+};
+#endif
+
 extern CU_TestInfo tests_database_internal[];
 extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
@@ -4320,6 +4747,9 @@ static CU_SuiteInfo suites[] = {
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
     { "RPC", suite_init, suite_clean, tests_rpc },
+#ifdef HAVE_LUA
+    { "LUA", suite_init, suite_clean, tests_lua },
+#endif
     { "Apteryx API", suite_init, suite_clean, tests_api },
     { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
     { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },
