@@ -34,7 +34,7 @@ list_xml_files (GList **files, const char *path)
 {
     DIR *dp;
     struct dirent *ep;
-    char *saveptr;
+    char *saveptr = NULL;
     char *cpath;
     char *dpath;
 
