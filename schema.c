@@ -178,8 +178,28 @@ sch_free (sch_instance *schema)
     xmlFreeDoc (xml->doc);
 }
 
+static gboolean
+match_name (const char *s1, const char *s2)
+{
+    char c1, c2;
+    do
+    {
+        c1 = *s1;
+        c2 = *s2;
+        if (c1 == '\0' && c2 == '\0')
+            return true;
+        if (c1 == '-')
+            c1 = '_';
+        if (c2 == '-')
+            c2 = '_';
+        s1++;
+        s2++;
+    } while (c1 == c2);
+    return false;
+}
+
 static xmlNode *
-lookup_node (xmlNode *node, const char *path, bool escape)
+lookup_node (xmlNode *node, const char *path)
 {
     xmlNode *n;
     char *name, *mode;
@@ -216,11 +236,7 @@ lookup_node (xmlNode *node, const char *path, bool escape)
             continue;
         }
         name = (char *) xmlGetProp (n, (xmlChar *) "name");
-        if (escape && name && name[0] != '*')
-        {
-            g_strcanon (name, G_CSET_A_2_Z G_CSET_a_2_z G_CSET_DIGITS "_", '_');
-        }
-        if (name && (name[0] == '*' || strcmp (name, key) == 0))
+        if (name && (name[0] == '*' || match_name (name, key)))
         {
             free (key);
             if (path)
@@ -231,14 +247,14 @@ lookup_node (xmlNode *node, const char *path, bool escape)
                     xmlFree (name);
                     xmlFree (mode);
                     /* restart search from root */
-                    return lookup_node (xmlDocGetRootElement (node->doc), path, escape);
+                    return lookup_node (xmlDocGetRootElement (node->doc), path);
                 }
                 xmlFree (name);
                 if (mode)
                 {
                     xmlFree (mode);
                 }
-                return lookup_node (n, path, escape);
+                return lookup_node (n, path);
             }
             xmlFree (name);
             return n;
@@ -255,9 +271,9 @@ lookup_node (xmlNode *node, const char *path, bool escape)
 }
 
 sch_node *
-sch_lookup (sch_instance *schema, const char *path, bool escape)
+sch_lookup (sch_instance *schema, const char *path)
 {
-    return lookup_node ((xmlNode *) schema, path, escape);
+    return lookup_node ((xmlNode *) schema, path);
 }
 
 bool
@@ -362,6 +378,12 @@ sch_translate_from (sch_node *node, char *value)
         }
     }
     return value;
+}
+
+char*
+sch_name (sch_node *node)
+{
+    return (char *) xmlGetProp (node, (xmlChar *) "name");
 }
 
 #endif /* HAVE_LIBXML2 */

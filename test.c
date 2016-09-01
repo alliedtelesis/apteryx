@@ -4136,7 +4136,7 @@ _write_xml ()
 "                    <VALUE name=\"big\" value=\"1\"/>\n"
 "                    <VALUE name=\"little\" value=\"2\"/>\n"
 "                </NODE>\n"
-"                <NODE name=\"sublist\" help=\"this is a list of stuff attached to a list\">\n"
+"                <NODE name=\"sub-list\" help=\"this is a list of stuff attached to a list\">\n"
 "                    <NODE name=\"*\" help=\"the sublist item\">\n"
 "                        <NODE name=\"i-d\" mode=\"rw\" help=\"this is the sublist key\"/>\n"
 "                    </NODE>\n"
@@ -4168,6 +4168,7 @@ _run_lua (char *script)
             res = lua_pcall (L, 0, 0, 0);
         if (res != 0)
             fprintf (stderr, "%s\n", lua_tostring(L, -1));
+        CU_ASSERT (res == 0);
         line = strtok (NULL,"\n");
     }
     lua_close (L);
@@ -4363,15 +4364,41 @@ test_lua_api_set_get (void)
 {
     _write_xml ();
     CU_ASSERT (_run_lua (
-        "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')       \n"
-        "apteryx.test.debug = 'enable'                                \n"
-        "assert(apteryx.test.debug == 'enable')                       \n"
-        "apteryx.test.debug = nil                                     \n"
-        "assert(apteryx.test.debug == 'disable')                      \n"
-        "apteryx.test.list('cat').sublist('dog').i_d = '1'            \n"
-        "assert(apteryx.test.list('cat').sublist('dog').i_d == '1')   \n"
-        "apteryx.test.list('cat').sublist('dog').i_d = nil            \n"
-        "assert(apteryx.test.list('cat').sublist('dog').i_d == nil)   \n"
+        "lib = require('apteryx')                                         \n"
+        "apteryx = lib.api('"TEST_SCHEMA_PATH"')                          \n"
+        "apteryx.test.debug = 'enable'                                    \n"
+        "assert(apteryx.test.debug == 'enable')                           \n"
+        "apteryx.test.debug = nil                                         \n"
+        "assert(apteryx.test.debug == 'disable')                          \n"
+        "apteryx.test.list('cat-nip').sub_list('dog').i_d = '1'            \n"
+        "assert(apteryx.test.list('cat-nip').sub_list('dog').i_d == '1')   \n"
+        "assert(lib.get('/test/list/cat-nip/sub-list/dog/i-d') == '1')     \n"
+        "apteryx.test.list('cat-nip').sub_list('dog').i_d = nil            \n"
+        "assert(apteryx.test.list('cat-nip').sub_list('dog').i_d == nil)   \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+    unlink (TEST_SCHEMA_FILE);
+}
+
+void
+test_lua_api_search (void)
+{
+    _write_xml ();
+    CU_ASSERT (_run_lua (
+        "lib = require('apteryx')                                         \n"
+        "apteryx = lib.api('"TEST_SCHEMA_PATH"')                          \n"
+        "lib.set('/test/list/cat-nip/sub-list/dog/i-d', '1')              \n"
+        "lib.set('/test/list/cat-nip/sub-list/cat/i-d', '2')              \n"
+        "lib.set('/test/list/cat-nip/sub-list/mouse/i-d', '3')            \n"
+        "lib.set('/test/list/cat_nip/sub-list/bat/i-d', '4')              \n"
+        "lib.set('/test/list/cat_nip/sub-list/frog/i-d', '5')             \n"
+        "lib.set('/test/list/cat_nip/sub-list/horse/i-d', '6')            \n"
+        "cats1 = apteryx.test.list('cat-nip').sub_list()                  \n"
+        "assert(#cats1 == 3)                                              \n"
+        "cats2 = apteryx.test.list('cat_nip').sub_list()                  \n"
+        "assert(#cats2 == 3)                                              \n"
+        "lib.prune('/test/list/cat-nip')                                  \n"
+        "lib.prune('/test/list/cat_nip')                                  \n"
     ));
     CU_ASSERT (assert_apteryx_empty ());
     unlink (TEST_SCHEMA_FILE);
@@ -4729,6 +4756,7 @@ CU_TestInfo tests_lua[] = {
     { "lua set performance", test_lua_perf_set },
 #ifdef HAVE_LIBXML2
     { "lua api set get", test_lua_api_set_get },
+    { "lua api search", test_lua_api_search },
     { "lua load api memory usage", test_lua_load_api_memory },
     { "lua load api performance", test_lua_load_api_performance },
     { "lua api get performance", test_lua_api_perf_get },

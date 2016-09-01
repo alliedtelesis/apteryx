@@ -55,10 +55,11 @@ push_node (lua_State *L, sch_instance *api, const char *path, const char *key)
 {
     char *__path;
     sch_node *node;
+    char *name;
 
     /* Lookup the node */
     __path = g_strdup_printf ("%s/%s", path, key);
-    node = sch_lookup (api, __path, true);
+    node = sch_lookup (api, __path);
     if (!node)
     {
         /* Not accessible at all */
@@ -66,6 +67,15 @@ push_node (lua_State *L, sch_instance *api, const char *path, const char *key)
         luaL_error (L, "\'%s\' invalid", key);
         return false;
     }
+
+    /* Use the real path name */
+    name = sch_name (node);
+    if (strcmp (name , "*") != 0)
+    {
+        free (__path);
+        __path = g_strdup_printf ("%s/%s", path, name);
+    }
+    free (name);
 
     /* For leaves we return a value - either from db, default or nil */
     if (sch_is_leaf (node))
@@ -149,6 +159,7 @@ __newindex (lua_State *L)
     const char *path;
     const char *key;
     const char *value;
+    char *name;
 
     /* If no API, this key does not exist! */
     if (!api)
@@ -179,7 +190,7 @@ __newindex (lua_State *L)
 
     /* Validate the node */
     char *__path = g_strdup_printf ("%s/%s", path, key);
-    sch_node *node = sch_lookup (api, __path, true);
+    sch_node *node = sch_lookup (api, __path);
     if (!node || (!is_root && !sch_is_writable (node)) || !sch_is_leaf (node))
     {
         /* Not accessible */
@@ -187,6 +198,15 @@ __newindex (lua_State *L)
         luaL_error (L, "\'%s\' not writable", key);
         return 0;
     }
+
+    /* Use the real path name */
+    name = sch_name (node);
+    if (strcmp (name , "*") != 0)
+    {
+        free (__path);
+        __path = g_strdup_printf ("%s/%s", path, name);
+    }
+    free (name);
 
     /* Translate from the schema version */
     char *val = sch_translate_from (node, g_strdup (value));
@@ -310,7 +330,7 @@ lua_apteryx_valid (lua_State *L)
     }
 
     /* If no API, this path does not exist! */
-    if (api && sch_lookup (api, lua_tostring (L, 1), true))
+    if (api && sch_lookup (api, lua_tostring (L, 1)))
     {
         /* All good */
         lua_pushboolean (L, true);
