@@ -15,13 +15,13 @@
 bool apteryx_debug = false;
 
 /* Run while true */
-static GMainLoop* g_loop = NULL;
+static GMainLoop *g_loop = NULL;
 
 typedef struct sync_partner_s
 {
     char *socket;
     char *path;
-    uint64_t last_sync_local;
+    bool new_joiner;
 } sync_partner;
 
 /* keep a list of the partners we are syncing paths to */
@@ -32,6 +32,11 @@ pthread_rwlock_t partners_lock = PTHREAD_RWLOCK_INITIALIZER;
 static GNode *pending = NULL;
 static guint pending_timer = 0;
 static uint64_t oldest_pending = 0;
+#define PENDING_HOLD_OFF 1000   /* 1 second */
+
+/* periodic sync timer */
+static guint sync_timer = 0;
+#define SYNC_HOLD_OFF 30 * 1000 /* 30 seconds */
 
 /* keep a list of the paths we are syncing */
 GList *paths = NULL;
@@ -56,8 +61,8 @@ now (void)
 static bool
 flush ()
 {
-    DEBUG ("Flushing...\n");
     pthread_rwlock_wrlock (&partners_lock);
+    DEBUG ("Flushing...\n");
     for (GList * iter = partners; iter; iter = iter->next)
     {
         if (pending)
@@ -122,7 +127,8 @@ add_data_point (const char *path, const char *value)
     {
         g_source_remove (pending_timer);
     }
-    pending_timer = g_timeout_add (100 , (GSourceFunc) flush, NULL);
+    pending_timer = g_timeout_add (PENDING_HOLD_OFF, (GSourceFunc) flush, NULL);
+
     pthread_rwlock_unlock (&partners_lock);
 
 }
@@ -137,8 +143,8 @@ syncer_add (sync_partner *sp)
 gint
 syncer_match_path (gconstpointer a, gconstpointer b)
 {
-    sync_partner *sp = (sync_partner *)a;
-    const char *path = (const char *)b;
+    sync_partner *sp = (sync_partner *) a;
+    const char *path = (const char *) b;
     return strcmp (sp->path, path);
 }
 
@@ -187,7 +193,7 @@ new_syncer (const char *path, const char *value)
         }
         sp->socket = strdup (value);
         sp->path = strdup (path);
-        sp->last_sync_local = 0;
+        sp->new_joiner = true;
     }
     else
     {
@@ -270,30 +276,28 @@ apteryx_set_sp (sync_partner *sp, const char *path, const char *value)
 }
 
 bool
-sync_recursive (sync_partner *sp, const char *path)
+sync_recursive (GNode *root, uint64_t timestamp, const char *path)
 {
     if (sync_path_excluded (path))
     {
         /* Skip excluded paths */
         return true;
     }
+
     uint64_t ts = apteryx_timestamp (path);
-    if (ts < sp->last_sync_local)
+    if (ts < timestamp || ts == 0)
     {
-        if (ts == 0)
-        {
-            /* Prune anything that is deleted */
-            apteryx_prune_sp (sp, path);
-        }
         /* Skip anything that hasn't changed since last sync */
         return true;
     }
+
     /* make sure the path doesn't end in '/' for the get */
     char *get_path = strdup (path);
     if (get_path[strlen (get_path) - 1] == '/')
     {
         get_path[strlen (get_path) - 1] = '\0';
     }
+
     /* now make sure the path ends in '/' for the search */
     char *search_path = NULL;
     if (path[strlen (path) - 1] != '/')
@@ -310,29 +314,23 @@ sync_recursive (sync_partner *sp, const char *path)
     {
         search_path = strdup (path);
     }
+
     /* Update this node */
     char *value = apteryx_get (get_path);
     if (value)
     {
         /* only sync non-null values or you'll inadvertently prune */
-        if (!apteryx_set_sp (sp, get_path, value))
-        {
-            if(errno == EHOSTUNREACH)
-            {
-                free(value);
-                free(get_path);
-                return false;
-            }
-        }
-        free (value);
+
+        APTERYX_LEAF (root, strdup (get_path + 1), value);
+        free (get_path);
     }
-    free (get_path);
+
     /* Update all children */
     GList *sync_paths = apteryx_search (search_path);
     free (search_path);
-    for (GList *iter = sync_paths; iter; iter = iter->next)
+    for (GList * iter = sync_paths; iter; iter = iter->next)
     {
-        sync_recursive (sp, iter->data);
+        sync_recursive (root, timestamp, iter->data);
     }
     g_list_free_full (sync_paths, free);
     // TODO: Update remote children that weren't already covered above
@@ -340,44 +338,120 @@ sync_recursive (sync_partner *sp, const char *path)
     return true;
 }
 
-bool
-resync (sync_partner *sp)
+void
+sync_gather (GNode *root, uint64_t timestamp)
 {
-    uint64_t local_ts = apteryx_timestamp ("/");
-    if (local_ts > sp->last_sync_local)
+    GList *iter = NULL;
+    DEBUG ("taking sync read lock\n");
+    pthread_rwlock_rdlock (&paths_lock);
+    DEBUG ("got sync write lock\n");
+    for (iter = paths; iter; iter = iter->next)
     {
-        /* go through the list of paths to sync to the partner */
-        pthread_rwlock_rdlock (&paths_lock);
-        for (GList *iter = paths; iter; iter = iter->next)
+        sync_recursive (root, timestamp, (char *) iter->data);
+    }
+    DEBUG ("releasing sync write lock\n");
+    pthread_rwlock_unlock (&paths_lock);
+    DEBUG ("released sync write lock\n");
+}
+
+bool
+resync ()
+{
+    /* Called under a lock */
+    GList *iter;
+    GNode *data = NULL;
+    static uint64_t last_sync_local = 0;
+
+    uint64_t local_ts = apteryx_timestamp ("/");
+
+    for (iter = partners; iter; iter = iter->next)
+    {
+        sync_partner *sp = iter->data;
+        if (sp->new_joiner)
         {
-            DEBUG ("About to sync path %s to node %s\n", (char *)iter->data, sp->socket);
-            if (!sync_recursive (sp, iter->data))
+            if (data == NULL)
             {
-                break;
+                data = APTERYX_NODE (NULL, strdup ("/"));
+                /* Get everything */
+                sync_gather (data, 0);
+            }
+
+            {
+                char *next_path = NULL;
+
+                if (asprintf (&next_path, "%s:/", sp->socket) > 0)
+                {
+                    free (data->data);
+                    data->data = next_path;
+                    apteryx_set_tree (data);
+                }
             }
         }
-        pthread_rwlock_unlock (&paths_lock);
     }
-    sp->last_sync_local = local_ts;
+
+    if (data)
+    {
+        apteryx_free_tree (data);
+        data = NULL;
+    }
+
+    /* Grab all the data that has been added since the last update... */
+    data = APTERYX_NODE (NULL, strdup ("/"));
+    sync_gather (data, last_sync_local);
+
+    DEBUG ("root has %d nodes\n", APTERYX_NUM_NODES (data));
+    {
+        for (iter = partners; iter; iter = iter->next)
+        {
+            sync_partner *sp = iter->data;
+            if (!sp->new_joiner)
+            {
+                char *next_path = NULL;
+
+                if (asprintf (&next_path, "%s:/", sp->socket) > 0)
+                {
+                    free (data->data);
+                    data->data = next_path;
+                    apteryx_set_tree (data);
+                }
+            }
+            else
+            {
+                /* These ones will have got all the data above */
+                sp->new_joiner = false;
+            }
+        }
+    }
+
+    last_sync_local = local_ts;
     return true;
 }
 
-static void *
+static bool
 periodic_syncer_thread (void *ign)
 {
-    DEBUG ("Period Syncer Thread started!\n");
-    while (1)
+    /* If we are already busy, wait for a quiet spell */
+    DEBUG ("getting lock for periodic sync") pthread_rwlock_wrlock (&partners_lock);
+    DEBUG ("got lock for periodic sync") if (pending_timer)
     {
-        pthread_rwlock_rdlock (&partners_lock);
-        for (GList *iter = partners; iter; iter = iter->next)
-        {
-            sync_partner *sp = iter->data;
-            resync (sp);
-        }
-        pthread_rwlock_unlock (&partners_lock);
-        sleep (30);
+        ERROR ("Deferring periodic sync timer\n");
+        g_source_remove (sync_timer);
+        sync_timer =
+            g_timeout_add (PENDING_HOLD_OFF * 1.1, (GSourceFunc) periodic_syncer_thread,
+                           NULL);
     }
-    return NULL;
+    else
+    {
+        DEBUG ("doing resync?\n") resync ();
+        DEBUG ("done with resync\n");
+        g_source_remove (sync_timer);
+        sync_timer =
+            g_timeout_add (SYNC_HOLD_OFF, (GSourceFunc) periodic_syncer_thread, NULL);
+    }
+    DEBUG ("unlocking partners lock\n");
+    pthread_rwlock_unlock (&partners_lock);
+    DEBUG ("done unlocking partners lock\n");
+    return false;
 }
 
 bool
@@ -402,9 +476,9 @@ register_existing_partners (void)
     iter = existing_partners;
     while (iter != NULL)
     {
-        DEBUG ("Adding existing partner %s\n", (char *)iter->data);
+        DEBUG ("Adding existing partner %s\n", (char *) iter->data);
         /* the path is a char* in the iter->data. need to add "/*" to the end */
-        if (asprintf (&path, "%s/*", (char *)iter->data) <= 0)
+        if (asprintf (&path, "%s/*", (char *) iter->data) <= 0)
         {
             /* shouldn't fail, but if it does we can't do any more with it */
             continue;
@@ -621,21 +695,19 @@ main (int argc, char *argv[])
 
     /* The sync path is how applications can register the nodes to sync to */
     apteryx_watch (APTERYX_SYNC_PATH "/*", new_syncer);
+
     /* next, we need to check for any existing nodes and setup syncers for them */
     register_existing_partners ();
+
     /* and finally, read the list of paths we should sync */
     parse_config_files (config_dir);
 
     /* Now we have done the setup, we can start running */
-    pthread_t timer;
-    pthread_create (&timer, NULL, periodic_syncer_thread, NULL);
+    sync_timer = g_timeout_add (SYNC_HOLD_OFF, (GSourceFunc) periodic_syncer_thread, NULL);
 
     g_loop = g_main_loop_new (NULL, FALSE);
     g_main_loop_run (g_loop);
     g_main_loop_unref (g_loop);
-
-    pthread_cancel (timer);
-    pthread_join (timer, NULL);
 
     exit:
     /* Remove the pid file */
