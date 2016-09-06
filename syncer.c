@@ -278,7 +278,7 @@ sync_recursive (sync_partner *sp, const char *path)
         return true;
     }
     uint64_t ts = apteryx_timestamp (path);
-    if (ts < sp->last_sync_local)
+    if (ts < sp->last_sync_local || ts == 0)
     {
         if (ts == 0)
         {
