@@ -382,8 +382,8 @@ typedef bool (*apteryx_watch_callback) (const char *path, const char *value);
  * Supports /(level) at the end of path for children only under this current path (one level down)
  * Whenever a change occurs in a watched path, cb is called with the changed
  * path and new value
- * examples: (using libentity usage example)
- * - apteryx_watch("/entity/zones/red/networks/*", network_updated, "red")
+ * examples: (using libentity usage example (Don't escape *))
+ * - apteryx_watch("/entity/zones/red/networks/\*", network_updated, "red")
  * @param path path to the value to be watched
  * @param cb function to call when the value changes
  * @return true on successful registration
@@ -406,8 +406,8 @@ typedef int (*apteryx_validate_callback) (const char *path, const char *value);
  * Supports /(level) at the end of path for children only under this current path (one level down)
  * Whenever a change occurs on the path, cb is called with the changed
  * path and new value
- * examples: (using imaginary usage example)
- * - apteryx_validate("/entity/zones/red/networks/*", network_validate);
+ * examples: (using imaginary usage example (Don't escape *))
+ * - apteryx_validate("/entity/zones/red/networks/\*", network_validate);
  * WARNING: The validate callback is not processed until all watch callbacks have
  * completed. This is to ensure local state is correct when doing the validation
  * operation. The side effect of this is that if the validation callback is
@@ -446,8 +446,8 @@ bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
 /**
  * Proxy get and sets for the requested path to the specified remote url.
  * Whenever a get is performed on the given path/key, callback is called to get the value
- * Path must include wildcard.
- * - apteryx_proxy ("/remote/host1/*", "tcp://192.168.1.1:9999")
+ * Path must include wildcard. (Don't escape *)
+ * - apteryx_proxy ("/remote/host1/\*", "tcp://192.168.1.1:9999")
  * @param path path to the value that others will set/get
  * @param url url to the remote apteryx instance
  * @return true on successful registration
