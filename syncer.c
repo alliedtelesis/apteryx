@@ -426,6 +426,7 @@ resync ()
 static bool
 periodic_syncer_thread (void *ign)
 {
+    pthread_rwlock_rdlock (&partners_lock);
     /* If we are already busy, wait for a quiet spell */
     if (pending_timer)
     {
