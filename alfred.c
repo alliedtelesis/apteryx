@@ -140,6 +140,13 @@ watch_node_changed (const char *path, const char *value)
         }
     }
     g_list_free_full (matches, (GDestroyNotify) cb_release);
+    DEBUG("LUA: Stack:%d Memory:%dkb\n", lua_gettop (alfred_inst->ls),
+            lua_gc (alfred_inst->ls, LUA_GCCOUNT, 0));
+    if (lua_gettop (alfred_inst->ls) != 0)
+    {
+        ERROR ("Lua: Stack not zero(%d) after watch: %s\n",
+                lua_gettop (alfred_inst->ls), path);
+    }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     DEBUG ("ALFRED WATCH: %s = %s\n", path, value);
     return ret;
@@ -175,6 +182,13 @@ provide_node_changed (const char *path)
     const_value = lua_tostring (alfred_inst->ls, -1);
     lua_pop (alfred_inst->ls, 1);
     ret = g_strdup (const_value);
+    DEBUG("LUA: Stack:%d Memory:%dkb\n", lua_gettop (alfred_inst->ls),
+            lua_gc (alfred_inst->ls, LUA_GCCOUNT, 0));
+    if (lua_gettop (alfred_inst->ls) != 0)
+    {
+        ERROR ("Lua: Stack not zero(%d) after provide: %s\n",
+                lua_gettop (alfred_inst->ls), path);
+    }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     return ret;
 }
@@ -219,6 +233,7 @@ index_node_changed (const char *path)
                 /* Removes 'value'; keeps 'key' for next iteration */
                 lua_pop (alfred_inst->ls, 1);
             }
+            lua_pop (alfred_inst->ls, 1);
         }
         else
         {
@@ -230,6 +245,13 @@ index_node_changed (const char *path)
                 ret = g_list_prepend (ret, tmp_path2);
             }
         }
+    }
+    DEBUG("LUA: Stack:%d Memory:%dkb\n", lua_gettop(alfred_inst->ls),
+            lua_gc (alfred_inst->ls, LUA_GCCOUNT, 0));
+    if (lua_gettop (alfred_inst->ls) != 0)
+    {
+        ERROR ("Lua: Stack not zero(%d) after index: %s\n",
+                lua_gettop (alfred_inst->ls), path);
     }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     return ret;
