@@ -149,6 +149,7 @@ extern GList *validation_list;
 extern GList *provide_list;
 extern GList *index_list;
 extern GList *proxy_list;
+extern rpc_instance proxy_rpc;
 void cb_init (void);
 cb_info_t * cb_create (GList **list, const char *guid, const char *path, uint64_t id, uint64_t callback);
 void cb_destroy (cb_info_t *cb);
