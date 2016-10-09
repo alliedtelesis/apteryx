@@ -157,6 +157,20 @@ handle_proxies_set (const char *path, const char *value)
 
     DEBUG ("CFG-Proxy: %s = %s\n", guid, value);
 
+    /* If this proxy is being deleted, then close the connect to it */
+    if (!value)
+    {
+        cb = cb_find (&proxy_list, guid);
+        if (cb && cb->uri)
+        {
+            ProtobufCService *rpc_client = rpc_client_connect (proxy_rpc, cb->uri);
+            if (rpc_client)
+            {
+                rpc_client_release (proxy_rpc, rpc_client, false);
+            }
+        }
+    }
+
     cb = update_callback (&proxy_list, guid, value);
     if (cb && value)
     {
