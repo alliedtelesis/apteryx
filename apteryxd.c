@@ -1411,19 +1411,21 @@ termination_handler (void)
 void
 help (void)
 {
-    printf ("Usage: apteryxd [-h] [-b] [-d] [-p <pidfile>] [-l <url>]\n"
+    printf ("Usage: apteryxd [-h] [-b] [-d] [-p <pidfile>] [-r <runfile>] [-l <url>]\n"
             "  -h   show this help\n"
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
             "  -m   memory profiling\n"
-            "  -p   use <pidfile> (defaults to "APTERYX_PID")\n"
+            "  -p   use <pidfile> (background mode only)\n"
+            "  -r   use <runfile>\n"
             "  -l   listen on URL <url> (defaults to "APTERYX_SERVER")\n");
 }
 
 int
 main (int argc, char **argv)
 {
-    const char *pid_file = APTERYX_PID;
+    const char *pid_file = NULL;
+    const char *run_file = NULL;
     const char *url = APTERYX_SERVER;
     bool background = false;
     pthread_mutexattr_t callback_recursive;
@@ -1431,7 +1433,7 @@ main (int argc, char **argv)
     int i;
 
     /* Parse options */
-    while ((i = getopt (argc, argv, "hdmbp:l:")) != -1)
+    while ((i = getopt (argc, argv, "hdmbp:r:l:")) != -1)
     {
         switch (i)
         {
@@ -1444,6 +1446,9 @@ main (int argc, char **argv)
             break;
         case 'p':
             pid_file = optarg;
+            break;
+        case 'r':
+            run_file = optarg;
             break;
         case 'l':
             url = optarg;
@@ -1472,7 +1477,7 @@ main (int argc, char **argv)
     }
 
     /* Create pid file */
-    if (background)
+    if (background && pid_file)
     {
         fp = fopen (pid_file, "w");
         if (!fp)
@@ -1519,6 +1524,18 @@ main (int argc, char **argv)
         goto exit;
     }
 
+    /* Create run file */
+    if (run_file)
+    {
+        fp = fopen (run_file, "w");
+        if (!fp)
+        {
+            ERROR ("Failed to create RUN file %s\n", run_file);
+            goto exit;
+        }
+        fclose (fp);
+    }
+
     /* Loop while running */
     while (running)
     {
@@ -1542,8 +1559,12 @@ exit:
     }
 
     /* Remove the pid file */
-    if (background)
+    if (background && pid_file)
         unlink (pid_file);
+
+    /* Remove the run file */
+    if (run_file)
+        unlink (run_file);
 
     /* Memory profiling */
     g_mem_profile ();

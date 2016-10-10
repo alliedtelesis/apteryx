@@ -37,8 +37,6 @@
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
-/* Default PID file */
-#define APTERYX_PID     "/var/run/apteryxd.pid"
 
 /* Mode */
 typedef enum
