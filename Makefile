@@ -30,7 +30,7 @@ endif
 
 all: libapteryx.so apteryx
 
-libapteryx.so: apteryx.o database.o callbacks.o config.o
+libapteryx.so: apteryx.o database.o callbacks.o config.o rszshm.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 

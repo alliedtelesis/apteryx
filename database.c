@@ -19,7 +19,8 @@
  */
 #include "internal.h"
 #include <semaphore.h>
-#include <sys/shm.h>
+//#include <sys/shm.h>
+#include "rszshm.h"
 #ifdef TEST
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
@@ -51,6 +52,7 @@ typedef struct db_t
     hash_entry_t table[0];
 } db_t;
 static db_t *db = NULL;
+static struct rszshm r = {};
 
 /* Robert Sedgewick's string hashing algorithm */
 static inline uint32_t
@@ -100,46 +102,54 @@ hash_index (const char *key)
 void
 db_init (void)
 {
-    int already_init = 0;
+//    int already_init = 0;
     pthread_rwlockattr_t attr;
     int length;
-    int shmid;
+//    int shmid;
 
     if (db)
         return;
 
     /* Create/attach to the shared memory block */
     length = sizeof (db_t) + (NUM_BUCKETS * sizeof (hash_entry_t));
-    shmid = shmget (APTERYX_SHM_KEY, length, 0644 | IPC_CREAT | IPC_EXCL);
-    if (shmid < 0)
-    {
-        /* Another process is initializing this memory */
-        shmid = shmget (APTERYX_SHM_KEY, length, 0644);
-        already_init = 1;
-    }
-    if ((db = (db_t *) shmat (shmid, NULL, 0)) == NULL)
+    if (!rszshm_mk(&r, length, "./apteryx.dat"))
     {
         ERROR ("Failed to attach to SHM db.\n");
         return;
     }
+    db = (db_t *) (r.dat + sizeof (int));
 
-    /* Check if someone else has already initialised the db */
-    if (already_init)
-    {
-        /* Wait for the other process to finish if required */
-        while (shmid != db->shmid)
-            usleep (10);
-        if (db->length != length)
-        {
-            /* Incompatible shared memory segments! */
-            ERROR ("SHM DB != %d bytes\n", length);
-            shmdt (db);
-            db = NULL;
-            return;
-        }
-        sem_post (&db->ref);
-        return;
-    }
+//    length = sizeof (db_t) + (NUM_BUCKETS * sizeof (hash_entry_t));
+//    shmid = shmget (APTERYX_SHM_KEY, length, 0644 | IPC_CREAT | IPC_EXCL);
+//    if (shmid < 0)
+//    {
+//        /* Another process is initializing this memory */
+//        shmid = shmget (APTERYX_SHM_KEY, length, 0644);
+//        already_init = 1;
+//    }
+//    if ((db = (db_t *) shmat (shmid, NULL, 0)) == NULL)
+//    {
+//        ERROR ("Failed to attach to SHM db.\n");
+//        return;
+//    }
+
+//    /* Check if someone else has already initialised the db */
+//    if (already_init)
+//    {
+//        /* Wait for the other process to finish if required */
+//        while (shmid != db->shmid)
+//            usleep (10);
+//        if (db->length != length)
+//        {
+//            /* Incompatible shared memory segments! */
+//            ERROR ("SHM DB != %d bytes\n", length);
+//            shmdt (db);
+//            db = NULL;
+//            return;
+//        }
+//        sem_post (&db->ref);
+//        return;
+//    }
 
     /* Initialise the DB */
     db->shmid = 0;
@@ -151,7 +161,7 @@ db_init (void)
     pthread_rwlockattr_destroy (&attr);
     sem_init (&db->ref, 1, 1);
     memset (db->table, 0, NUM_BUCKETS * sizeof (hash_entry_t));
-    db->shmid = shmid;
+//    db->shmid = shmid;
     pthread_rwlock_unlock (&db->rwlock);
     return;
 }
@@ -160,9 +170,9 @@ void
 db_shutdown (bool force)
 {
     int count;
-    int shmid;
+//    int shmid;
 
-    if (db == NULL || db->shmid == 0)
+    if (db == NULL)
         return;
 
     /* Decrement the ref count */
@@ -172,17 +182,20 @@ db_shutdown (bool force)
     if (force || (sem_getvalue (&db->ref, &count) == 0 && count == 0))
     {
         /* Destroy the cache */
-        shmid = db->shmid;
-        db->shmid = 0;
+        //shmid = db->shmid;
+        //db->shmid = 0;
         sem_destroy (&db->ref);
         pthread_rwlock_destroy (&db->rwlock);
-        shmdt (db);
-        shmctl (shmid, IPC_RMID, 0);
+        //shmdt (db);
+        //shmctl (shmid, IPC_RMID, 0);
+        rszshm_dt (&r);
+        rszshm_unlink (&r);
     }
     else
     {
         /* Detach */
-        shmdt (db);
+        rszshm_dt (&r);
+        //shmdt (db);
     }
     db = NULL;
     return;
