@@ -48,9 +48,9 @@ void
 usage ()
 {
 #ifdef TEST
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-u<filter>] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-l|-u<filter>] [<path>] [<value>]\n"
 #else
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-l] [<path>] [<value>]\n"
 #endif
             "  -h   show this help\n"
             "  -d   debug\n"
@@ -60,7 +60,6 @@ usage ()
             "  -t   traverse database from <path>\n"
             "  -w   watch changes to the path <path>\n"
             "  -p   provide <value> for <path>\n"
-            "  -x   proxy <path> via url <value>\n"
             "  -l   last change <path>\n"
 #ifdef TEST
             "  -u   run unit tests (optionally match only tests with <filter>)\n"
@@ -69,11 +68,9 @@ usage ()
     printf ("\n");
     printf ("  Internal settings\n");
     printf ("    %s\n", APTERYX_DEBUG_PATH);
-    printf ("    %s\n", APTERYX_SOCKETS_PATH);
     printf ("    %s\n", APTERYX_WATCHERS_PATH);
     printf ("    %s\n", APTERYX_PROVIDERS_PATH);
     printf ("    %s\n", APTERYX_VALIDATORS_PATH);
-    printf ("    %s\n", APTERYX_PROXIES_PATH);
     printf ("    %s\n", APTERYX_COUNTERS);
     printf ("\n");
 }
@@ -260,16 +257,6 @@ main (int argc, char **argv)
         while (running)
             pause ();
         apteryx_unprovide (path, provide_callback);
-        apteryx_shutdown ();
-        break;
-    case MODE_PROXY:
-        if (!path || !param)
-        {
-            usage ();
-            return 0;
-        }
-        apteryx_init (apteryx_debug);
-        apteryx_proxy (path, param);
         apteryx_shutdown ();
         break;
     case MODE_TIMESTAMP:

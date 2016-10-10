@@ -342,84 +342,6 @@ exit:
 }
 
 void
-test_perf_tcp_set ()
-{
-    const char *path = TEST_TCP_URL":"TEST_PATH"/entity/zones/private/name";
-    uint64_t start;
-    int i;
-    bool res;
-
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    usleep (TEST_SLEEP_TIMEOUT);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        CU_ASSERT ((res = apteryx_set (path, "private")));
-        if (!res)
-            goto exit;
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_perf_tcp_set_tree ()
-{
-    const char *path = TEST_TCP_URL":"TEST_PATH"/entity/zones";
-    uint64_t start;
-    int i;
-    bool res;
-
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    usleep (TEST_SLEEP_TIMEOUT);
-
-    GNode *root = APTERYX_NODE(NULL, (char*)path);
-    APTERYX_LEAF (root, "private", "crash");
-
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        CU_ASSERT ((res = apteryx_set_tree (root)));
-        if (!res)
-            goto exit;
-    }
-
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    g_node_destroy (root);
-    apteryx_prune(path);
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_perf_tcp6_set ()
-{
-    const char *path = TEST_TCP6_URL":"TEST_PATH"/entity/zones/private/name";
-    uint64_t start;
-    int i;
-    bool res;
-
-    CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
-    usleep (TEST_SLEEP_TIMEOUT);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        CU_ASSERT ((res = apteryx_set (path, "private")));
-        if (!res)
-            goto exit;
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP6_URL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
 test_get_no_value ()
 {
     const char *path = TEST_PATH"/entity/zones/private/name";
@@ -468,61 +390,6 @@ test_perf_get ()
     printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
 exit:
     _perf_setup (TEST_ITERATIONS, TRUE);
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_perf_tcp_get ()
-{
-    const char *value = NULL;
-    uint64_t start;
-    int i;
-
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    _perf_setup (TEST_ITERATIONS, FALSE);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_TCP_URL":"TEST_PATH"/zones/%d/state", i) > 0);
-        CU_ASSERT ((value = apteryx_get (path)) != NULL);
-        free (path);
-        if (!value)
-            goto exit;
-        free ((void *) value);
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    _perf_setup (TEST_ITERATIONS, TRUE);
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL))
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_perf_tcp6_get ()
-{
-    const char *value = NULL;
-    uint64_t start;
-    int i;
-
-    CU_ASSERT (apteryx_bind (TEST_TCP6_URL));
-    usleep (TEST_SLEEP_TIMEOUT);
-    _perf_setup (TEST_ITERATIONS, FALSE);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_TCP6_URL":"TEST_PATH"/zones/%d/state", i) > 0);
-        CU_ASSERT ((value = apteryx_get (path)) != NULL);
-        free (path);
-        if (!value)
-            goto exit;
-        free ((void *) value);
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    _perf_setup (TEST_ITERATIONS, TRUE);
-    CU_ASSERT (apteryx_unbind (TEST_TCP6_URL))
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3226,236 +3093,6 @@ test_perf_prune ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-void
-test_proxy_get ()
-{
-    const char *value = NULL;
-
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", "test"));
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote"TEST_PATH"/local")) != NULL);
-    CU_ASSERT (value && strcmp (value, "test") == 0);
-    if (value)
-        free ((void *) value);
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_tree_get ()
-{
-    const char *value = NULL;
-    GNode *root = NULL;
-
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu1", "spam"));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu2", "eggsandspam"));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu3", "eggspamspamandeggs"))
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu4", "spamspameggsspamspamspameggsandspam"));
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-
-    /* Get menu item 1 via proxy */
-    CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote"TEST_PATH"/local/foo/menu1")) != NULL);
-    CU_ASSERT (value && strcmp (value, "spam") == 0);
-    if (value)
-        free ((void *) value);
-
-    /* Test local tree */
-    root = apteryx_get_tree (TEST_PATH"/local");
-    CU_ASSERT (root && APTERYX_NUM_NODES (root) == 7);
-    if (root)
-        apteryx_free_tree (root);
-
-    /* Test same tree via proxy */
-    root = apteryx_get_tree (TEST_PATH"/remote"TEST_PATH"/local");
-    CU_ASSERT (root && APTERYX_NUM_NODES (root) == 7);
-    if (root)
-        apteryx_free_tree (root);
-    else
-        printf("No tree in result");
-
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-
-    apteryx_debug = false;
-}
-
-void
-test_proxy_set ()
-{
-    const char *value = NULL;
-
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "test"));
-    CU_ASSERT ((value = apteryx_get (TEST_PATH"/local")) != NULL);
-    CU_ASSERT (value && strcmp (value, "test") == 0);
-    if (value)
-        free ((void *) value);
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_not_listening ()
-{
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", "test"));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_get (TEST_PATH"/remote/test/local") == NULL);
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_before_db_get ()
-{
-    const char *value = NULL;
-
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", "dog"));
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "cat"));
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT ((value = apteryx_get (TEST_PATH"/remote/test/local")) != NULL);
-    CU_ASSERT (value && strcmp (value, "dog") == 0);
-    if (value)
-        free ((void *) value);
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_before_db_set ()
-{
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "test"));
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_get (TEST_PATH"/remote/test/local") == NULL);
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_set_validated ()
-{
-    CU_ASSERT (apteryx_validate (TEST_PATH"/local", test_validate_refuse_callback));
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (!apteryx_set (TEST_PATH"/remote/test/local", "test"));
-    CU_ASSERT (errno == -EPERM);
-    CU_ASSERT (apteryx_unvalidate (TEST_PATH"/local", test_validate_refuse_callback));
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_search ()
-{
-    GList *paths = NULL;
-
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/cat", "felix"));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/dog", "fido"));
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/remote/test/local/")) != NULL);
-    CU_ASSERT (g_list_length (paths) == 2);
-    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/remote"TEST_PATH"/local/cat",
-            (GCompareFunc) strcmp) != NULL);
-    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/remote"TEST_PATH"/local/dog",
-            (GCompareFunc) strcmp) != NULL);
-    g_list_free_full (paths, free);
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/cat", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/dog", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_prune ()
-{
-    GList *paths = NULL;
-
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0/state", NULL, "up"));
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities", NULL, "-"));
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones", NULL, "-"));
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/public", NULL, "-"));
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/private", NULL, "-"));
-
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_prune (TEST_PATH"/remote"TEST_PATH"/interfaces"));
-    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) == NULL);
-    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entities/zones/")) != NULL);
-    CU_ASSERT (g_list_length (paths) == 2);
-    g_list_free_full (paths, free);
-
-    CU_ASSERT (apteryx_prune (TEST_PATH"/entities"));
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_timestamp ()
-{
-    uint64_t ts = 0;
-
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", "test"));
-    CU_ASSERT ((ts = apteryx_timestamp (TEST_PATH"/local")) != 0);
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_timestamp (TEST_PATH"/remote/test/local") == ts);
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
-void
-test_proxy_cas ()
-{
-    const char *path = TEST_PATH"/remote/test/local";
-    char *value = NULL;
-    uint64_t ts;
-
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-
-    value = g_strdup_printf ("%d", 1);
-    CU_ASSERT (apteryx_cas (path, value, 0));
-    CU_ASSERT (!apteryx_cas (path, value, 0));
-    CU_ASSERT (errno == -EBUSY);
-    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
-    CU_ASSERT (apteryx_cas (path, value, ts));
-    CU_ASSERT (!apteryx_cas (path, value, ts));
-    CU_ASSERT (errno == -EBUSY);
-    g_free (value);
-
-    CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
@@ -3563,20 +3200,6 @@ test_double_fork ()
 }
 
 void
-test_remote_path_colon ()
-{
-    char *path = TEST_TCP_URL":"TEST_PATH "/2001:db8::1/test";
-    char *value = NULL;
-    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
-    usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (apteryx_set (path, "hello"));
-    CU_ASSERT ((value = apteryx_get (path)) != NULL && strcmp (value, "hello") == 0);
-    free (value);
-    CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-}
-
-void
 _dump_config (FILE *fd, char *root, int tab)
 {
     GList *paths = apteryx_search (root);
@@ -3636,313 +3259,6 @@ test_docs ()
     apteryx_set_string (TEST_PATH"/interfaces/eth1/state", NULL, NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
-
-void
-test_socket_latency (int family, bool cd, bool req, bool resp)
-{
-    int iterations = 2 * TEST_ITERATIONS;
-    char buf[TEST_MESSAGE_SIZE] = {};
-    union
-    {
-        struct sockaddr_in addr_in;
-        struct sockaddr_in6 addr_in6;
-        struct sockaddr_un addr_un;
-    } server, client;
-    socklen_t address_len, len;
-    int64_t start, i, s, s2 = -1;
-    int on = 1;
-    int pid;
-    int status;
-    int ret;
-
-    if (family == AF_UNIX)
-    {
-        server.addr_un.sun_family = AF_UNIX;
-        strcpy (server.addr_un.sun_path, TEST_RPC_PATH);
-        unlink (server.addr_un.sun_path);
-        address_len = sizeof (server.addr_un);
-    }
-    else if (family == AF_INET)
-    {
-        server.addr_in.sin_family = AF_INET;
-        server.addr_in.sin_port = htons (TEST_PORT_NUM);
-        server.addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        address_len = sizeof (server.addr_in);
-        client = server;
-        client.addr_in.sin_port = htons (TEST_PORT_NUM+1);
-    }
-    else
-    {
-        CU_ASSERT (family == AF_UNIX || family == AF_INET);
-        return;
-    }
-    CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
-    CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
-    CU_ASSERT ((ret = bind (s, (struct sockaddr *)&server, address_len)) >= 0);
-    CU_ASSERT ((ret = listen (s, 5)) >= 0);
-    if (ret < 0)
-        return;
-
-    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=1 > /dev/null 2>&1") == 0);
-    if ((pid = fork ()) == 0)
-    {
-        if (!cd)
-        {
-            len = address_len;
-            CU_ASSERT ((s2 = accept (s, (struct sockaddr *)&client, &len)) >= 0);
-            if (s2 < 0)
-                exit (-1);
-        }
-        for (i = 0; i < iterations; i++)
-        {
-            if (cd)
-            {
-                len = address_len;
-                CU_ASSERT ((s2 = accept (s, (struct sockaddr *)&client, &len)) >= 0);
-                if (s2 < 0)
-                    exit (-1);
-            }
-            if (req)
-                CU_ASSERT (read (s2, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
-            if (resp)
-                CU_ASSERT (write (s2, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
-            if (cd)
-                close (s2);
-        }
-        if (!cd)
-            close (s2);
-        close (s);
-        exit (0);
-    }
-    else
-    {
-        close (s);
-        if (!cd)
-        {
-            CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
-            CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
-            CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
-            if (ret)
-                goto exit;
-        }
-        start = get_time_us ();
-        for (i = 0; i < iterations; i++)
-        {
-            if (cd)
-            {
-                CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
-                CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
-                CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
-                if (ret)
-                    goto exit;
-            }
-            if (req)
-                CU_ASSERT (write (s, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
-            if (resp)
-                CU_ASSERT (read (s, buf, TEST_MESSAGE_SIZE) == TEST_MESSAGE_SIZE);
-            if (cd)
-                close (s);
-        }
-        printf ("%"PRIu64"us ... ", (get_time_us () - start) / iterations);
-        if (!cd)
-            close (s);
-    }
-exit:
-    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=0 > /dev/null 2>&1") == 0);
-    kill (pid, 9);
-    waitpid (pid, &status, 0);
-    if (family == AF_UNIX)
-        unlink (TEST_RPC_PATH);
-}
-
-void
-test_unix_req_latency ()
-{
-    test_socket_latency (AF_UNIX, false, true, false);
-}
-
-void
-test_unix_req_resp_latency ()
-{
-    test_socket_latency (AF_UNIX, false, true, true);
-}
-
-void
-test_unix_con_disc_latency ()
-{
-    test_socket_latency (AF_UNIX, true, false, false);
-}
-
-void
-test_unix_con_req_resp_disc_latency ()
-{
-    test_socket_latency (AF_UNIX, true, true, true);
-}
-
-void
-test_tcp_req_latency ()
-{
-    test_socket_latency (AF_INET, false, true, false);
-}
-
-void
-test_tcp_req_resp_latency ()
-{
-    test_socket_latency (AF_INET, false, true, true);
-}
-
-void
-test_tcp_con_disc_latency ()
-{
-    test_socket_latency (AF_INET, true, false, false);
-}
-
-void
-test_tcp_con_req_resp_disc_latency ()
-{
-    test_socket_latency (AF_INET, true, true, true);
-}
-
-#if 0
-static void
-apteryx__ping (Apteryx__Test_Service *service,
-              const Apteryx__Ping *ping,
-              Apteryx__Ping_Closure closure, void *closure_data)
-{
-    closure (ping, closure_data);
-    return;
-}
-
-static Apteryx__Test_Service test_service = APTERYX__TEST__INIT (apteryx__);
-
-typedef struct _ping_data_t
-{
-    char *value;
-    bool done;
-} ping_data_t;
-
-static void
-handle_ping_response (const Apteryx__Ping *result, void *closure_data)
-{
-    ping_data_t *data = (ping_data_t *)closure_data;
-    data->done = false;
-    if (result == NULL)
-    {
-        ERROR ("PING: Error processing request.\n");
-        errno = -ETIMEDOUT;
-    }
-    else
-    {
-        data->done = true;
-        if (result->value && result->value[0] != '\0')
-        {
-            data->value = strdup (result->value);
-        }
-    }
-}
-
-void
-test_rpc_init ()
-{
-    rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
-    rpc_shutdown (rpc);
-}
-
-void
-test_rpc_bind ()
-{
-    char *url = APTERYX_SERVER".test";
-    rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
-    CU_ASSERT (rpc_server_bind (rpc,  url, url));
-    CU_ASSERT (rpc_server_release (rpc, url));
-    rpc_shutdown (rpc);
-}
-
-void
-test_rpc_connect ()
-{
-    char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
-    rpc_instance rpc;
-
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
-    CU_ASSERT (rpc_server_bind (rpc,  url, url));
-    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
-    rpc_client_release (rpc, rpc_client, false);
-    CU_ASSERT (rpc_server_release (rpc, url));
-    rpc_shutdown (rpc);
-}
-
-void
-test_rpc_ping ()
-{
-    Apteryx__Ping ping = APTERYX__PING__INIT;
-    char *test_string = "testing123...";
-    char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
-    rpc_instance rpc;
-    ping_data_t data = {0};
-
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
-    CU_ASSERT (rpc_server_bind (rpc,  url, url));
-    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
-    ping.value = test_string;
-    apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
-    CU_ASSERT (data.done);
-    CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
-    free (data.value);
-    rpc_client_release (rpc, rpc_client, false);
-    CU_ASSERT (rpc_server_release (rpc, url));
-    rpc_shutdown (rpc);
-}
-
-void
-test_rpc_double_bind ()
-{
-    char *url = APTERYX_SERVER".test";
-    rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
-    CU_ASSERT (rpc_server_bind (rpc,  url, url));
-    CU_ASSERT (!rpc_server_bind (rpc,  url, url));
-    CU_ASSERT (rpc_server_release (rpc, url));
-    rpc_shutdown (rpc);
-}
-
-void
-test_rpc_perf ()
-{
-    Apteryx__Ping ping = APTERYX__PING__INIT;
-    char *test_string = "testing123...";
-    char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
-    rpc_instance rpc;
-    uint64_t start;
-    int i;
-
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
-    CU_ASSERT (rpc_server_bind (rpc,  url, url));
-    CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
-
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        ping_data_t data = {0};
-        ping.value = test_string;
-        apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
-        CU_ASSERT (data.done);
-        CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
-        free (data.value);
-        if (!data.done || !data.value)
-            goto exit;
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    rpc_client_release (rpc, rpc_client, false);
-    rpc_shutdown (rpc);
-}
-#endif
 
 static pthread_t single_thread = -1;
 static int
@@ -4567,7 +3883,7 @@ static CU_TestInfo tests_api[] = {
     { "search paths", test_search_paths },
     { "search root path", test_search_paths_root },
     { "multi threads writing to same table", test_thread_multi_write },
-//    { "multi processes writing to same table", test_process_multi_write },
+    { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
     { "cas", test_cas },
     { "cas string", test_cas_string },
@@ -4575,8 +3891,7 @@ static CU_TestInfo tests_api[] = {
 //    { "bitmap", test_bitmap },
 //    { "shutdown deadlock", test_deadlock },
 //    { "shutdown deadlock 2", test_deadlock2 },
-//    { "remote path contains colon", test_remote_path_colon },
-//    { "double fork", test_double_fork },
+    { "double fork", test_double_fork },
     CU_TEST_INFO_NULL,
 };
 
@@ -4595,7 +3910,7 @@ static CU_TestInfo tests_api_index[] = {
 static CU_TestInfo tests_api_watch[] = {
     { "watch", test_watch },
     { "watch set from different thread", test_watch_thread },
-//    { "watch set from different process", test_watch_fork },
+    { "watch set from different process", test_watch_fork },
     { "watch no match", test_watch_no_match },
     { "watch remove", test_watch_remove },
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
@@ -4614,7 +3929,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch removes multiple watches", test_watch_removes_all_watches },
     { "watch when busy", test_watch_when_busy },
     { "watch order", test_watch_order },
-//    { "watch rpc restart", test_watch_rpc_restart },
+    { "watch rpc restart", test_watch_rpc_restart },
 //    { "watch myself blocked", test_watch_myself_blocked },
     CU_TEST_INFO_NULL,
 };
@@ -4635,12 +3950,12 @@ static CU_TestInfo tests_api_validate[] = {
 
 static CU_TestInfo tests_api_provide[] = {
     { "provide", test_provide },
-//    { "provider timeout", test_provide_timeout },
+    { "provider timeout", test_provide_timeout },
     { "provide replace handler", test_provide_replace_handler },
     { "provide no handler", test_provide_no_handler },
     { "provide remove handler", test_provide_remove_handler },
     { "provide from different threads", test_provide_different_thread },
-//    { "provide from different process", test_provide_different_process },
+    { "provide from different process", test_provide_different_process },
     { "provide callback get", test_provide_callback_get },
     { "provide callback get null", test_provide_callback_get_null },
     { "provide search", test_provide_search },

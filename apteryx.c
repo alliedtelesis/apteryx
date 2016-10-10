@@ -345,41 +345,6 @@ apteryx_process (bool poll)
 }
 
 bool
-apteryx_bind (const char *url)
-{
-    char path[PATH_MAX];
-    bool result;
-
-    ASSERT ((ref_count > 0), return false, "BIND: Not initialised\n");
-    ASSERT (url, return false, "BIND: Invalid parameters\n");
-
-    DEBUG ("BIND: %s\n", url);
-
-    if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
-            (size_t)g_str_hash (url)) <= 0)
-        return false;
-    result = apteryx_set (path, url);
-    usleep (1000); /* Sockets need time to bind/unbind */
-    return result;
-}
-
-bool
-apteryx_unbind (const char *url)
-{
-    char path[PATH_MAX];
-
-    ASSERT ((ref_count > 0), return false, "UNBIND: Not initialised\n");
-    ASSERT (url, return false, "UNBIND: Invalid parameters\n");
-
-    DEBUG ("UNBIND: %s\n", url);
-
-    if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
-            (size_t)g_str_hash (url)) <= 0)
-        return false;
-    return apteryx_set (path, NULL);
-}
-
-bool
 apteryx_prune (const char *path)
 {
     ASSERT ((ref_count > 0), return false, "PRUNE: Not initialised\n");
@@ -2109,34 +2074,6 @@ bool
 apteryx_unprovide (const char *path, apteryx_provide_callback cb)
 {
     return delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
-}
-
-bool
-apteryx_proxy (const char *path, const char *url)
-{
-    bool res = false;
-    char *value = NULL;
-
-    if (asprintf (&value, "%s:%s", url, path) <= 0)
-        return false;
-    res = add_callback (APTERYX_PROXIES_PATH, value,
-            (void *)(size_t)g_str_hash (url));
-    free (value);
-    return res;
-}
-
-bool
-apteryx_unproxy (const char *path, const char *url)
-{
-    bool res = false;
-    char *value = NULL;
-
-    if (asprintf (&value, "%s:%s", url, path) <= 0)
-        return false;
-    res = delete_callback (APTERYX_PROXIES_PATH, value,
-            (void *)(size_t)g_str_hash (url));
-    free (value);
-    return res;
 }
 
 //static void

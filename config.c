@@ -149,36 +149,6 @@ handle_validators_set (const char *path, const char *value)
     return true;
 }
 
-static bool
-handle_proxies_set (const char *path, const char *value)
-{
-    const char *guid = path + strlen (APTERYX_PROXIES_PATH"/");
-    cb_info_t *cb;
-
-    DEBUG ("CFG-Proxy: %s = %s\n", guid, value);
-
-    cb = update_callback (&proxy_list, guid, value);
-    if (cb && value)
-    {
-        if (strncmp (value, "unix://", 7) != 0 &&
-            strncmp (value, "tcp://", 6) != 0)
-        {
-            ERROR ("Invalid Callback URL (%s)\n", value);
-            cb_release (cb);
-            return false;
-        }
-        path = strrchr (value, ':') + 1;
-        if (cb->uri)
-            g_free ((void *) cb->uri);
-        cb->uri = g_strndup (value, strlen (value) - strlen (path) - 1);
-        strcpy ((char*)cb->path, path);
-        DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
-    }
-    cb_release (cb);
-    return true;
-}
-
-
 static GList*
 handle_counters_index (const char *path)
 {
@@ -222,11 +192,6 @@ config_init (void)
             (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
     cb_release (cb);
 
-    /* Sockets */
-//    cb = cb_create (&watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
-//            (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
-//    cb_release (cb);
-
     /* Indexers */
     cb = cb_create (&watch_list, "indexers", APTERYX_INDEXERS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set);
@@ -245,10 +210,5 @@ config_init (void)
     /* Validators */
     cb = cb_create (&watch_list, "validators", APTERYX_VALIDATORS_PATH"/",
             (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set);
-    cb_release (cb);
-
-    /* Proxies */
-    cb = cb_create (&watch_list, "proxies", APTERYX_PROXIES_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set);
     cb_release (cb);
 }

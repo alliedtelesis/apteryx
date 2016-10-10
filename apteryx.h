@@ -43,8 +43,6 @@
 /** Apteryx configuration
   /apteryx
   /apteryx/debug                           - Apteryx debug
-  /apteryx/sockets                         - List of sockets (urls) that apteryxd will accept connections on.
-  /apteryx/sockets/-                       - Unique identifier based on HASH(url). Value is the url to listen on.
   /apteryx/watchers                        - List of watched paths and registered callbacks for those watches.
   /apteryx/watchers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/providers                       - List of provided paths and registered callbacks for providing gets to that path.
@@ -53,8 +51,6 @@
   /apteryx/validators/-                    - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/indexers                        - List of indexed paths and registered callbacks for providing search results for that path.
   /apteryx/indexers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
-  /apteryx/proxies                         - List of proxied paths and remote url to proxy gets and sets to.
-  /apteryx/proxies/-                       - Unique identifier based on PID-HASH(path)-HASH(url). Value is the full url for the path.
   /apteryx/counters                        - Formatted list of counters and values for Apteryx usage
  */
 #define APTERYX_PATH                             "/apteryx"
@@ -62,14 +58,11 @@
 #define APTERYX_DEBUG_DEFAULT                        0
 #define APTERYX_DEBUG_DISABLE                        0
 #define APTERYX_DEBUG_ENABLE                         1
-#define APTERYX_SOCKETS_PATH                     "/apteryx/sockets"
 #define APTERYX_WATCHERS_PATH                    "/apteryx/watchers"
 #define APTERYX_PROVIDERS_PATH                   "/apteryx/providers"
 #define APTERYX_VALIDATORS_PATH                  "/apteryx/validators"
 #define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
-#define APTERYX_PROXIES_PATH                     "/apteryx/proxies"
 #define APTERYX_COUNTERS                         "/apteryx/counters"
-#define APTERYX_SYNC_PATH                        "/apteryx/sync"
 
 /** Initialise this instance of the Apteryx library.
  * @param debug verbose debug to stdout
@@ -113,17 +106,6 @@ bool apteryx_shutdown_force (void);
  * @return fd for using select for detecting there is work to process
  */
 int apteryx_process (bool poll);
-
-/**
- * Bind the Apteryx server to accepts connections on the specified URL.
- * Can be used to enable remote access to Apteryx (e.g. for proxy).
- * @param url path to bind to
- * @return true on successful (un)binding
- * @return false if the (un)bind fails
- */
-bool apteryx_bind (const char *url);
-/** Stop accepting connections on the specified URL. */
-bool apteryx_unbind (const char *url);
 
 /**
  * Remove a path and all reachable children
@@ -442,18 +424,5 @@ typedef char* (*apteryx_provide_callback) (const char *path);
 bool apteryx_provide (const char *path, apteryx_provide_callback cb);
 /** UnProvide a value that can be read on demand */
 bool apteryx_unprovide (const char *path, apteryx_provide_callback cb);
-
-/**
- * Proxy get and sets for the requested path to the specified remote url.
- * Whenever a get is performed on the given path/key, callback is called to get the value
- * Path must include wildcard. (Don't escape *)
- * - apteryx_proxy ("/remote/host1/\*", "tcp://192.168.1.1:9999")
- * @param path path to the value that others will set/get
- * @param url url to the remote apteryx instance
- * @return true on successful registration
- */
-bool apteryx_proxy (const char *path, const char *url);
-/** Remove the proxy for this path */
-bool apteryx_unproxy (const char *path, const char *url);
 
 #endif /* _APTERYX_H_ */
