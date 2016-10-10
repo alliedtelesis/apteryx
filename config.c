@@ -22,7 +22,7 @@
 #include "internal.h"
 
 /* RPC Service */
-extern rpc_instance rpc;
+//extern rpc_instance rpc;
 
 static bool
 handle_debug_set (const char *path, const char *value)
@@ -35,21 +35,21 @@ handle_debug_set (const char *path, const char *value)
     return true;
 }
 
-static bool
-handle_sockets_set (const char *path, const char *value)
-{
-    const char *guid = path + strlen (APTERYX_SOCKETS_PATH"/");
-    bool res = true;
-
-    DEBUG ("SOCKET %s:%s\n", guid, value);
-
-    if (value)
-        res = rpc_server_bind (rpc, guid, value);
-    else
-        res = rpc_server_release (rpc, guid);
-
-    return res;
-}
+//static bool
+//handle_sockets_set (const char *path, const char *value)
+//{
+//    const char *guid = path + strlen (APTERYX_SOCKETS_PATH"/");
+//    bool res = true;
+//
+//    DEBUG ("SOCKET %s:%s\n", guid, value);
+//
+//    if (value)
+//        res = rpc_server_bind (rpc, guid, value);
+//    else
+//        res = rpc_server_release (rpc, guid);
+//
+//    return res;
+//}
 
 static cb_info_t *
 update_callback (GList **list, const char *guid, const char *value)
@@ -223,9 +223,9 @@ config_init (void)
     cb_release (cb);
 
     /* Sockets */
-    cb = cb_create (&watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
-    cb_release (cb);
+//    cb = cb_create (&watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
+//            (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
+//    cb_release (cb);
 
     /* Indexers */
     cb = cb_create (&watch_list, "indexers", APTERYX_INDEXERS_PATH"/",

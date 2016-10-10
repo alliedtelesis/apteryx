@@ -37,7 +37,7 @@
 #include <CUnit/Basic.h>
 #include "apteryx.h"
 #include "internal.h"
-#include "apteryx.pb-c.h"
+//#include "apteryx.pb-c.h"
 
 #define TEST_PATH           "/test"
 #define TEST_ITERATIONS     1000
@@ -1607,13 +1607,13 @@ test_watch_order ()
 
     _cb_count = 0;
     CU_ASSERT (apteryx_watch (TEST_PATH"/interfaces/eth0/packets", test_watch_count_callback));
-    rpc_test_random_watch_delay = true;
+//    rpc_test_random_watch_delay = true;
     for (i=0; i<count; i++)
     {
         CU_ASSERT (apteryx_set_int (TEST_PATH"/interfaces/eth0/packets", NULL, i));
     }
     usleep (TEST_SLEEP_TIMEOUT + count * RPC_TEST_DELAY_MASK);
-    rpc_test_random_watch_delay = false;
+//    rpc_test_random_watch_delay = false;
 
     CU_ASSERT (_cb_count == count);
     CU_ASSERT (apteryx_get_int (TEST_PATH"/interfaces/eth0/packets", NULL) == count - 1);
@@ -3803,6 +3803,7 @@ test_tcp_con_req_resp_disc_latency ()
     test_socket_latency (AF_INET, true, true, true);
 }
 
+#if 0
 static void
 apteryx__ping (Apteryx__Test_Service *service,
               const Apteryx__Ping *ping,
@@ -3941,6 +3942,7 @@ exit:
     rpc_client_release (rpc, rpc_client, false);
     rpc_shutdown (rpc);
 }
+#endif
 
 static pthread_t single_thread = -1;
 static int
@@ -4565,16 +4567,16 @@ static CU_TestInfo tests_api[] = {
     { "search paths", test_search_paths },
     { "search root path", test_search_paths_root },
     { "multi threads writing to same table", test_thread_multi_write },
-    { "multi processes writing to same table", test_process_multi_write },
+//    { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
     { "cas", test_cas },
     { "cas string", test_cas_string },
     { "cas int", test_cas_int },
-    { "bitmap", test_bitmap },
-    { "shutdown deadlock", test_deadlock },
-    { "shutdown deadlock 2", test_deadlock2 },
-    { "remote path contains colon", test_remote_path_colon },
-    { "double fork", test_double_fork },
+//    { "bitmap", test_bitmap },
+//    { "shutdown deadlock", test_deadlock },
+//    { "shutdown deadlock 2", test_deadlock2 },
+//    { "remote path contains colon", test_remote_path_colon },
+//    { "double fork", test_double_fork },
     CU_TEST_INFO_NULL,
 };
 
@@ -4593,7 +4595,7 @@ static CU_TestInfo tests_api_index[] = {
 static CU_TestInfo tests_api_watch[] = {
     { "watch", test_watch },
     { "watch set from different thread", test_watch_thread },
-    { "watch set from different process", test_watch_fork },
+//    { "watch set from different process", test_watch_fork },
     { "watch no match", test_watch_no_match },
     { "watch remove", test_watch_remove },
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
@@ -4605,15 +4607,15 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch wildcard miss", test_watch_wildcard_miss },
     { "watch set callback get", test_watch_set_callback_get },
     { "watch set callback unwatch", test_watch_set_callback_unwatch },
-    { "watch set callback set recursive", test_watch_set_callback_set_recursive },
+//    { "watch set callback set recursive", test_watch_set_callback_set_recursive },
     { "watch set multi callback set", test_watch_set_multi_callback_set },
     { "watch and set from another thread", test_watch_set_thread },
     { "watch adds / removes watches", test_watch_adds_watch },
     { "watch removes multiple watches", test_watch_removes_all_watches },
     { "watch when busy", test_watch_when_busy },
     { "watch order", test_watch_order },
-    { "watch rpc restart", test_watch_rpc_restart },
-    { "watch myself blocked", test_watch_myself_blocked },
+//    { "watch rpc restart", test_watch_rpc_restart },
+//    { "watch myself blocked", test_watch_myself_blocked },
     CU_TEST_INFO_NULL,
 };
 
@@ -4622,23 +4624,23 @@ static CU_TestInfo tests_api_validate[] = {
     { "validate one level", test_validate_one_level },
     { "validate wildcard", test_validate_wildcard },
     { "validate wildcard internal", test_validate_wildcard_internal },
-    { "validate conflicting", test_validate_conflicting },
+//    { "validate conflicting", test_validate_conflicting },
     { "validate tree", test_validate_tree },
-    { "validate from watch callback", test_validate_from_watch_callback },
-    { "validate from many watches", test_validate_from_many_watches },
+//    { "validate from watch callback", test_validate_from_watch_callback },
+//    { "validate from many watches", test_validate_from_many_watches },
     { "validate set order", test_validate_ordering },
-    { "validate tree order", test_validate_ordering_tree },
+//    { "validate tree order", test_validate_ordering_tree },
     CU_TEST_INFO_NULL,
 };
 
 static CU_TestInfo tests_api_provide[] = {
     { "provide", test_provide },
-    { "provider timeout", test_provide_timeout },
+//    { "provider timeout", test_provide_timeout },
     { "provide replace handler", test_provide_replace_handler },
     { "provide no handler", test_provide_no_handler },
     { "provide remove handler", test_provide_remove_handler },
     { "provide from different threads", test_provide_different_thread },
-    { "provide from different process", test_provide_different_process },
+//    { "provide from different process", test_provide_different_process },
     { "provide callback get", test_provide_callback_get },
     { "provide callback get null", test_provide_callback_get_null },
     { "provide search", test_provide_search },
@@ -4647,21 +4649,6 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide after db", test_provide_after_db },
     { "provider wildcard", test_provider_wildcard },
     { "provider wildcard internal", test_provider_wildcard_internal },
-    CU_TEST_INFO_NULL,
-};
-
-static CU_TestInfo tests_api_proxy[] = {
-    { "proxy get", test_proxy_get },
-    { "proxy tree get", test_proxy_tree_get },
-    { "proxy set", test_proxy_set },
-    { "proxy not listening", test_proxy_not_listening },
-    { "proxy before db get", test_proxy_before_db_get },
-    { "proxy before db set", test_proxy_before_db_set },
-    { "proxy set validated", test_proxy_set_validated },
-    { "proxy search", test_proxy_search },
-    { "proxy prune", test_proxy_prune },
-    { "proxy timestamp", test_proxy_timestamp },
-    { "proxy cas", test_proxy_cas },
     CU_TEST_INFO_NULL,
 };
 
@@ -4679,7 +4666,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     { "get tree provided", test_get_tree_provided },
     { "cas tree", test_cas_tree},
-    { "tree atomic", test_tree_atomic},
+//    { "tree atomic", test_tree_atomic},
     CU_TEST_INFO_NULL,
 };
 
@@ -4692,30 +4679,25 @@ static CU_TestInfo tests_find[] = {
     CU_TEST_INFO_NULL,
 };
 
-static CU_TestInfo tests_single_threaded[] = {
-    { "single-threaded index", test_single_index },
-    { "single-threaded index no polling", test_single_index_no_polling },
-    { "single-threaded watch", test_single_watch },
-    { "single-threaded watch no polling", test_single_watch_no_polling },
-    { "single-threaded validate", test_single_validate },
-    { "single-threaded validate no polling", test_single_validate_no_polling },
-    { "single-threaded provide", test_single_provide },
-    { "single-threaded provide no polling", test_single_provide_no_polling },
-    { "single-threaded watch myself", test_single_watch_myself },
-    CU_TEST_INFO_NULL,
-};
+//static CU_TestInfo tests_single_threaded[] = {
+//    { "single-threaded index", test_single_index },
+//    { "single-threaded index no polling", test_single_index_no_polling },
+//    { "single-threaded watch", test_single_watch },
+//    { "single-threaded watch no polling", test_single_watch_no_polling },
+//    { "single-threaded validate", test_single_validate },
+//    { "single-threaded validate no polling", test_single_validate_no_polling },
+//    { "single-threaded provide", test_single_provide },
+//    { "single-threaded provide no polling", test_single_provide_no_polling },
+//    { "single-threaded watch myself", test_single_watch_myself },
+//    CU_TEST_INFO_NULL,
+//};
 
 static CU_TestInfo tests_performance[] = {
     { "dummy", test_perf_dummy },
     { "set", test_perf_set },
-    { "set(tcp)", test_perf_tcp_set },
-    { "set tree (tcp)", test_perf_tcp_set_tree },
-    { "set(tcp6)", test_perf_tcp6_set },
     { "set tree 50", test_perf_set_tree },
     { "set tree 5000", test_perf_set_tree_5000 },
     { "get", test_perf_get },
-    { "get(tcp)", test_perf_tcp_get },
-    { "get(tcp6)", test_perf_tcp6_get },
     { "get tree 50", test_perf_get_tree },
     { "get tree 5000", test_perf_get_tree_5000 },
     { "get null", test_perf_get_null },
@@ -4723,24 +4705,6 @@ static CU_TestInfo tests_performance[] = {
     { "watch", test_perf_watch },
     { "provide", test_perf_provide },
     { "large prune (10000 level 1 nodes, 20000 level 2 nodes)", test_perf_prune },
-    CU_TEST_INFO_NULL,
-};
-
-CU_TestInfo tests_rpc[] = {
-    { "unix req", test_unix_req_latency },
-    { "unix req/resp", test_unix_req_resp_latency },
-    { "unix con/disc", test_unix_con_disc_latency },
-    { "unix c/r/r/d", test_unix_con_req_resp_disc_latency},
-    { "tcp req", test_tcp_req_latency },
-    { "tcp req/resp", test_tcp_req_resp_latency },
-    { "tcp con/disc", test_tcp_con_disc_latency },
-    { "tcp c/r/r/d", test_tcp_con_req_resp_disc_latency},
-    { "rpc init", test_rpc_init },
-    { "rpc bind", test_rpc_bind },
-    { "rpc connect", test_rpc_connect },
-    { "rpc ping", test_rpc_ping },
-    { "rpc double bind", test_rpc_double_bind },
-    { "rpc perf", test_rpc_perf },
     CU_TEST_INFO_NULL,
 };
 
@@ -4754,14 +4718,6 @@ CU_TestInfo tests_lua[] = {
     { "lua load performance", test_lua_load_performance },
     { "lua get performance", test_lua_perf_get },
     { "lua set performance", test_lua_perf_set },
-#ifdef HAVE_LIBXML2
-    { "lua api set get", test_lua_api_set_get },
-    { "lua api search", test_lua_api_search },
-    { "lua load api memory usage", test_lua_load_api_memory },
-    { "lua load api performance", test_lua_load_api_performance },
-    { "lua api get performance", test_lua_api_perf_get },
-    { "lua api set performance", test_lua_api_perf_set },
-#endif
     CU_TEST_INFO_NULL,
 };
 #endif
@@ -4774,7 +4730,6 @@ static CU_SuiteInfo suites[] = {
     { "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
-    { "RPC", suite_init, suite_clean, tests_rpc },
 #ifdef HAVE_LUA
     { "LUA", suite_init, suite_clean, tests_lua },
 #endif
@@ -4784,9 +4739,8 @@ static CU_SuiteInfo suites[] = {
     { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
-    { "Apteryx API Proxy", suite_init, suite_clean, tests_api_proxy },
     { "Apteryx API Find", suite_init, suite_clean, tests_find },
-    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
+//    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
     { "Apteryx Performance", suite_init, suite_clean, tests_performance },
     CU_SUITE_INFO_NULL,
 };

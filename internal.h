@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <assert.h>
 #include <ctype.h>
 #include <string.h>
 #include <sys/time.h>
@@ -32,13 +33,16 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <glib.h>
-#include <protobuf-c/protobuf-c.h>
 #include "common.h"
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
 /* Default PID file */
 #define APTERYX_PID     "/var/run/apteryxd.pid"
+
+#define RPC_TIMEOUT_US 1000000
+#define RPC_CLIENT_TIMEOUT_US 1000000
+#define RPC_TEST_DELAY_MASK 0x7FF
 
 /* Mode */
 typedef enum
@@ -125,20 +129,6 @@ bool db_delete_no_lock (const char *path, uint64_t ts);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
-
-/* RPC API */
-#define RPC_TIMEOUT_US 1000000
-#define RPC_CLIENT_TIMEOUT_US 1000000
-typedef struct rpc_instance_s *rpc_instance;
-#define RPC_TEST_DELAY_MASK 0x7FF
-extern bool rpc_test_random_watch_delay;
-rpc_instance rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descriptor, int timeout);
-void rpc_shutdown (rpc_instance rpc);
-bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
-bool rpc_server_release (rpc_instance rpc, const char *guid);
-int rpc_server_process (rpc_instance rpc, bool poll);
-ProtobufCService *rpc_client_connect (rpc_instance rpc, const char *url);
-void rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep);
 
 /* Apteryx configuration */
 void config_init (void);

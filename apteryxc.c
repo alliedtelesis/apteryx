@@ -25,13 +25,16 @@
 #include <ctype.h>
 #include "internal.h"
 #include "apteryx.h"
-#include "apteryx.pb-c.h"
+//#include "apteryx.pb-c.h"
 
 /* Debug enabled */
 bool apteryx_debug = false;
 
 /* Run while true */
 static bool running = true;
+
+/* Statistics and debug */
+counters_t counters = {};
 
 /* Trap signals to exit cleanly */
 void
