@@ -419,6 +419,12 @@ resync ()
         }
     }
 
+    if (data)
+    {
+        apteryx_free_tree (data);
+        data = NULL;
+    }
+
     last_sync_local = local_ts;
     return true;
 }
