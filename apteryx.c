@@ -255,6 +255,8 @@ apteryx_init (bool debug_enabled)
     apteryx_debug |= debug_enabled;
     if (ref_count == 1)
     {
+        /* Iniitalise the shared memory */
+        shmem_init ();
         /* Initialise the database */
         db_init ();
         /* Initialise callbacks to clients */
@@ -321,6 +323,7 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
+    shmem_shutdown (true);
 //    rpc_shutdown (rpc);
 //    bound = false;
     DEBUG ("SHUTDOWN: Shutdown\n");
@@ -351,7 +354,7 @@ apteryx_prune (const char *path)
     ASSERT (path, return false, "PRUNE: Invalid parameters\n");
 
     /* Prune from database */
-    db_delete (path, UINT64_MAX);
+    db_prune (path);
 
     /* Success */
     return true;

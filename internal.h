@@ -118,16 +118,56 @@ typedef struct _counters_t
 /* GLobal counters */
 extern counters_t counters;
 
+/* Shared memory */
+#define APTERYX_SHM_KEY    0xda7aba5e
+void shmem_init (void);
+void shmem_shutdown (bool force);
+void shmem_set (const char *path, const char *value);
+char *shmem_get (const char *path);
+char *shmem_dump_table (void);
+GList *shmem_search (const char *path);
+void shmem_prune (const char *path);
+
+static inline bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
+{
+    shmem_set (path, (const char *)value);
+    return true;
+}
+
+static inline bool db_delete_no_lock (const char *path, uint64_t ts)
+{
+    shmem_set (path, NULL);
+    return true;
+}
+
+static inline bool db_get (const char *path, unsigned char **value, size_t *length)
+{
+    *((char **)value) = shmem_get (path);
+    if (*((char **)value) && length)
+        *length = strlen (*((char **)value)) + 1;
+    return (*value != NULL);
+}
+
+static inline GList *db_search (const char *path)
+{
+    return shmem_search (path);
+}
+
+static inline void db_prune (const char *path)
+{
+    return shmem_prune (path);
+}
+
 /* Database API */
 extern pthread_rwlock_t db_lock;
 void db_init (void);
 void db_shutdown (void);
 bool db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts);
-bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+//bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
 bool db_delete (const char *path, uint64_t ts);
-bool db_delete_no_lock (const char *path, uint64_t ts);
-bool db_get (const char *path, unsigned char **value, size_t *length);
-GList *db_search (const char *path);
+//bool db_delete_no_lock (const char *path, uint64_t ts);
+//bool db_get (const char *path, unsigned char **value, size_t *length);
+//GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
 
 /* Apteryx configuration */

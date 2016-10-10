@@ -201,14 +201,14 @@ db_init (void)
 void
 db_shutdown (void)
 {
-    GList *paths = db_search ("");
-    if (paths)
-    {
-        GList *iter;
-        for (iter = paths; iter; iter = g_list_next (iter))
-            printf ("DB ERROR: path still set %s\n", (char*)iter->data);
-        g_list_free_full (paths, g_free);
-    }
+//    GList *paths = db_search ("");
+//    if (paths)
+//    {
+//        GList *iter;
+//        for (iter = paths; iter; iter = g_list_next (iter))
+//            printf ("DB ERROR: path still set %s\n", (char*)iter->data);
+//        g_list_free_full (paths, g_free);
+//    }
 
     pthread_rwlock_wrlock (&db_lock);
     if (root)
@@ -264,38 +264,38 @@ db_timestamp (const char *path)
     return timestamp;
 }
 
-bool
-db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
-{
-    uint64_t timestamp = db_calculate_timestamp();
-
-    if (ts != UINT64_MAX && ts < db_timestamp_no_lock (path))
-        return false;
-
-    struct database_node *new_value = db_path_to_node (path, timestamp);
-    if (!new_value)
-    {
-        struct database_node *parent = db_parent_get (path);
-        const char *key = NULL;
-
-        if (strchr (path, '/') != NULL)
-            key = strrchr (path, '/') + 1;
-        else
-            key = path;
-        new_value = db_node_add (parent, key);
-        new_value->timestamp = timestamp;
-    }
-    g_free (new_value->value);
-    new_value->value = NULL;
-    if (length > 0)
-    {
-        new_value->value = g_malloc (length);
-        memcpy (new_value->value, value, length);
-    }
-    new_value->length = length;
-
-    return true;
-}
+//bool
+//db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
+//{
+//    uint64_t timestamp = db_calculate_timestamp();
+//
+//    if (ts != UINT64_MAX && ts < db_timestamp_no_lock (path))
+//        return false;
+//
+//    struct database_node *new_value = db_path_to_node (path, timestamp);
+//    if (!new_value)
+//    {
+//        struct database_node *parent = db_parent_get (path);
+//        const char *key = NULL;
+//
+//        if (strchr (path, '/') != NULL)
+//            key = strrchr (path, '/') + 1;
+//        else
+//            key = path;
+//        new_value = db_node_add (parent, key);
+//        new_value->timestamp = timestamp;
+//    }
+//    g_free (new_value->value);
+//    new_value->value = NULL;
+//    if (length > 0)
+//    {
+//        new_value->value = g_malloc (length);
+//        memcpy (new_value->value, value, length);
+//    }
+//    new_value->length = length;
+//
+//    return true;
+//}
 
 bool
 db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts)
@@ -307,19 +307,19 @@ db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts
     return ret;
 }
 
-bool
-db_delete_no_lock (const char *path, uint64_t ts)
-{
-    bool ret = false;
-    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
-    {
-        struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
-        if (node)
-            db_node_delete (node);
-        ret = true;
-    }
-    return ret;
-}
+//bool
+//db_delete_no_lock (const char *path, uint64_t ts)
+//{
+//    bool ret = false;
+//    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
+//    {
+//        struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
+//        if (node)
+//            db_node_delete (node);
+//        ret = true;
+//    }
+//    return ret;
+//}
 
 bool
 db_delete (const char *path, uint64_t ts)
@@ -331,47 +331,47 @@ db_delete (const char *path, uint64_t ts)
     return ret;
 }
 
-bool
-db_get (const char *path, unsigned char **value, size_t *length)
-{
-    pthread_rwlock_rdlock (&db_lock);
-    struct database_node *node = db_path_to_node (path, 0);
-    if (!node || !node->value)
-    {
-        pthread_rwlock_unlock (&db_lock);
-        return false;
-    }
-    *value = g_malloc (node->length);
-    memcpy (*value, node->value, node->length);
-    *length = node->length;
-    pthread_rwlock_unlock (&db_lock);
-    return true;
-}
+//bool
+//db_get (const char *path, unsigned char **value, size_t *length)
+//{
+//    pthread_rwlock_rdlock (&db_lock);
+//    struct database_node *node = db_path_to_node (path, 0);
+//    if (!node || !node->value)
+//    {
+//        pthread_rwlock_unlock (&db_lock);
+//        return false;
+//    }
+//    *value = g_malloc (node->length);
+//    memcpy (*value, node->value, node->length);
+//    *length = node->length;
+//    pthread_rwlock_unlock (&db_lock);
+//    return true;
+//}
 
-GList *
-db_search (const char *path)
-{
-    bool end_with_slash = strlen (path) > 0 ? path[strlen (path)-1] == '/' : false;
-
-    pthread_rwlock_rdlock (&db_lock);
-    GList *children, *iter, *values = NULL;
-    struct database_node *node = db_path_to_node (path, 0);
-    if (node == NULL || node->children == NULL)
-    {
-        pthread_rwlock_unlock (&db_lock);
-        return NULL;
-    }
-    children = g_hash_table_get_values (node->children);
-    for (iter = children; iter; iter = g_list_next (iter))
-    {
-        values = g_list_prepend (values,
-                                 g_strdup_printf("%s%s%s", path, end_with_slash ? "" : "/",
-                                                 ((struct database_node*)iter->data)->key));
-    }
-    g_list_free (children);
-    pthread_rwlock_unlock (&db_lock);
-    return values;
-}
+//GList *
+//db_search (const char *path)
+//{
+//    bool end_with_slash = strlen (path) > 0 ? path[strlen (path)-1] == '/' : false;
+//
+//    pthread_rwlock_rdlock (&db_lock);
+//    GList *children, *iter, *values = NULL;
+//    struct database_node *node = db_path_to_node (path, 0);
+//    if (node == NULL || node->children == NULL)
+//    {
+//        pthread_rwlock_unlock (&db_lock);
+//        return NULL;
+//    }
+//    children = g_hash_table_get_values (node->children);
+//    for (iter = children; iter; iter = g_list_next (iter))
+//    {
+//        values = g_list_prepend (values,
+//                                 g_strdup_printf("%s%s%s", path, end_with_slash ? "" : "/",
+//                                                 ((struct database_node*)iter->data)->key));
+//    }
+//    g_list_free (children);
+//    pthread_rwlock_unlock (&db_lock);
+//    return values;
+//}
 
 #ifdef TEST
 #define TEST_DB_MAX_ENTRIES 10000
@@ -768,8 +768,8 @@ CU_TestInfo tests_database[] = {
     { "init/shutdown", test_db_init_shutdown },
     { "add/delete", test_db_add_delete },
     { "add/delete performance", test_db_add_delete_perf },
-    { "large value", test_db_large_value },
-    { "long path", test_db_long_path },
+//    { "large value", test_db_large_value },
+//    { "long path", test_db_long_path },
     { "path performance", test_db_path_perf },
     { "path exists perf", test_db_path_exists_perf },
     { "get", test_db_get },
