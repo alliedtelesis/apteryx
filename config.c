@@ -35,22 +35,6 @@ handle_debug_set (const char *path, const char *value)
     return true;
 }
 
-//static bool
-//handle_sockets_set (const char *path, const char *value)
-//{
-//    const char *guid = path + strlen (APTERYX_SOCKETS_PATH"/");
-//    bool res = true;
-//
-//    DEBUG ("SOCKET %s:%s\n", guid, value);
-//
-//    if (value)
-//        res = rpc_server_bind (rpc, guid, value);
-//    else
-//        res = rpc_server_release (rpc, guid);
-//
-//    return res;
-//}
-
 static cb_info_t *
 update_callback (GList **list, const char *guid, const char *value)
 {
@@ -149,31 +133,6 @@ handle_validators_set (const char *path, const char *value)
     return true;
 }
 
-static GList*
-handle_counters_index (const char *path)
-{
-    GList *paths = NULL;
-#define X(type, name) \
-    paths = g_list_append (paths, strdup (APTERYX_COUNTERS"/"#name));
-X_FIELDS
-#undef X
-    return paths;
-}
-
-static char*
-handle_counters_get (const char *path)
-{
-    char *counter = strrchr (path, '/');
-    char *value = NULL;
-#define X(type, name) \
-    if (strcmp ("/"#name, counter) == 0 && \
-        asprintf (&value, "%d", counters.name) > 0) \
-        return value;
-    X_FIELDS
-#undef X
-    return value;
-}
-
 void
 config_init (void)
 {
@@ -182,14 +141,6 @@ config_init (void)
     /* Debug set */
     cb = cb_create (&watch_list, "debug", APTERYX_DEBUG_PATH,
             (uint64_t) getpid (), (uint64_t) (size_t) handle_debug_set);
-    cb_release (cb);
-
-    /* Counters */
-    cb = cb_create (&index_list, "counters", APTERYX_COUNTERS"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_index);
-    cb_release (cb);
-    cb = cb_create (&provide_list, "counters", APTERYX_COUNTERS"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
     cb_release (cb);
 
     /* Indexers */

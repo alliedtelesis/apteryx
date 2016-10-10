@@ -33,7 +33,6 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <glib.h>
-#include "common.h"
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
@@ -59,6 +58,86 @@ typedef enum
     MODE_TEST,
 } APTERYX_MODE;
 
+/* Debug */
+extern bool apteryx_debug;
+
+static inline uint64_t
+get_time_us (void)
+{
+    struct timeval tv;
+    gettimeofday (&tv, NULL);
+    return (tv.tv_sec * (uint64_t) 1000000 + tv.tv_usec);
+}
+
+static inline uint32_t htol32 (uint32_t v)
+{
+    if (htons(1) == 1)
+        return ((v>>24)&0xff) | ((v>>8)&0xff00) | ((v<<8)&0xff0000) | ((v << 24)&0xff000000);
+    else
+        return v;
+}
+#define ltoh32 htol32
+
+#define DEBUG(fmt, args...) \
+    if (apteryx_debug) \
+    { \
+        syslog (LOG_DEBUG, fmt, ## args); \
+        printf ("[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+        printf (fmt, ## args); \
+    }
+
+#define NOTICE(fmt, args...) \
+    { \
+        syslog (LOG_NOTICE, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "NOTICE: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+    }
+
+#define ERROR(fmt, args...) \
+    { \
+        syslog (LOG_ERR, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ERROR: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+    }
+
+#define ASSERT(assertion, rcode, fmt, args...) \
+    if (!(assertion)) \
+    { \
+        syslog (LOG_ERR, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ASSERT: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+        rcode; \
+    }
+
+#define FATAL(fmt, args...) \
+    { \
+        syslog (LOG_CRIT, fmt, ## args); \
+        fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+        fprintf (stderr, "ERROR: "); \
+        fprintf (stderr, fmt, ## args); \
+        running = false; \
+    }
+
+#define CRITICAL(fmt, args...) \
+    { \
+        syslog (LOG_CRIT, fmt, ## args); \
+        fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+        fprintf (stderr, "ERROR: "); \
+        fprintf (stderr, fmt, ## args); \
+    }
+
 /* Callback */
 typedef struct _cb_info_t
 {
@@ -75,99 +154,17 @@ typedef struct _cb_info_t
     uint32_t count;
 } cb_info_t;
 
-#define X_FIELDS \
-    X(uint32_t, set) \
-    X(uint32_t, set_invalid) \
-    X(uint32_t, get) \
-    X(uint32_t, get_invalid) \
-    X(uint32_t, search) \
-    X(uint32_t, search_invalid) \
-    X(uint32_t, traverse) \
-    X(uint32_t, traverse_invalid) \
-    X(uint32_t, indexed) \
-    X(uint32_t, indexed_no_handler) \
-    X(uint32_t, indexed_timeout) \
-    X(uint32_t, watched) \
-    X(uint32_t, watched_no_handler) \
-    X(uint32_t, watched_timeout) \
-    X(uint32_t, validated) \
-    X(uint32_t, validated_no_handler) \
-    X(uint32_t, validated_timeout) \
-    X(uint32_t, provided) \
-    X(uint32_t, provided_no_handler) \
-    X(uint32_t, provided_timeout) \
-    X(uint32_t, proxied) \
-    X(uint32_t, proxied_no_handler) \
-    X(uint32_t, proxied_timeout) \
-    X(uint32_t, prune) \
-    X(uint32_t, prune_invalid) \
-    X(uint32_t, find) \
-    X(uint32_t, find_invalid) \
-    X(uint32_t, timestamp) \
-    X(uint32_t, timestamp_invalid)
-
-/* Counters */
-typedef struct _counters_t
-{
-#define X(type, name) type name;
-    X_FIELDS
-#undef X
-} counters_t;
-#define INC_COUNTER(c) (void)g_atomic_int_inc(&c);
-
-/* GLobal counters */
-extern counters_t counters;
-
-/* Shared memory */
-#define APTERYX_SHM_KEY    0xda7aba5e
-void shmem_init (void);
-void shmem_shutdown (bool force);
-void shmem_set (const char *path, const char *value);
-char *shmem_get (const char *path);
-char *shmem_dump_table (void);
-GList *shmem_search (const char *path);
-void shmem_prune (const char *path);
-
-static inline bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
-{
-    shmem_set (path, (const char *)value);
-    return true;
-}
-
-static inline bool db_delete_no_lock (const char *path, uint64_t ts)
-{
-    shmem_set (path, NULL);
-    return true;
-}
-
-static inline bool db_get (const char *path, unsigned char **value, size_t *length)
-{
-    *((char **)value) = shmem_get (path);
-    if (*((char **)value) && length)
-        *length = strlen (*((char **)value)) + 1;
-    return (*value != NULL);
-}
-
-static inline GList *db_search (const char *path)
-{
-    return shmem_search (path);
-}
-
-static inline void db_prune (const char *path)
-{
-    return shmem_prune (path);
-}
-
 /* Database API */
 extern pthread_rwlock_t db_lock;
 void db_init (void);
-void db_shutdown (void);
+void db_shutdown (bool force);
 bool db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts);
-//bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
 bool db_delete (const char *path, uint64_t ts);
-//bool db_delete_no_lock (const char *path, uint64_t ts);
-//bool db_get (const char *path, unsigned char **value, size_t *length);
-//GList *db_search (const char *path);
+bool db_delete_no_lock (const char *path, uint64_t ts);
+bool db_get (const char *path, unsigned char **value, size_t *length);
+GList *db_search (const char *path);
+bool db_prune (const char *path);
 uint64_t db_timestamp (const char *path);
 
 /* Apteryx configuration */
@@ -192,19 +189,6 @@ cb_info_t * cb_find (GList **list, const char *guid);
 #define CB_PATH_MATCH_PART  (1<<5)
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
-
-/* Schema */
-typedef void sch_instance;
-typedef void sch_node;
-sch_instance* sch_load (const char *path);
-void sch_free (sch_instance *schema);
-sch_node* sch_lookup (sch_instance *schema, const char *path);
-bool sch_is_leaf (sch_node *node);
-bool sch_is_readable (sch_node *node);
-bool sch_is_writable (sch_node *node);
-char* sch_name (sch_node *node);
-char* sch_translate_to (sch_node *node, char *value);
-char* sch_translate_from (sch_node *node, char *value);
 
 /* Tests */
 void run_unit_tests (const char *filter);

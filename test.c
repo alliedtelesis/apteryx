@@ -868,7 +868,7 @@ test_cas_int ()
     CU_ASSERT (errno == -EBUSY);
     CU_ASSERT (apteryx_get_int (path, "ifindex") == 3);
 
-    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_set_string (path, "ifindex", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 

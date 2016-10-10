@@ -18,23 +18,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <ctype.h>
 #include "internal.h"
 #include "apteryx.h"
-//#include "apteryx.pb-c.h"
 
 /* Debug enabled */
 bool apteryx_debug = false;
 
 /* Run while true */
 static bool running = true;
-
-/* Statistics and debug */
-counters_t counters = {};
 
 /* Trap signals to exit cleanly */
 void
