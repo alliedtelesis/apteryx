@@ -36,48 +36,8 @@
 
 /* Configuration */
 bool apteryx_debug = false;                      /* Debug enabled */
-static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
-
-static const char *
-validate_path (const char *path, char **url)
-{
-    /* Database path or none at all */
-    if (path && path[0] == '/')
-    {
-        /* Use the default URL */
-        if (url)
-            *url = strdup(default_url);
-        return path;
-    }
-    /* Check for a full URL */
-    else if (path &&
-      (strncmp (path, "unix://", 7) == 0 ||
-       strncmp (path, "tcp://", 6) == 0))
-    {
-        if (url)
-            *url = strdup (path);
-        char *tmp = strstr (path + 6, ":/");
-        if (!tmp)
-        {
-            ERROR ("Invalid path (%s)!\n", path);
-            return NULL;
-        }
-        path = tmp + 1;
-        tmp = strstr (*url + 6, ":/");
-        if (tmp)
-        {
-            tmp[0] = '\0';
-        }
-        return path;
-    }
-    else if (path)
-    {
-        ERROR ("Invalid path (%s)!\n", path);
-    }
-    return NULL;
-}
 
 bool
 apteryx_init (bool debug_enabled)
@@ -97,38 +57,6 @@ apteryx_init (bool debug_enabled)
         /* Configuration Set/Get */
         config_init ();
     }
-//    if (ref_count == 1)
-//    {
-//        char * uri = NULL;
-//
-//        /* Create RPC instance */
-//        rpc = rpc_init ((ProtobufCService *)&apteryx_client_service, &apteryx__server__descriptor, RPC_CLIENT_TIMEOUT_US);
-//        if (rpc == NULL)
-//        {
-//            ERROR ("Init: Failed to initialise RPC service\n");
-//            ref_count--;
-//            pthread_mutex_unlock (&lock);
-//            return false;
-//        }
-//
-//        /* Only need to bind if we have previously added callbacks */
-//        if (have_callbacks)
-//        {
-//            /* Bind to the default uri for this client */
-//            if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
-//                    || !rpc_server_bind (rpc, uri, uri))
-//            {
-//                ERROR ("Failed to bind uri %s\n", uri);
-//                ref_count--;
-//                pthread_mutex_unlock (&lock);
-//                free ((void*) uri);
-//                return false;
-//            }
-//            DEBUG ("Bound to uri %s\n", uri);
-//            bound = true;
-//            free ((void*) uri);
-//        }
-//    }
     pthread_mutex_unlock (&lock);
 
     /* Ready to go */
@@ -156,8 +84,8 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
-    db_shutdown (false);
     rpc_shutdown (false);
+    db_shutdown (false);
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
 }
@@ -798,16 +726,6 @@ apteryx_search (const char *path)
 
     DEBUG ("SEARCH: %s\n", path);
 
-    /* Check path */
-    path = validate_path (path, &url);
-    if (!path)
-    {
-        ERROR ("SEARCH: invalid root (%s)!\n", path);
-        free (url);
-        assert (!apteryx_debug || path);
-        return false;
-    }
-
     /* Validate path */
     if (!path ||
         strcmp (path, "/") == 0 ||
@@ -1078,9 +996,6 @@ apteryx_find_tree (GNode *root)
 //    DEBUG ("FIND_TREE: %s\n", path);
 //
 //    /* Check path */
-//    path = validate_path (path, &url);
-//
-//    /* Validate path */
 //    if (!path ||
 //        strcmp (path, "/") == 0 ||
 //        strcmp (path, "/*") == 0 ||

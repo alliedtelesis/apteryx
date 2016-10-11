@@ -1,8 +1,8 @@
 # Makefile for Apteryx
 #
 # Unit Tests (make test FILTER): e.g make test Performance
-# Requires GLib and CUnit for Unit Testing.
-# sudo apt-get install libglib2.0-dev libcunit1-dev libprotobuf-c0-dev protobuf-c-compiler liblua5.2-dev
+# Requires GLib. CUnit for Unit Testing. Lua for lua bindings.
+# sudo apt-get install libglib2.0-dev libcunit1-dev liblua5.2-dev
 #
 # TEST_WRAPPER="G_SLICE=always-malloc valgrind --leak-check=full" make test
 # TEST_WRAPPER="gdb" make test
