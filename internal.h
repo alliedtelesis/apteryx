@@ -166,6 +166,8 @@ bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 bool db_prune (const char *path);
 uint64_t db_timestamp (const char *path);
+bool db_watch (const char *path, size_t cb);
+bool db_unwatch (const char *path, size_t cb);
 
 /* Apteryx configuration */
 void config_init (void);

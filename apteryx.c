@@ -1863,13 +1863,15 @@ apteryx_unindex (const char *path, apteryx_index_callback cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+    return db_watch (path, (size_t) cb);
+    //return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
 bool
 apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 {
-    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+    return db_unwatch (path, (size_t) cb);
+    //return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
 bool
