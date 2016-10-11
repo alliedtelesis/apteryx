@@ -19,7 +19,6 @@
  */
 #include "internal.h"
 #include <semaphore.h>
-#include "apteryx.h"
 #include "rszshm.h"
 #ifdef TEST
 #include <CUnit/CUnit.h>
@@ -50,9 +49,6 @@ typedef struct db_node_t
     uint8_t value[MAX_VALUE];
     db_hash_t children;
     unsigned int removing;
-
-    /* Callback */
-    size_t cb;
 } db_node_t;
 
 /* Database structure */
@@ -478,16 +474,6 @@ db_add_no_lock (const char *path, const unsigned char *value, size_t length, uin
     {
         //new_value->value = g_malloc (length);
         memcpy (new_value->value, value, length);
-        if (new_value->cb != 0)
-        {
-            apteryx_watch_callback cb = (apteryx_watch_callback) new_value->cb;
-            uint64_t id = getpid ();
-
-            DEBUG ("WATCH \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                            path, id, new_value->cb);
-
-            cb (path, (char *)value);
-        }
     }
     new_value->length = length;
 
@@ -597,50 +583,6 @@ bool
 db_prune (const char *path)
 {
     return db_delete (path, UINT64_MAX);
-}
-
-bool
-db_watch (const char *path, size_t cb)
-{
-    if (!db)
-        return false;
-
-    pthread_rwlock_wrlock (&db->rwlock);
-    db_node_t *new_value = db_path_to_node (path, 0);
-    if (!new_value)
-    {
-        db_node_t *parent = db_parent_get (path);
-        const char *key = NULL;
-
-        if (strchr (path, '/') != NULL)
-            key = strrchr (path, '/') + 1;
-        else
-            key = path;
-        new_value = db_node_add (parent, key);
-        new_value->cb = cb;
-        new_value->timestamp = 0;
-    }
-    else
-    {
-        new_value->cb = cb;
-    }
-    pthread_rwlock_unlock (&db->rwlock);
-    return true;
-}
-
-bool
-db_unwatch (const char *path, size_t cb)
-{
-    db_node_t *node = db_path_to_node (path, 0);
-    if (node)
-    {
-        node->cb = 0;
-        if (node->value[0] == '\0')
-        {
-            db_node_delete (node);
-        }
-    }
-    return true;
 }
 
 #ifdef TEST

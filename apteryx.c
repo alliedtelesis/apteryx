@@ -39,13 +39,6 @@ bool apteryx_debug = false;                      /* Debug enabled */
 static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
-//static rpc_instance rpc = NULL;         /* RPC Service */
-//static bool bound = false;              /* Do we have a listen socket open */
-//static bool have_callbacks = false;     /* Have we ever registered any callbacks */
-//
-//static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
-//static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
-//static int pending_watch_count = 0;
 
 static const char *
 validate_path (const char *path, char **url)
@@ -86,166 +79,6 @@ validate_path (const char *path, char **url)
     return NULL;
 }
 
-#if 0
-/* Callback for indexed items */
-static void
-apteryx__index (Apteryx__Client_Service *service,
-                  const Apteryx__Index *index,
-                  Apteryx__SearchResult_Closure closure, void *closure_data)
-{
-    Apteryx__SearchResult result = APTERYX__SEARCH_RESULT__INIT;
-    apteryx_index_callback cb = (apteryx_index_callback) (long) index->cb;
-    GList *results = NULL;
-    GList *iter = NULL;
-    int i;
-    (void) service;
-
-    DEBUG ("INDEX CB: \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-            index->path, index->id, index->cb);
-
-    /* Call the callback */
-    if (cb)
-        results = cb (index->path);
-
-    /* Return result */
-    result.n_paths = g_list_length (results);
-    if (result.n_paths > 0)
-    {
-        result.paths = (char **) malloc (result.n_paths * sizeof (char *));
-        for (i = 0, iter = results; iter; iter = g_list_next (iter), i++)
-        {
-            DEBUG ("         = %s\n", (char *) iter->data);
-            result.paths[i] = (char *) iter->data;
-        }
-    }
-    closure (&result, closure_data);
-    g_list_free_full (results, free);
-    if (result.paths)
-        free (result.paths);
-    return;
-}
-
-/* Callback for watched items */
-static void
-apteryx__watch (Apteryx__Client_Service *service,
-                const Apteryx__Watch *watch,
-                Apteryx__NoResult_Closure closure, void *closure_data)
-{
-    (void) service;
-    char *value = NULL;
-
-    DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-           watch->path, watch->value,
-           watch->id, watch->cb);
-
-    if (watch->value && (watch->value[0] != '\0'))
-    {
-        value = watch->value;
-    }
-
-    pthread_mutex_lock (&pending_watches_lock);
-    ++pending_watch_count;
-    pthread_mutex_unlock (&pending_watches_lock);
-
-    /* Call callback */
-    if (watch->cb)
-        ((apteryx_watch_callback) (long) watch->cb) (watch->path, value);
-    pthread_mutex_lock (&pending_watches_lock);
-    if (--pending_watch_count == 0)
-        pthread_cond_signal(&no_pending_watches);
-    pthread_mutex_unlock (&pending_watches_lock);
-
-    return;
-}
-
-/* Callback for validated items */
-static void
-apteryx__validate (Apteryx__Client_Service *service,
-                const Apteryx__Validate *validate,
-                Apteryx__ValidateResult_Closure closure, void *closure_data)
-{
-    Apteryx__ValidateResult result = APTERYX__VALIDATE_RESULT__INIT;
-    (void) service;
-    char *value = NULL;
-
-    DEBUG ("VALIDATE CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-           validate->path, validate->value,
-           validate->id, validate->cb);
-
-    if (!validate->cb)
-    {
-        result.result = 0;
-        goto exit;
-    }
-
-    /* We want to wait for all pending watches to be processed */
-    pthread_mutex_lock (&pending_watches_lock);
-    if (pending_watch_count)
-    {
-        pthread_cond_wait (&no_pending_watches, &pending_watches_lock);
-        pthread_mutex_unlock (&pending_watches_lock);
-    }
-    else
-        pthread_mutex_unlock (&pending_watches_lock);
-
-
-    if (validate->value && (validate->value[0] != '\0'))
-    {
-        value = validate->value;
-    }
-    result.result = ((apteryx_validate_callback)(size_t)validate->cb) (validate->path, value);
-
-exit:
-    /* Return result */
-    closure (&result, closure_data);
-    return;
-}
-
-/* Callback for provided items */
-static void
-apteryx__provide (Apteryx__Client_Service *service,
-                  const Apteryx__Provide *provide,
-                  Apteryx__GetResult_Closure closure, void *closure_data)
-{
-    Apteryx__GetResult result = APTERYX__GET_RESULT__INIT;
-    apteryx_provide_callback cb = (apteryx_provide_callback) (long) provide->cb;
-    char *value = NULL;
-    (void) service;
-
-    DEBUG ("PROVIDE CB: \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-           provide->path, provide->id, provide->cb);
-
-    /* Call the callback */
-    if (cb)
-        value = cb (provide->path);
-
-    /* Return result */
-    result.value = value;
-    closure (&result, closure_data);
-    if (value)
-        free (value);
-    return;
-}
-
-static Apteryx__Client_Service apteryx_client_service = APTERYX__CLIENT__INIT (apteryx__);
-
-static void
-handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
-{
-    if (result == NULL)
-    {
-        *(protobuf_c_boolean *) closure_data = false;
-        errno = -ETIMEDOUT;
-    }
-    else
-    {
-        *(protobuf_c_boolean *) closure_data = (result->result == 0);
-        if (result->result)
-            errno = result->result;
-    }
-}
-#endif
-
 bool
 apteryx_init (bool debug_enabled)
 {
@@ -257,6 +90,8 @@ apteryx_init (bool debug_enabled)
     {
         /* Initialise the database */
         db_init ();
+        /* Initialise the inter-client rpc */
+        rpc_init ();
         /* Initialise callbacks to clients */
         cb_init ();
         /* Configuration Set/Get */
@@ -322,8 +157,7 @@ apteryx_shutdown (void)
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
     db_shutdown (false);
-//    rpc_shutdown (rpc);
-//    bound = false;
+    rpc_shutdown (false);
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
 }
@@ -441,81 +275,6 @@ apteryx_dump (const char *path, FILE *fp)
     return true;
 }
 
-static int
-validate_set (const char *path, const char *value)
-{
-    GList *validators = NULL;
-    GList *iter = NULL;
-    int32_t result = 0;
-
-    /* Retrieve a list of validators for this path */
-    validators = cb_match (&validation_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
-    if (!validators)
-        return 0;
-
-    /* Call each validator */
-    for (iter = validators; iter; iter = g_list_next (iter))
-    {
-        cb_info_t *validator = iter->data;
-
-        DEBUG ("VALIDATE CB %s = %s (0x%"PRIx64",0x%"PRIx64")\n",
-                 validator->path, value, validator->id, validator->cb);
-
-        apteryx_validate_callback cb = (apteryx_validate_callback) (long) validator->cb;
-        result = cb (path, value);
-        if (result < 0)
-        {
-            DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n",
-                    (char *)path, (char*)value, validator->id, result);
-            break;
-        }
-    }
-    g_list_free_full (validators, (GDestroyNotify) cb_release);
-
-    /* This one is fine, but lock is still held */
-    return result < 0 ? result : 1;
-}
-
-static void
-notify_watchers (const char *path)
-{
-    GList *watchers = NULL;
-    GList *iter = NULL;
-    char *value = NULL;
-    size_t vsize;
-
-    /* Retrieve a list of watchers for this path */
-    watchers = cb_match (&watch_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
-    if (!watchers)
-        return;
-
-    /* Find the new value for this path */
-    value = NULL;
-    vsize = 0;
-    db_get (path, (unsigned char**)&value, &vsize);
-
-    /* Call each watcher */
-    for (iter = watchers; iter; iter = g_list_next (iter))
-    {
-        cb_info_t *watcher = iter->data;
-
-        DEBUG ("WATCH CB %s = %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
-                path, value, watcher->path, watcher->id, watcher->cb, watcher->uri);
-
-        apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
-        DEBUG ("WATCH \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                watcher->path, watcher->id, watcher->cb);
-        cb (path, value);
-    }
-    g_list_free_full (watchers, (GDestroyNotify) cb_release);
-
-    /* Free memory if allocated */
-    if (value)
-        g_free (value);
-}
-
 bool
 apteryx_cas (const char *path, const char *value, uint64_t ts)
 {
@@ -531,7 +290,7 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
         value = NULL;
 
     /* Validate first */
-    validation_result = validate_set (path, value);
+    validation_result = rpc_validate_set (path, value);
     if (validation_result < 0)
     {
         DEBUG ("SET: %s = %s refused by validate\n", path, value);
@@ -551,7 +310,7 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
     }
 
     /* Notify watchers */
-    notify_watchers (path);
+    rpc_notify_watchers (path, value);
 
     return db_result;
 
@@ -700,38 +459,6 @@ apteryx_set_int (const char *path, const char *key, int32_t value)
 //    }
 //}
 
-static char *
-provide_get (const char *path)
-{
-    GList *providers = NULL;
-    char *value = NULL;
-    GList *iter = NULL;
-
-    /* Retrieve a list of providers for this path */
-    providers = cb_match (&provide_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
-    if (!providers)
-        return 0;
-
-    /* Find the first good provider */
-    for (iter = providers; iter; iter = g_list_next (iter))
-    {
-        cb_info_t *provider = iter->data;
-
-        DEBUG ("PROVIDE CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-               provider->path, provider->id, provider->cb);
-
-        apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->cb;
-        DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                                   provider->path, provider->id, provider->cb);
-        value = cb (path);
-        break;
-    }
-    g_list_free_full (providers, (GDestroyNotify) cb_release);
-
-    return value;
-}
-
 char *
 apteryx_get (const char *path)
 {
@@ -748,7 +475,7 @@ apteryx_get (const char *path)
         if (!db_get (path, (unsigned char**)&value, &vsize))
         {
             /* Provide third */
-            if ((value = provide_get (path)) == NULL)
+            if ((value = rpc_provide_get (path)) == NULL)
             {
                 DEBUG ("GET: not in database or provided or proxied\n");
             }
@@ -1161,41 +888,6 @@ path_to_node (GNode* root, const char *path, const char *value)
 //    }
 //}
 
-/* This function returns true if indexers were called (list may still be NULL) */
-static bool
-index_get (const char *path, GList **result)
-{
-    GList *indexers = NULL;
-    GList *results = NULL;
-    GList *iter = NULL;
-
-    /* Retrieve a list of providers for this path */
-    indexers = cb_match (&index_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
-    if (!indexers)
-    {
-        *result = NULL;
-        return false;
-    }
-
-    /* Find the first good indexer */
-    for (iter = indexers; iter; iter = g_list_next (iter))
-    {
-        cb_info_t *indexer = iter->data;
-
-        DEBUG ("INDEX CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                indexer->path, indexer->id, indexer->cb);
-
-        apteryx_index_callback cb = (apteryx_index_callback) (long) indexer->cb;
-        results = cb (path);
-        break;
-    }
-    g_list_free_full (indexers, (GDestroyNotify) cb_release);
-
-    *result = results;
-    return true;
-}
-
 static void
 _traverse_paths (GNode* root, const char *path)
 {
@@ -1207,7 +899,7 @@ _traverse_paths (GNode* root, const char *path)
     if (!db_get (path, (unsigned char**)&value, &vsize))
     {
         /* Provide next */
-        value = provide_get (path);
+        value = rpc_provide_get (path);
     }
     if (value)
     {
@@ -1226,7 +918,8 @@ _traverse_paths (GNode* root, const char *path)
 
     /* Check for children - index first */
     char *path_s = g_strdup_printf ("%s/", path);
-    if (!index_get (path_s, &children))
+    children = rpc_index_search (path_s);
+    if (!children)
     {
         /* Search database next */
         children = db_search (path_s);
@@ -1431,7 +1124,8 @@ apteryx_search (const char *path)
     if (!results)
     {
         /* Indexers second */
-        if (index_get (path, &results) == true)
+        results = rpc_index_search (path);
+        if (results)
         {
             DEBUG (" (index result:)\n");
         }
@@ -1577,7 +1271,8 @@ search_path (const char *path)
     if (!results)
     {
         /* Indexers second */
-        if (index_get (path, &results) == true)
+        results = rpc_index_search (path);
+        if (results)
         {
             DEBUG (" (index result:)\n");
         }
@@ -1627,7 +1322,7 @@ get_value (const char *path)
         if (!db_get (path, (unsigned char**)&value, &vsize))
         {
             /* Provide third */
-            if ((value = provide_get (path)) == NULL)
+            if ((value = rpc_provide_get (path)) == NULL)
             {
                 DEBUG ("GET: not in database or provided or proxied\n");
             }
@@ -1863,15 +1558,13 @@ apteryx_unindex (const char *path, apteryx_index_callback cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    return db_watch (path, (size_t) cb);
-    //return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
 bool
 apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 {
-    return db_unwatch (path, (size_t) cb);
-    //return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
 
 bool

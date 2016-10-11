@@ -169,6 +169,14 @@ uint64_t db_timestamp (const char *path);
 bool db_watch (const char *path, size_t cb);
 bool db_unwatch (const char *path, size_t cb);
 
+/* RPC API */
+bool rpc_init (void);
+void rpc_shutdown (bool force);
+GList* rpc_index_search (const char *path);
+void rpc_notify_watchers (const char *path, const char *value);
+int rpc_validate_set (const char *path, const char *value);
+char* rpc_provide_get (const char *path);
+
 /* Apteryx configuration */
 void config_init (void);
 

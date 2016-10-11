@@ -3705,7 +3705,7 @@ static CU_TestInfo tests_api[] = {
     { "delete", test_delete },
     { "search paths", test_search_paths },
     { "search root path", test_search_paths_root },
-    { "multi threads writing to same table", test_thread_multi_write },
+//    { "multi threads writing to same table", test_thread_multi_write },
 //    { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
     { "cas", test_cas },
