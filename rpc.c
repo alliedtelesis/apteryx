@@ -159,3 +159,39 @@ rpc_provide_get (const char *path)
 
     return value;
 }
+
+bool
+rpc_add_callback (const char *type, const char *path, void *cb)
+{
+    size_t pid = getpid ();
+    char _path[PATH_MAX];
+
+    ASSERT (type, return false, "ADD_CB: Invalid type\n");
+    ASSERT (path, return false, "ADD_CB: Invalid path\n");
+    ASSERT (cb, return false, "ADD_CB: Invalid callback\n");
+
+    if (sprintf (_path, "%s/%zX-%zX-%zX",
+            type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
+        return false;
+    if (!apteryx_set (_path, path))
+        return false;
+    return true;
+}
+
+bool
+rpc_delete_callback (const char *type, const char *path,  void *cb)
+{
+    char _path[PATH_MAX];
+
+    ASSERT (type, return false, "DEL_CB: Invalid type\n");
+    ASSERT (path, return false, "DEL_CB: Invalid path\n");
+    ASSERT (cb, return false, "DEL_CB: Invalid callback\n");
+
+    if (sprintf (_path, "%s/%zX-%zX-%zX",
+            type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
+        return false;
+    if (!apteryx_set (_path, NULL))
+        return false;
+    return true;
+}
+

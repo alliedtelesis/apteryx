@@ -176,6 +176,8 @@ GList* rpc_index_search (const char *path);
 void rpc_notify_watchers (const char *path, const char *value);
 int rpc_validate_set (const char *path, const char *value);
 char* rpc_provide_get (const char *path);
+bool rpc_add_callback (const char *type, const char *path, void *cb);
+bool rpc_delete_callback (const char *type, const char *path, void *cb);
 
 /* Apteryx configuration */
 void config_init (void);
