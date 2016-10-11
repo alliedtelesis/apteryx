@@ -79,6 +79,15 @@ struct rpc_work_s {
     ProtobufCMessage *message;
 };
 
+static inline uint32_t htol32 (uint32_t v)
+{
+    if (htons(1) == 1)
+        return ((v>>24)&0xff) | ((v>>8)&0xff00) | ((v<<8)&0xff0000) | ((v << 24)&0xff000000);
+    else
+        return v;
+}
+#define ltoh32 htol32
+
 static inline void unpack_header (unsigned char *b, rpc_message_t *h)
 {
     h->method_index = (ltoh32 (((uint32_t*)b)[0]));
