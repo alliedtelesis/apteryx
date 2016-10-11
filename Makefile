@@ -31,19 +31,15 @@ EXTRA_CFLAGS += -DHAVE_LUA $(shell $(PKG_CONFIG) --cflags $(LUAVERSION))
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION)) -ldl
 endif
 endif
-ifneq ($(HAVE_XML2),no)
-EXTRA_CFLAGS += -DHAVE_LIBXML2 $(shell $(PKG_CONFIG) --cflags libxml-2.0)
-EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs libxml-2.0)
-endif
 ifneq ($(HAVE_TESTS),no)
 EXTRA_CSRC += test.c
 EXTRA_CFLAGS += -DTEST
 EXTRA_LDFLAGS += -lcunit
 endif
 
-all: libapteryx.so apteryx apteryxd apteryx-sync alfred
+all: libapteryx.so apteryx apteryxd
 
-libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o schema.o lua.o
+libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 	@ln -s -f $@ apteryx.so
@@ -63,14 +59,6 @@ apteryx: apteryxc.c database.c callbacks.c libapteryx.so $(EXTRA_CSRC)
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
-apteryx-sync: syncer.c libapteryx.so
-	@echo "Building $@"
-	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -L. -lapteryx $(EXTRA_LDFLAGS)
-
-alfred: alfred.c callbacks.c libapteryx.so
-	@echo "Building $@"
-	@$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
-
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
 		kill -TERM `cat /tmp/apteryxd.pid` && sleep 0.1; \
@@ -86,15 +74,9 @@ TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 $(eval $(TEST_ARGS):;@:)
 endif
 
-test_apteryx: apteryxd apteryx
+test: apteryxd apteryx
 	@echo "Running apteryx unit test: $<"
 	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
-
-test_alfred: apteryxd alfred
-	@echo "Running apteryx unit test: $<"
-	$(Q)$(call apteryxd,alfred -u$(TEST_ARGS))
-
-test: test_alfred test_apteryx
 	@echo "Tests have been run!"
 
 install: all
@@ -105,15 +87,11 @@ install: all
 	@install -d $(DESTDIR)/$(PREFIX)/bin
 	@install -D apteryxd $(DESTDIR)/$(PREFIX)/bin/
 	@install -D apteryx $(DESTDIR)/$(PREFIX)/bin/
-	@install -d $(DESTDIR)/etc/apteryx/schema
-	@install -D -m 0644 apteryx.xsd $(DESTDIR)/etc/apteryx/schema/
 	@install -d $(DESTDIR)/$(PREFIX)/lib/pkgconfig
 	@install -D apteryx.pc $(DESTDIR)/$(PREFIX)/lib/pkgconfig/
-	@install -D apteryx-sync $(DESTDIR)/$(PREFIX)/bin/
-	@install -D alfred $(DESTDIR)/$(PREFIX)/bin/
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx.so apteryx.so apteryx apteryxd apteryx-sync alfred *.o *.pb-c.c *.pb-c.h
+	@rm -f libapteryx.so apteryx.so apteryx apteryxd *.o *.pb-c.c *.pb-c.h
 
 .PHONY: all clean

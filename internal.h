@@ -33,10 +33,52 @@
 #include <syslog.h>
 #include <glib.h>
 #include <protobuf-c/protobuf-c.h>
-#include "common.h"
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
+
+/* Debug */
+extern bool apteryx_debug;
+
+static inline uint64_t
+get_time_us (void)
+{
+    struct timeval tv;
+    gettimeofday (&tv, NULL);
+    return (tv.tv_sec * (uint64_t) 1000000 + tv.tv_usec);
+}
+
+#define DEBUG(fmt, args...) \
+    if (apteryx_debug) \
+    { \
+        syslog (LOG_DEBUG, fmt, ## args); \
+        printf ("[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+        printf (fmt, ## args); \
+    }
+
+#define ERROR(fmt, args...) \
+    { \
+        syslog (LOG_ERR, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ERROR: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+    }
+
+#define ASSERT(assertion, rcode, fmt, args...) \
+    if (!(assertion)) \
+    { \
+        syslog (LOG_ERR, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ASSERT: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+        rcode; \
+    }
 
 /* Mode */
 typedef enum
@@ -162,19 +204,6 @@ cb_info_t * cb_find (GList **list, const char *guid);
 #define CB_PATH_MATCH_PART  (1<<5)
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
-
-/* Schema */
-typedef void sch_instance;
-typedef void sch_node;
-sch_instance* sch_load (const char *path);
-void sch_free (sch_instance *schema);
-sch_node* sch_lookup (sch_instance *schema, const char *path);
-bool sch_is_leaf (sch_node *node);
-bool sch_is_readable (sch_node *node);
-bool sch_is_writable (sch_node *node);
-char* sch_name (sch_node *node);
-char* sch_translate_to (sch_node *node, char *value);
-char* sch_translate_from (sch_node *node, char *value);
 
 /* Tests */
 void run_unit_tests (const char *filter);
