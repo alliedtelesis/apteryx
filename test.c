@@ -3675,183 +3675,6 @@ exit:
     }
     CU_ASSERT (assert_apteryx_empty ());
 }
-
-#ifdef HAVE_LIBXML2
-void
-test_lua_api_set_get (void)
-{
-    _write_xml ();
-    CU_ASSERT (_run_lua (
-        "lib = require('apteryx')                                         \n"
-        "apteryx = lib.api('"TEST_SCHEMA_PATH"')                          \n"
-        "apteryx.test.debug = 'enable'                                    \n"
-        "assert(apteryx.test.debug == 'enable')                           \n"
-        "apteryx.test.debug = nil                                         \n"
-        "assert(apteryx.test.debug == 'disable')                          \n"
-        "apteryx.test.list('cat-nip').sub_list('dog').i_d = '1'            \n"
-        "assert(apteryx.test.list('cat-nip').sub_list('dog').i_d == '1')   \n"
-        "assert(lib.get('/test/list/cat-nip/sub-list/dog/i-d') == '1')     \n"
-        "apteryx.test.list('cat-nip').sub_list('dog').i_d = nil            \n"
-        "assert(apteryx.test.list('cat-nip').sub_list('dog').i_d == nil)   \n"
-    ));
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_api_search (void)
-{
-    _write_xml ();
-    CU_ASSERT (_run_lua (
-        "lib = require('apteryx')                                         \n"
-        "apteryx = lib.api('"TEST_SCHEMA_PATH"')                          \n"
-        "lib.set('/test/list/cat-nip/sub-list/dog/i-d', '1')              \n"
-        "lib.set('/test/list/cat-nip/sub-list/cat/i-d', '2')              \n"
-        "lib.set('/test/list/cat-nip/sub-list/mouse/i-d', '3')            \n"
-        "lib.set('/test/list/cat_nip/sub-list/bat/i-d', '4')              \n"
-        "lib.set('/test/list/cat_nip/sub-list/frog/i-d', '5')             \n"
-        "lib.set('/test/list/cat_nip/sub-list/horse/i-d', '6')            \n"
-        "cats1 = apteryx.test.list('cat-nip').sub_list()                  \n"
-        "assert(#cats1 == 3)                                              \n"
-        "cats2 = apteryx.test.list('cat_nip').sub_list()                  \n"
-        "assert(#cats2 == 3)                                              \n"
-        "lib.prune('/test/list/cat-nip')                                  \n"
-        "lib.prune('/test/list/cat_nip')                                  \n"
-    ));
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_load_api_memory (void)
-{
-    lua_State *L;
-    unsigned long before;
-    unsigned long after;
-    int res = -1;
-
-    _write_xml ();
-    before = _memory_usage ();
-    L = luaL_newstate ();
-    luaL_openlibs (L);
-    res = luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')");
-    if (res == 0)
-        res = lua_pcall (L, 0, 0, 0);
-    if (res != 0)
-        fprintf (stderr, "%s\n", lua_tostring(L, -1));
-    after = _memory_usage ();
-    lua_close (L);
-    printf ("%ldkb ... ", (after - before));
-    CU_ASSERT (res == 0);
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_load_api_performance (void)
-{
-    uint64_t start;
-    int i;
-
-    _write_xml ();
-    start = get_time_us ();
-    for (i = 0; i < 10; i++)
-    {
-        CU_ASSERT (_run_lua ("apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')"));
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 10);
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_api_perf_get ()
-{
-    lua_State *L;
-    uint64_t start;
-    int i;
-
-    _write_xml ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
-        apteryx_set (path, "private");
-        free (path);
-    }
-    L = luaL_newstate ();
-    luaL_openlibs (L);
-    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')") == 0);
-    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *cmd = NULL;
-        int res;
-        CU_ASSERT (asprintf(&cmd, "assert(apteryx.test.list('%d').name == 'private')", i) > 0);
-        res = luaL_loadstring (L, cmd);
-        if (res == 0)
-            res = lua_pcall (L, 0, 0, 0);
-        if (res != 0)
-            fprintf (stderr, "%s\n", lua_tostring(L, -1));
-        if (res != 0)
-            goto exit;
-        free (cmd);
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    lua_close (L);
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
-        CU_ASSERT (apteryx_set (path, NULL));
-        free (path);
-    }
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_api_perf_set ()
-{
-    lua_State *L;
-    uint64_t start;
-    int i;
-
-    _write_xml ();
-    L = luaL_newstate ();
-    luaL_openlibs (L);
-    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')") == 0);
-    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *cmd = NULL;
-        int res;
-        CU_ASSERT (asprintf(&cmd, "apteryx.test.list('%d').name = 'private'", i) > 0);
-        res = luaL_loadstring (L, cmd);
-        if (res == 0)
-            res = lua_pcall (L, 0, 0, 0);
-        if (res != 0)
-            fprintf (stderr, "%s\n", lua_tostring(L, -1));
-        if (res != 0)
-            goto exit;
-        free (cmd);
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    lua_close (L);
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
-        CU_ASSERT (apteryx_set (path, NULL));
-        free (path);
-    }
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-#endif
 #endif
 
 static int
@@ -3882,13 +3705,13 @@ static CU_TestInfo tests_api[] = {
     { "delete", test_delete },
     { "search paths", test_search_paths },
     { "search root path", test_search_paths_root },
-//    { "multi threads writing to same table", test_thread_multi_write },
+    { "multi threads writing to same table", test_thread_multi_write },
 //    { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
     { "cas", test_cas },
     { "cas string", test_cas_string },
     { "cas int", test_cas_int },
-//    { "bitmap", test_bitmap },
+    { "bitmap", test_bitmap },
 //    { "shutdown deadlock", test_deadlock },
 //    { "shutdown deadlock 2", test_deadlock2 },
     { "double fork", test_double_fork },
@@ -3994,18 +3817,18 @@ static CU_TestInfo tests_find[] = {
     CU_TEST_INFO_NULL,
 };
 
-//static CU_TestInfo tests_single_threaded[] = {
-//    { "single-threaded index", test_single_index },
-//    { "single-threaded index no polling", test_single_index_no_polling },
-//    { "single-threaded watch", test_single_watch },
-//    { "single-threaded watch no polling", test_single_watch_no_polling },
-//    { "single-threaded validate", test_single_validate },
-//    { "single-threaded validate no polling", test_single_validate_no_polling },
-//    { "single-threaded provide", test_single_provide },
-//    { "single-threaded provide no polling", test_single_provide_no_polling },
-//    { "single-threaded watch myself", test_single_watch_myself },
-//    CU_TEST_INFO_NULL,
-//};
+static CU_TestInfo tests_single_threaded[] = {
+    { "single-threaded index", test_single_index },
+    { "single-threaded index no polling", test_single_index_no_polling },
+    { "single-threaded watch", test_single_watch },
+    { "single-threaded watch no polling", test_single_watch_no_polling },
+    { "single-threaded validate", test_single_validate },
+    { "single-threaded validate no polling", test_single_validate_no_polling },
+    { "single-threaded provide", test_single_provide },
+    { "single-threaded provide no polling", test_single_provide_no_polling },
+    { "single-threaded watch myself", test_single_watch_myself },
+    CU_TEST_INFO_NULL,
+};
 
 static CU_TestInfo tests_performance[] = {
     { "dummy", test_perf_dummy },
@@ -4042,7 +3865,7 @@ extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
 
 static CU_SuiteInfo suites[] = {
-    //{ "Database Internal", suite_init, suite_clean, tests_database_internal },
+    { "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
 #ifdef HAVE_LUA
@@ -4055,7 +3878,7 @@ static CU_SuiteInfo suites[] = {
     { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
     { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
     { "Apteryx API Find", suite_init, suite_clean, tests_find },
-//    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
+    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
     { "Apteryx Performance", suite_init, suite_clean, tests_performance },
     CU_SUITE_INFO_NULL,
 };

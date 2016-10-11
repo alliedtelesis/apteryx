@@ -1011,43 +1011,34 @@ apteryx_node_path (GNode* node)
     return path;
 }
 
+typedef struct _set_multi_data_t
+{
+    uint64_t ts;
+    bool rc;
+} set_multi_data_t;
+
 static gboolean
 _set_multi (GNode *node, gpointer data)
 {
-    bool *rc = (bool *)data;
-    uint64_t ts = UINT64_MAX;
+    set_multi_data_t *smd = (set_multi_data_t *)data;
 
     if (APTERYX_HAS_VALUE(node))
     {
         char *path = apteryx_node_path (node);
         DEBUG ("SET_TREE: %s = %s\n", path, APTERYX_VALUE (node));
-        *rc = apteryx_cas (path, APTERYX_VALUE (node), ts);
-        if (!*rc)
+        smd->rc = apteryx_cas (path, APTERYX_VALUE (node), smd->ts);
+        if (!smd->rc)
             return true;
     }
     return false;
-
-//    Apteryx__Set *set = (Apteryx__Set *)data;
-//
-//    if (APTERYX_HAS_VALUE(node))
-//    {
-//        char *path = apteryx_node_path (node);
-//        Apteryx__PathValue *pv = calloc (1, sizeof (Apteryx__PathValue));
-//        DEBUG ("SET_TREE: %s = %s\n", path, APTERYX_VALUE (node));
-//        pv->base.descriptor = &apteryx__path_value__descriptor;
-//        pv->path = (char *) path;
-//        pv->value = (char *) APTERYX_VALUE (node);
-//        set->sets[set->n_sets++] = pv;
-//    }
-//    return FALSE;
 }
 
 bool
 apteryx_cas_tree (GNode* root, uint64_t ts)
 {
+    set_multi_data_t smd = {};
     const char *path = NULL;
     char *url = NULL;
-    bool rc = true;
 
     ASSERT ((ref_count > 0), return false, "SET_TREE: Not initialised\n");
     ASSERT (root, return false, "SET_TREE: Invalid parameters\n");
@@ -1070,82 +1061,12 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
         return false;
     }
 
-    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &rc);
+    // TODO - atomic set_tree
+    smd.ts = ts;
+    smd.rc = true;
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &smd);
     /* Return result */
-    return rc;
-
-//    const char *path = NULL;
-//    char *old_root_name = NULL;
-//    char *url = NULL;
-//    bool rc = true;
-//
-//    ASSERT ((ref_count > 0), return false, "SET_TREE: Not initialised\n");
-//    ASSERT (root, return false, "SET_TREE: Invalid parameters\n");
-//
-//    DEBUG ("SET_TREE: %d paths\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
-//
-//    /* Check path */
-//    path = validate_path (APTERYX_NAME (root), &url);
-//
-//    if (path && strcmp (path, "/") == 0)
-//    {
-//        path = "";
-//    }
-//
-//    if (!path || (strlen (path) > 0 && path[strlen(path) - 1] == '/'))
-//    {
-//        ERROR ("SET_TREE: invalid path (%s)!\n", path);
-//        assert (!apteryx_debug || path);
-//        free (url);
-//        return false;
-//    }
-//
-//    /* IPC */
-//    rpc_client = rpc_client_connect (rpc, url);
-//    if (!rpc_client)
-//    {
-//        ERROR ("SET_TREE: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
-//        free (url);
-//        return false;
-//    }
-//
-//    /* Save sanitized root path (less URL) to root node */
-//    old_root_name = APTERYX_NAME (root);
-//    root->data = (char*) path;
-//
-//    /* Create the list of Paths/Value's */
-//    set.n_sets = g_node_n_nodes (root, G_TRAVERSE_LEAVES);
-//    set.sets = malloc (set.n_sets * sizeof (Apteryx__PathValue *));
-//    set.n_sets = 0;
-//    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &set);
-//    set.ts = ts;
-//    apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
-//    if (!is_done)
-//    {
-//        DEBUG ("SET_TREE: Failed %s\n", strerror(errno));
-//        rpc_client_release (rpc, rpc_client, false);
-//        rc = false;
-//    }
-//    else
-//    {
-//        rpc_client_release (rpc, rpc_client, true);
-//    }
-//    free (url);
-//
-//    /* Cleanup message */
-//    for (i=0; i<set.n_sets; i++)
-//    {
-//        Apteryx__PathValue *pv = set.sets[i];
-//        free (pv->path);
-//        free (pv);
-//    }
-//    free (set.sets);
-//
-//    /* Reinstate original root name */
-//    root->data = old_root_name;
-//
-//    /* Return result */
-//    return rc;
+    return smd.rc;
 }
 
 bool
@@ -1728,8 +1649,12 @@ apteryx_find (const char *path, const char *value)
 
     DEBUG ("FIND: %s = %s\n", path, value);
 
-    /* Grab first level (from root) */
+    /* Remove the trailing key */
     tmp = g_strdup (path);
+    if (strrchr (tmp, '*'))
+        *strrchr (tmp, '*') = '\0';
+
+    /* Grab first level (from root) */
     chunk = strtok_r( tmp, "*", &ptr);
     if (chunk)
     {
@@ -1789,91 +1714,6 @@ apteryx_find (const char *path, const char *value)
     }
     g_list_free_full (possible_matches, g_free);
     return matches;
-//    char *url = NULL;
-//    ProtobufCService *rpc_client;
-//    Apteryx__Find find = APTERYX__FIND__INIT;
-//    search_data_t data = {0};
-//    Apteryx__PathValue pv = {
-//            .base.descriptor = &apteryx__path_value__descriptor,
-//            .path = (char*) path,
-//            .value = (char*) value
-//    };
-//
-//    char *tmp_path = NULL;
-//
-//    ASSERT ((ref_count > 0), return NULL, "FIND: Not initialised\n");
-//    ASSERT (path, return NULL, "FIND: Invalid parameters\n");
-//    ASSERT (value, return NULL, "FIND: Invalid parameters\n");
-//
-//    DEBUG ("FIND: %s = %s\n", path, value);
-//
-//    /* Check path */
-//    path = validate_path (path, &url);
-//    if (!path)
-//    {
-//        ERROR ("FIND: invalid root (%s)!\n", path);
-//        free (url);
-//        assert (!apteryx_debug || path);
-//        return false;
-//    }
-//
-//    /* Validate path */
-//    if (!path ||
-//        strcmp (path, "/") == 0 ||
-//        strcmp (path, "/*") == 0 ||
-//        strcmp (path, "*") == 0 ||
-//        strlen (path) == 0)
-//    {
-//        path = "";
-//    }
-//    else if (path[0] != '/' ||
-//             strstr (path, "//") != NULL)
-//    {
-//        free (url);
-//        ERROR ("FIND: invalid root (%s)!\n", path);
-//        assert(!apteryx_debug || path[0] == '/');
-//        assert(!apteryx_debug || strstr (path, "//") == NULL);
-//        return NULL;
-//    }
-//
-//    /* Remove the trailing key */
-//    tmp_path = strdup (path);
-//    if (strrchr (tmp_path, '*'))
-//        *strrchr (tmp_path, '*') = '\0';
-//
-//    find.path = tmp_path;
-//    find.n_matches = 1;
-//    find.matches = malloc (find.n_matches * sizeof (Apteryx__PathValue *));
-//    find.matches[0] = &pv;
-//
-//    /* IPC */
-//    rpc_client = rpc_client_connect (rpc, url);
-//    if (!rpc_client)
-//    {
-//        ERROR ("FIND: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
-//        free (url);
-//        free (tmp_path);
-//        return false;
-//    }
-//
-//    apteryx__server__find (rpc_client, &find, handle_search_response, &data);
-//    if (!data.done)
-//    {
-//        ERROR ("FIND: No response\n");
-//        rpc_client_release (rpc, rpc_client, false);
-//        free (url);
-//        free (tmp_path);
-//        return NULL;
-//    }
-//    rpc_client_release (rpc, rpc_client, true);
-//    free (url);
-//
-//    free (tmp_path);
-//    free (find.matches);
-//
-//    /* Result */
-//    return data.paths;
-//    return NULL;
 }
 
 //static gboolean
@@ -1982,32 +1822,11 @@ add_callback (const char *type, const char *path, void *cb)
     ASSERT (path, return false, "ADD_CB: Invalid path\n");
     ASSERT (cb, return false, "ADD_CB: Invalid callback\n");
 
-//    if (!bound)
-//    {
-//        char * uri = NULL;
-//
-//        /* Bind to the default uri for this client */
-//        pthread_mutex_lock (&lock);
-//        if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
-//                || !rpc_server_bind (rpc, uri, uri))
-//        {
-//            ERROR ("Failed to bind uri %s\n", uri);
-//            pthread_mutex_unlock (&lock);
-//            free ((void*) uri);
-//            return false;
-//        }
-//        DEBUG ("Bound to uri %s\n", uri);
-//        pthread_mutex_unlock (&lock);
-//        free ((void*) uri);
-//        bound = true;
-//    }
-
     if (sprintf (_path, "%s/%zX-%zX-%zX",
             type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
         return false;
-//    have_callbacks = true;
     return true;
 }
 
@@ -2077,22 +1896,6 @@ apteryx_unprovide (const char *path, apteryx_provide_callback cb)
     return delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
 }
 
-//static void
-//handle_timestamp_response (const Apteryx__TimeStampResult *result, void *closure_data)
-//{
-//    uint64_t *data = (uint64_t *)closure_data;
-//
-//    if (result == NULL)
-//    {
-//        ERROR ("TIMESTAMP: Error processing request.\n");
-//        errno = -ETIMEDOUT;
-//    }
-//    else
-//    {
-//        *data = result->value;
-//    }
-//}
-
 uint64_t
 apteryx_timestamp (const char *path)
 {
@@ -2103,51 +1906,9 @@ apteryx_timestamp (const char *path)
 
     DEBUG ("TIMESTAMP: %s\n", path);
 
-    /* Proxy first */
-//    if ((value = proxy_timestamp (get->path)) == 0)
-    {
-        /* Lookup value */
-        value = db_timestamp (path);
-    }
+    /* Lookup value */
+    value = db_timestamp (path);
 
     DEBUG ("    = %"PRIu64"\n", value);
     return value;
-
-//    char *url = NULL;
-//    uint64_t value = 0;
-//    ProtobufCService *rpc_client;
-//    Apteryx__Get get = APTERYX__GET__INIT;
-//
-//    ASSERT ((ref_count > 0), return 0, "TIMESTAMP: Not initialised\n");
-//    ASSERT (path, return 0, "TIMESTAMP: Invalid parameters\n");
-//
-//    DEBUG ("TIMESTAMP: %s\n", path);
-//
-//    /* Check path */
-//    path = validate_path (path, &url);
-//    /* if path is empty, or path ends in '/' but is not the root db path (ie "/") */
-//    if (!path ||
-//        ((path[strlen(path)-1] == '/') && strlen(path) > 1))
-//    {
-//        ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
-//        free (url);
-//        assert (!apteryx_debug || path);
-//        return 0;
-//    }
-//
-//    /* IPC */
-//    rpc_client = rpc_client_connect (rpc, url);
-//    if (!rpc_client)
-//    {
-//        ERROR ("TIMESTAMP: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
-//        free (url);
-//        return 0;
-//    }
-//    get.path = (char *) path;
-//    apteryx__server__timestamp (rpc_client, &get, handle_timestamp_response, &value);
-//    rpc_client_release (rpc, rpc_client, true);
-//    free (url);
-//
-//    DEBUG ("    = %"PRIu64"\n", value);
-//    return value;
 }
