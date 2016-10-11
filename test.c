@@ -76,7 +76,7 @@ test_init ()
     const char *path = TEST_PATH"/entity/zones/private/name";
     char *value = NULL;
 
-    apteryx_shutdown_force ();
+    while (apteryx_shutdown ());
     CU_ASSERT (apteryx_set (path, "private") == FALSE);
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
     CU_ASSERT (apteryx_set (path, NULL) == FALSE);

@@ -68,34 +68,34 @@ apteryx_init (bool debug_enabled)
 bool
 apteryx_shutdown (void)
 {
-    ASSERT ((ref_count > 0), return false, "SHUTDOWN: Not initialised\n");
+    /* Protect ref_count */
+    pthread_mutex_lock (&lock);
+
+    /* Check we are actually initialised */
+    if (ref_count <= 0)
+    {
+        pthread_mutex_unlock (&lock);
+        DEBUG ("SHUTDOWN: Not initialised\n");
+        return false;
+    }
 
     /* Decrement ref count */
-    pthread_mutex_lock (&lock);
     ref_count--;
-    pthread_mutex_unlock (&lock);
 
     /* Check if there are still other users */
     if (ref_count > 0)
     {
+        pthread_mutex_unlock (&lock);
         DEBUG ("SHUTDOWN: More users (refcount=%d)\n", ref_count);
         return true;
     }
+    pthread_mutex_unlock (&lock);
 
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
     rpc_shutdown (false);
     db_shutdown (false);
     DEBUG ("SHUTDOWN: Shutdown\n");
-    return true;
-}
-
-
-bool
-apteryx_shutdown_force (void)
-{
-    while (ref_count > 0)
-        apteryx_shutdown ();
     return true;
 }
 

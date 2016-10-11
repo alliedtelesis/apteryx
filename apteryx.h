@@ -73,16 +73,9 @@ bool apteryx_init (bool debug);
 /**
  * Shutdown this instance of the Apteryx library.
  * @return true on success
+ * @return false if already shutdown
  */
 bool apteryx_shutdown (void);
-
-/**
- * Shutdown all instances of the Apteryx library.
- * NOTE: This function should only be called as a process exits,
- *       as subsequent library calls will fail.
- * @return true on success
- */
-bool apteryx_shutdown_force (void);
 
 /**
  * Process callback requests in client thread context.
