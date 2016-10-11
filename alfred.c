@@ -53,11 +53,11 @@ struct alfred_instance_t
     /* Lock for Lua state */
     pthread_mutex_t ls_lock;
     /* List of watches based on path */
-    struct callback_node *watches;
+    GList *watches;
     /* List of provides based on path */
-    struct callback_node *provides;
+    GList *provides;
     /* List of provides based on path */
-    struct callback_node *indexes;
+    GList *indexes;
 } alfred_instance_t;
 typedef struct alfred_instance_t *alfred_instance;
 
@@ -117,7 +117,8 @@ watch_node_changed (const char *path, const char *value)
     assert (path);
     assert (alfred_inst);
 
-    matches = cb_match (alfred_inst->watches, path);
+    matches = cb_match (&alfred_inst->watches, path, CB_MATCH_EXACT |
+                        CB_PATH_MATCH_PART | CB_MATCH_WILD_PATH);
     if (matches == NULL)
     {
         ERROR ("ALFRED: No Alfred watch for %s\n", path);
@@ -160,7 +161,7 @@ provide_node_changed (const char *path)
     char *script = NULL;
     cb_info_t *cb = NULL;
 
-    matches = cb_match (alfred_inst->provides, path);
+    matches = cb_match (&alfred_inst->provides, path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
     if (matches == NULL)
     {
         ERROR ("ALFRED: No Alfred provide for %s\n", path);
@@ -202,7 +203,7 @@ index_node_changed (const char *path)
     GList *matches = NULL;
     cb_info_t *cb = NULL;
 
-    matches = cb_match (alfred_inst->indexes, path);
+    matches = cb_match (&alfred_inst->indexes, path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
     if (matches == NULL)
     {
         ERROR ("ALFRED: No Alfred index for %s\n", path);
@@ -391,12 +392,12 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
 
         if (alfred->watches)
         {
-            matches = cb_match (alfred->watches, path);
+            matches = cb_match (&alfred->watches, path, CB_MATCH_EXACT);
         }
         if (matches == NULL)
         {
             scripts = g_list_append (scripts, tmp_content);
-            cb = cb_create (alfred->watches, "", (const char *) path, 0,
+            cb = cb_create (&alfred->watches, "", (const char *) path, 0,
                             (uint64_t) (long) scripts);
         }
         else
@@ -440,7 +441,7 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         }
         if (path)
         {
-            cb = cb_create (alfred->provides, "", (const char *) path, 0,
+            cb = cb_create (&alfred->provides, "", (const char *) path, 0,
                             (uint64_t) (long) tmp_content);
         }
     }
@@ -461,7 +462,7 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         }
         if (path)
         {
-            cb = cb_create (alfred->indexes, "", (const char *) path, 0,
+            cb = cb_create (&alfred->indexes, "", (const char *) path, 0,
                             (uint64_t) (long) tmp_content);
         }
     }
@@ -654,37 +655,27 @@ alfred_shutdown (void)
 {
     assert (alfred_inst);
 
-    cb_shutdown(alfred_inst->watches);
-    cb_shutdown(alfred_inst->provides);
-    cb_shutdown(alfred_inst->indexes);
-    // TODO cleanup
-//    if (alfred_inst->watches)
-//    {
-//        g_list_foreach (alfred_inst->watches, (GFunc) alfred_register_watches,
-//                        GINT_TO_POINTER (0));
-//        g_list_foreach (alfred_inst->watches, (GFunc) destroy_watches, NULL);
-//        g_list_free (alfred_inst->watches);
-//    }
-//    if (alfred_inst->provides)
-//    {
-//        g_list_foreach (alfred_inst->provides, (GFunc) alfred_register_provide,
-//                        GINT_TO_POINTER (0));
-//        g_list_foreach (alfred_inst->provides, (GFunc) destroy_provides, NULL);
-//        g_list_free (alfred_inst->provides);
-//    }
-//
-//    if (alfred_inst->indexes)
-//    {
-//        g_list_foreach (alfred_inst->indexes, (GFunc) alfred_register_index,
-//                        GINT_TO_POINTER (0));
-//        g_list_foreach (alfred_inst->indexes, (GFunc) destroy_indexes, NULL);
-//        g_list_free (alfred_inst->indexes);
-//    }
-    if (0)
+    if (alfred_inst->watches)
     {
-    	destroy_indexes(NULL, NULL);
-    	destroy_provides(NULL, NULL);
-    	destroy_watches(NULL, NULL);
+        g_list_foreach (alfred_inst->watches, (GFunc) alfred_register_watches,
+                        GINT_TO_POINTER (0));
+        g_list_foreach (alfred_inst->watches, (GFunc) destroy_watches, NULL);
+        g_list_free (alfred_inst->watches);
+    }
+    if (alfred_inst->provides)
+    {
+        g_list_foreach (alfred_inst->provides, (GFunc) alfred_register_provide,
+                        GINT_TO_POINTER (0));
+        g_list_foreach (alfred_inst->provides, (GFunc) destroy_provides, NULL);
+        g_list_free (alfred_inst->provides);
+    }
+
+    if (alfred_inst->indexes)
+    {
+        g_list_foreach (alfred_inst->indexes, (GFunc) alfred_register_index,
+                        GINT_TO_POINTER (0));
+        g_list_foreach (alfred_inst->indexes, (GFunc) destroy_indexes, NULL);
+        g_list_free (alfred_inst->indexes);
     }
 
     if (alfred_inst->ls)
@@ -729,11 +720,6 @@ alfred_init (const char *path)
     lua_setfield (alfred_inst->ls, -2, "rate_limit");
     lua_setglobal (alfred_inst->ls, "Alfred");
 
-    /* Init callbacks */
-    alfred_inst->watches = cb_init();
-    alfred_inst->provides = cb_init();
-    alfred_inst->indexes = cb_init();
-
     /* Parse files in the config path */
     if (!load_config_files (alfred_inst, path))
     {
@@ -741,16 +727,13 @@ alfred_init (const char *path)
     }
 
     /* Register watches */
-    if (0) // TODO register watches
-    {
-    g_list_foreach ((GList *)alfred_inst->watches, (GFunc) alfred_register_watches, GINT_TO_POINTER (1));
+    g_list_foreach (alfred_inst->watches, (GFunc) alfred_register_watches, GINT_TO_POINTER (1));
 
     /* Register provides */
-    g_list_foreach ((GList *)alfred_inst->provides, (GFunc) alfred_register_provide, GINT_TO_POINTER (1));
+    g_list_foreach (alfred_inst->provides, (GFunc) alfred_register_provide, GINT_TO_POINTER (1));
 
     /* Register indexes */
-    g_list_foreach ((GList *)alfred_inst->indexes, (GFunc) alfred_register_index, GINT_TO_POINTER (1));
-    }
+    g_list_foreach (alfred_inst->indexes, (GFunc) alfred_register_index, GINT_TO_POINTER (1));
 
     return;
 error:
