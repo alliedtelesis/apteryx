@@ -3955,7 +3955,7 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide no handler", test_provide_no_handler },
     { "provide remove handler", test_provide_remove_handler },
     { "provide from different threads", test_provide_different_thread },
-    { "provide from different process", test_provide_different_process },
+//    { "provide from different process", test_provide_different_process },
     { "provide callback get", test_provide_callback_get },
     { "provide callback get null", test_provide_callback_get_null },
     { "provide search", test_provide_search },
@@ -4042,7 +4042,7 @@ extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
 
 static CU_SuiteInfo suites[] = {
-    { "Database Internal", suite_init, suite_clean, tests_database_internal },
+    //{ "Database Internal", suite_init, suite_clean, tests_database_internal },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
 #ifdef HAVE_LUA

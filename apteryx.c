@@ -321,7 +321,7 @@ apteryx_shutdown (void)
 
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
-    db_shutdown (true);
+    db_shutdown (false);
 //    rpc_shutdown (rpc);
 //    bound = false;
     DEBUG ("SHUTDOWN: Shutdown\n");
