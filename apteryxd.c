@@ -40,7 +40,7 @@ rpc_instance rpc = NULL;
 rpc_instance proxy_rpc = NULL;
 
 /* Statistics and debug */
-counters_t counters = {};
+counters_t counters = { };
 
 /* Synchronise validation */
 static pthread_mutex_t validating;
@@ -68,7 +68,7 @@ typedef struct _get_data_t
 static void
 handle_get_response (const Apteryx__GetResult *result, void *closure_data)
 {
-    get_data_t *data = (get_data_t *)closure_data;
+    get_data_t *data = (get_data_t *) closure_data;
     data->done = false;
     if (result == NULL)
     {
@@ -94,7 +94,7 @@ typedef struct _search_data_t
 static void
 handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
 {
-    search_data_t *data = (search_data_t *)closure_data;
+    search_data_t *data = (search_data_t *) closure_data;
     int i;
     data->paths = NULL;
     data->done = false;
@@ -112,7 +112,7 @@ handle_search_response (const Apteryx__SearchResult *result, void *closure_data)
         for (i = 0; i < result->n_paths; i++)
         {
             data->paths = g_list_prepend (data->paths,
-                              (gpointer) g_strdup (result->paths[i]));
+                                          (gpointer) g_strdup (result->paths[i]));
         }
         data->done = true;
     }
@@ -129,7 +129,7 @@ typedef struct _traverse_data_t
 static void
 handle_traverse_response (const Apteryx__TraverseResult *result, void *closure_data)
 {
-    traverse_data_t *data = (traverse_data_t *)closure_data;
+    traverse_data_t *data = (traverse_data_t *) closure_data;
     int i;
 
     data->done = false;
@@ -176,7 +176,7 @@ handle_ok_response (const Apteryx__OKResult *result, void *closure_data)
 static void
 handle_timestamp_response (const Apteryx__TimeStampResult *result, void *closure_data)
 {
-    uint64_t *data = (uint64_t *)closure_data;
+    uint64_t *data = (uint64_t *) closure_data;
     if (result == NULL)
     {
         ERROR ("TIMESTAMP: Error processing request.\n");
@@ -192,9 +192,13 @@ static void
 handle_validate_response (const Apteryx__ValidateResult *result, void *closure_data)
 {
     if (!result)
+    {
         *(int32_t *) closure_data = -ETIMEDOUT;
+    }
     else
+    {
         *(int32_t *) closure_data = result->result;
+    }
 }
 
 static void
@@ -225,28 +229,28 @@ index_get (const char *path, GList **result)
         cb_info_t *indexer = iter->data;
         ProtobufCService *rpc_client;
         Apteryx__Index index = APTERYX__INDEX__INIT;
-        search_data_t data = {0};
+        search_data_t data = { 0 };
 
         /* Check for local provider */
         if (indexer->id == getpid ())
         {
             apteryx_index_callback cb = (apteryx_index_callback) (long) indexer->cb;
-            DEBUG ("INDEX LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                    indexer->path, indexer->id, indexer->cb);
+            DEBUG ("INDEX LOCAL \"%s\" (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+                   indexer->path, indexer->id, indexer->cb);
             results = cb (path);
             break;
         }
 
-        DEBUG ("INDEX CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                indexer->path, indexer->id, indexer->cb);
+        DEBUG ("INDEX CB \"%s\" (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+               indexer->path, indexer->id, indexer->cb);
 
         /* Setup IPC */
         rpc_client = rpc_client_connect (rpc, indexer->uri);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
-            ERROR ("Invalid INDEX CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                    indexer->path, indexer->id, indexer->cb);
+            ERROR ("Invalid INDEX CB %s (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+                   indexer->path, indexer->id, indexer->cb);
             cb_disable (indexer);
             INC_COUNTER (counters.indexed_no_handler);
             continue;
@@ -260,7 +264,7 @@ index_get (const char *path, GList **result)
         if (!data.done)
         {
             INC_COUNTER (counters.indexed_timeout);
-            ERROR ("No response from indexer for path \"%s\"\n", (char *)path);
+            ERROR ("No response from indexer for path \"%s\"\n", (char *) path);
             rpc_client_release (rpc, rpc_client, false);
         }
         else
@@ -293,7 +297,9 @@ validate_set (const char *path, const char *value)
     /* Retrieve a list of validators for this path */
     validators = config_get_validators (path);
     if (!validators)
+    {
         return 0;
+    }
 
     /* Protect sensitive values with this lock - released in apteryx_set */
     pthread_mutex_lock (&validating);
@@ -309,37 +315,38 @@ validate_set (const char *path, const char *value)
         if (validator->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) validator->cb;
-            DEBUG ("VALIDATE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                    validator->path, validator->id, validator->cb);
+            DEBUG ("VALIDATE LOCAL \"%s\" (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+                   validator->path, validator->id, validator->cb);
             cb (path, value);
             continue;
         }
 
-        DEBUG ("VALIDATE CB %s = %s (0x%"PRIx64",0x%"PRIx64")\n",
-                 validator->path, value, validator->id, validator->cb);
+        DEBUG ("VALIDATE CB %s = %s (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+               validator->path, value, validator->id, validator->cb);
 
         /* Setup IPC */
         rpc_client = rpc_client_connect (rpc, validator->uri);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
-            ERROR ("Invalid VALIDATE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                    validator->path, validator->id, validator->cb);
+            ERROR ("Invalid VALIDATE CB %s (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+                   validator->path, validator->id, validator->cb);
             cb_disable (validator);
             INC_COUNTER (counters.validated_no_handler);
             continue;
         }
 
         /* Do remote validate */
-        validate.path = (char *)path;
-        validate.value = (char *)value;
+        validate.path = (char *) path;
+        validate.value = (char *) value;
         validate.id = validator->id;
         validate.cb = validator->cb;
-        apteryx__client__validate (rpc_client, &validate, handle_validate_response, &result);
+        apteryx__client__validate (rpc_client, &validate, handle_validate_response,
+                                   &result);
         if (result < 0)
         {
-            DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n",
-                    (char *)path, (char*)value, validator->id, result);
+            DEBUG ("Set of %s to %s rejected by process %" PRIu64 " (%d)\n",
+                   (char *) path, (char *) value, validator->id, result);
             INC_COUNTER (counters.validated_timeout);
             rpc_client_release (rpc, rpc_client, false);
             break;
@@ -368,12 +375,14 @@ notify_watchers (const char *path)
     /* Retrieve a list of watchers for this path */
     watchers = config_get_watchers (path);
     if (!watchers)
+    {
         return;
+    }
 
     /* Find the new value for this path */
     value = NULL;
     vsize = 0;
-    db_get (path, (unsigned char**)&value, &vsize);
+    db_get (path, (unsigned char **) &value, &vsize);
 
     /* Call each watcher */
     for (iter = watchers; iter; iter = g_list_next (iter))
@@ -387,21 +396,21 @@ notify_watchers (const char *path)
         if (watcher->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
-            DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                    watcher->path, watcher->id, watcher->cb);
+            DEBUG ("WATCH LOCAL \"%s\" (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+                   watcher->path, watcher->id, watcher->cb);
             cb (path, value);
             continue;
         }
 
-        DEBUG ("WATCH CB %s = %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
-                path, value, watcher->path, watcher->id, watcher->cb, watcher->uri);
+        DEBUG ("WATCH CB %s = %s (%s 0x%" PRIx64 ",0x%" PRIx64 ",%s)\n",
+               path, value, watcher->path, watcher->id, watcher->cb, watcher->uri);
 
         /* Setup IPC */
         rpc_client = rpc_client_connect (rpc, watcher->uri);
         if (!rpc_client)
         {
             /* Throw away the no good validator */
-            ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+            ERROR ("Invalid WATCH CB %s (0x%" PRIx64 ",0x%" PRIx64 ")\n",
                    watcher->path, watcher->id, watcher->cb);
             cb_disable (watcher);
             INC_COUNTER (counters.watched_no_handler);
@@ -409,7 +418,7 @@ notify_watchers (const char *path)
         }
 
         /* Do remote watch */
-        watch.path = (char *)path;
+        watch.path = (char *) path;
         watch.value = value;
         watch.id = watcher->id;
         watch.cb = watcher->cb;
@@ -417,7 +426,7 @@ notify_watchers (const char *path)
         if (!is_done)
         {
             INC_COUNTER (counters.watched_timeout);
-            ERROR ("Failed to notify watcher for path \"%s\"\n", (char *)path);
+            ERROR ("Failed to notify watcher for path \"%s\"\n", (char *) path);
             rpc_client_release (rpc, rpc_client, false);
         }
         else
@@ -432,7 +441,9 @@ notify_watchers (const char *path)
 
     /* Free memory if allocated */
     if (value)
+    {
         g_free (value);
+    }
 }
 
 static char *
@@ -445,27 +456,29 @@ provide_get (const char *path)
     /* Retrieve a list of providers for this path */
     providers = config_get_providers (path);
     if (!providers)
+    {
         return NULL;
+    }
 
     /* Find the first good provider */
     for (iter = providers; iter; iter = g_list_next (iter))
     {
         cb_info_t *provider = iter->data;
         ProtobufCService *rpc_client;
-        get_data_t data = {0};
+        get_data_t data = { 0 };
         Apteryx__Provide provide = APTERYX__PROVIDE__INIT;
 
         /* Check for local provider */
         if (provider->id == getpid ())
         {
             apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->cb;
-            DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                                       provider->path, provider->id, provider->cb);
+            DEBUG ("PROVIDE LOCAL \"%s\" (0x%" PRIx64 ",0x%" PRIx64 ")\n",
+                   provider->path, provider->id, provider->cb);
             value = cb (path);
             break;
         }
 
-        DEBUG ("PROVIDE CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+        DEBUG ("PROVIDE CB \"%s\" (0x%" PRIx64 ",0x%" PRIx64 ")\n",
                provider->path, provider->id, provider->cb);
 
         /* Setup IPC */
@@ -473,7 +486,7 @@ provide_get (const char *path)
         if (!rpc_client)
         {
             /* Throw away the no good validator */
-            ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+            ERROR ("Invalid PROVIDE CB %s (0x%" PRIx64 ",0x%" PRIx64 ")\n",
                    provider->path, provider->id, provider->cb);
             cb_disable (provider);
             INC_COUNTER (counters.provided_no_handler);
@@ -488,7 +501,7 @@ provide_get (const char *path)
         if (!data.done)
         {
             INC_COUNTER (counters.provided_timeout);
-            ERROR ("No response from provider for path \"%s\"\n", (char *)path);
+            ERROR ("No response from provider for path \"%s\"\n", (char *) path);
             rpc_client_release (rpc, rpc_client, false);
         }
         else
@@ -522,7 +535,9 @@ find_proxy (const char **path, cb_info_t **proxy_pt)
     /* Retrieve a list of proxies for this path */
     proxies = config_get_proxies (*path);
     if (!proxies)
+    {
         return NULL;
+    }
 
     /* Find the first good proxy */
     for (iter = proxies; iter; iter = g_list_next (iter))
@@ -543,17 +558,21 @@ find_proxy (const char **path, cb_info_t **proxy_pt)
         INC_COUNTER (proxy->count);
 
         /* Strip proxied path */
-        if (proxy->path[len-1] == '*')
+        if (proxy->path[len - 1] == '*')
+        {
             len -= 1;
-        if (proxy->path[len-1] == '/')
+        }
+        if (proxy->path[len - 1] == '/')
+        {
             len -= 1;
-        *path = *path  + len;
+        }
+        *path = *path + len;
         DEBUG ("PROXY CB \"%s\" to \"%s\"\n", *path, proxy->uri);
         *proxy_pt = proxy;
         break;
     }
 
-    g_list_free_full (proxies, (GDestroyNotify)cb_release);
+    g_list_free_full (proxies, (GDestroyNotify) cb_release);
     return rpc_client;
 }
 
@@ -563,7 +582,7 @@ proxy_set (const char *path, const char *value, uint64_t ts)
     ProtobufCService *rpc_client;
     Apteryx__Set set = APTERYX__SET__INIT;
     Apteryx__PathValue _pv = APTERYX__PATH_VALUE__INIT;
-    Apteryx__PathValue *pv[1] = {&_pv};
+    Apteryx__PathValue *pv[1] = { &_pv };
     int result = 1;
     cb_info_t *proxy = NULL;
 
@@ -592,7 +611,9 @@ proxy_set (const char *path, const char *value, uint64_t ts)
     {
         /* We got some response */
         if (result != 0)
+        {
             DEBUG ("PROXY SET: Error response: %s\n", strerror (-result));
+        }
         rpc_client_release (rpc, rpc_client, true);
     }
     return result;
@@ -603,14 +624,16 @@ proxy_get (const char *path)
 {
     ProtobufCService *rpc_client;
     Apteryx__Get get = APTERYX__GET__INIT;
-    get_data_t data = {0};
+    get_data_t data = { 0 };
     cb_info_t *proxy = NULL;
     char *value = NULL;
 
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return NULL;
+    }
 
     /* Do remote get */
     get.path = (char *) path;
@@ -618,7 +641,7 @@ proxy_get (const char *path)
     if (!data.done)
     {
         INC_COUNTER (counters.proxied_timeout);
-        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *) path);
         rpc_client_release (rpc, rpc_client, false);
     }
     else
@@ -636,13 +659,15 @@ proxy_search (const char *path)
     const char *in_path = path;
     ProtobufCService *rpc_client;
     Apteryx__Search search = APTERYX__SEARCH__INIT;
-    search_data_t data = {0};
+    search_data_t data = { 0 };
     cb_info_t *proxy = NULL;
 
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return NULL;
+    }
 
     /* Do remote search */
     search.path = (char *) path;
@@ -650,7 +675,7 @@ proxy_search (const char *path)
     if (!data.done)
     {
         INC_COUNTER (counters.proxied_timeout);
-        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *) path);
         rpc_client_release (rpc, rpc_client, false);
     }
     else
@@ -663,7 +688,7 @@ proxy_search (const char *path)
         GList *itr = data.paths;
         for (; itr; itr = itr->next)
         {
-            char *tmp = g_strdup_printf ("%s%s", local_path, (char *)itr->data);
+            char *tmp = g_strdup_printf ("%s%s", local_path, (char *) itr->data);
             g_free (itr->data);
             itr->data = tmp;
         }
@@ -679,13 +704,15 @@ proxy_traverse (const char *path)
     const char *in_path = path;
     ProtobufCService *rpc_client;
     Apteryx__Traverse traverse = APTERYX__TRAVERSE__INIT;
-    traverse_data_t data = {0};
+    traverse_data_t data = { 0 };
     cb_info_t *proxy = NULL;
 
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return NULL;
+    }
 
     /* Do remote traverse */
     traverse.path = (char *) path;
@@ -694,7 +721,7 @@ proxy_traverse (const char *path)
     if (!data.done)
     {
         INC_COUNTER (counters.proxied_timeout);
-        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *) path);
         rpc_client_release (rpc, rpc_client, false);
     }
     else
@@ -726,7 +753,9 @@ proxy_prune (const char *path)
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return false;
+    }
 
     /* Do remote prune */
     prune.path = (char *) path;
@@ -753,7 +782,9 @@ proxy_timestamp (const char *path)
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return 0;
+    }
 
     /* Do remote timestamp */
     get.path = (char *) path;
@@ -761,7 +792,7 @@ proxy_timestamp (const char *path)
     if (!value)
     {
         INC_COUNTER (counters.proxied_timeout);
-        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *) path);
         rpc_client_release (rpc, rpc_client, false);
         return value;
     }
@@ -797,18 +828,20 @@ apteryx__set (Apteryx__Server_Service *service,
     INC_COUNTER (counters.set);
 
     /* Debug */
-    for (i=0; apteryx_debug && i<set->n_sets; i++)
+    for (i = 0; apteryx_debug && i < set->n_sets; i++)
     {
         DEBUG ("SET: %s = %s\n", set->sets[i]->path, set->sets[i]->value);
     }
 
     /* Proxy first */
-    for (i=0; i<set->n_sets; i++)
+    for (i = 0; i < set->n_sets; i++)
     {
         path = set->sets[i]->path;
         value = set->sets[i]->value;
         if (value && value[0] == '\0')
+        {
             value = NULL;
+        }
 
         proxy_result = proxy_set (path, value, set->ts);
         if (proxy_result == 0)
@@ -828,19 +861,25 @@ apteryx__set (Apteryx__Server_Service *service,
     }
 
     /* Validate */
-    for (i=0; i<set->n_sets; i++)
+    for (i = 0; i < set->n_sets; i++)
     {
         path = set->sets[i]->path;
         if (!path)
+        {
             continue;
+        }
         value = set->sets[i]->value;
         if (value && value[0] == '\0')
+        {
             value = NULL;
+        }
 
         /* Validate new data */
         validation_result = validate_set (path, value);
         if (validation_result != 0)
+        {
             validation_lock++;
+        }
         if (validation_result < 0)
         {
             DEBUG ("SET: %s = %s refused by validate\n", path, value);
@@ -851,20 +890,29 @@ apteryx__set (Apteryx__Server_Service *service,
 
     /* Set in the database */
     pthread_rwlock_wrlock (&db_lock);
-    for (i=0; i<set->n_sets; i++)
+    for (i = 0; i < set->n_sets; i++)
     {
         path = set->sets[i]->path;
         if (!path)
+        {
             continue;
+        }
         value = set->sets[i]->value;
         if (value && value[0] == '\0')
+        {
             value = NULL;
+        }
 
         /* Add/Delete to/from database */
         if (value)
-            db_result = db_add_no_lock (path, (unsigned char*)value, strlen (value) + 1, set->ts);
+        {
+            db_result =
+                db_add_no_lock (path, (unsigned char *) value, strlen (value) + 1, set->ts);
+        }
         else
+        {
             db_result = db_delete_no_lock (path, set->ts);
+        }
         if (!db_result)
         {
             DEBUG ("SET: %s = %s refused by DB\n", path, value);
@@ -883,10 +931,12 @@ exit:
     if (validation_result >= 0 && result.result == 0)
     {
         /* Notify watchers */
-        for (i=0; i<set->n_sets; i++)
+        for (i = 0; i < set->n_sets; i++)
         {
             if (set->sets[i]->path)
+            {
                 notify_watchers (set->sets[i]->path);
+            }
         }
     }
 
@@ -896,7 +946,7 @@ exit:
     /* Release validation lock - this is a sensitive value */
     while (validation_lock)
     {
-        DEBUG("SET: unlocking mutex\n");
+        DEBUG ("SET: unlocking mutex\n");
         pthread_mutex_unlock (&validating);
         validation_lock--;
     }
@@ -913,7 +963,7 @@ get_value (const char *path)
     if ((value = proxy_get (path)) == NULL)
     {
         /* Database second */
-        if (!db_get (path, (unsigned char**)&value, &vsize))
+        if (!db_get (path, (unsigned char **) &value, &vsize))
         {
             /* Provide third */
             if ((value = provide_get (path)) == NULL)
@@ -954,7 +1004,9 @@ apteryx__get (Apteryx__Server_Service *service,
     result.value = value;
     closure (&result, closure_data);
     if (value)
+    {
         g_free (value);
+    }
     return;
 }
 
@@ -977,12 +1029,12 @@ search_path (const char *path)
         {
             /* Search database next */
             results = db_search (path);
-            DEBUG(" got %d entries from database...\n", g_list_length(results));
+            DEBUG (" got %d entries from database...\n", g_list_length (results));
             /* Append any provided paths */
             GList *providers = NULL;
             providers = config_search_providers (path);
-            DEBUG(" got %d entries from providers...\n", g_list_length(providers));
-            results = g_list_concat(results, providers);
+            DEBUG (" got %d entries from providers...\n", g_list_length (providers));
+            results = g_list_concat (results, providers);
         }
     }
     return results;
@@ -1029,15 +1081,17 @@ apteryx__search (Apteryx__Server_Service *service,
     closure (&result, closure_data);
     g_list_free_full (results, g_free);
     if (result.paths)
+    {
         g_free (result.paths);
+    }
     return;
 }
 
 
 static void
 apteryx__find (Apteryx__Server_Service *service,
-              const Apteryx__Find *find,
-              Apteryx__SearchResult_Closure closure, void *closure_data)
+               const Apteryx__Find *find,
+               Apteryx__SearchResult_Closure closure, void *closure_data)
 {
     Apteryx__SearchResult result = APTERYX__SEARCH_RESULT__INIT;
     GList *possible_matches = NULL;
@@ -1065,7 +1119,7 @@ apteryx__find (Apteryx__Server_Service *service,
 
     /* Grab first level (from root) */
     tmp = g_strdup (find->path);
-    chunk = strtok_r( tmp, "*", &ptr);
+    chunk = strtok_r (tmp, "*", &ptr);
     if (chunk)
     {
         possible_matches = search_path (chunk);
@@ -1079,7 +1133,7 @@ apteryx__find (Apteryx__Server_Service *service,
         for (iter = g_list_first (last_round); iter; iter = g_list_next (iter))
         {
             char *next_level = NULL;
-            next_level = g_strdup_printf("%s%s", (char*) iter->data, chunk);
+            next_level = g_strdup_printf ("%s%s", (char *) iter->data, chunk);
             possible_matches = g_list_concat (search_path (next_level), possible_matches);
             g_free (next_level);
         }
@@ -1095,8 +1149,8 @@ apteryx__find (Apteryx__Server_Service *service,
             char *key = NULL;
             char *value = NULL;
 
-            key = g_strdup_printf("%s%s", (char*)iter->data,
-                              strrchr (find->matches[i]->path, '*') + 1);
+            key = g_strdup_printf ("%s%s", (char *) iter->data,
+                                   strrchr (find->matches[i]->path, '*') + 1);
             value = get_value (key);
 
 
@@ -1106,7 +1160,7 @@ apteryx__find (Apteryx__Server_Service *service,
                 possible_match = true;
             }
             else if ((strlen (find->matches[i]->value) == 0 && value != NULL) ||
-                    (value == NULL && strlen (find->matches[i]->value) > 0))
+                     (value == NULL && strlen (find->matches[i]->value) > 0))
             {
                 /* Match miss - we can stop checking */
                 possible_match = false;
@@ -1124,7 +1178,7 @@ apteryx__find (Apteryx__Server_Service *service,
         /* All keys match, so this is a good path */
         if (possible_match)
         {
-            matches = g_list_prepend (matches, g_strdup ((char*)iter->data));
+            matches = g_list_prepend (matches, g_strdup ((char *) iter->data));
         }
     }
     g_list_free_full (possible_matches, g_free);
@@ -1154,7 +1208,9 @@ exit:
     g_free (tmp);
     g_list_free_full (matches, g_free);
     if (result.paths)
+    {
         g_free (result.paths);
+    }
 
     return;
 }
@@ -1167,7 +1223,7 @@ _traverse_paths (GList **pvlist, const char *path)
     size_t vsize;
 
     /* Look for a value - db first */
-    if (!db_get (path, (unsigned char**)&value, &vsize))
+    if (!db_get (path, (unsigned char **) &value, &vsize))
     {
         /* Provide next */
         value = provide_get (path);
@@ -1195,7 +1251,7 @@ _traverse_paths (GList **pvlist, const char *path)
         /* Append any provided paths */
         GList *providers = NULL;
         providers = config_search_providers (path_s);
-        children = g_list_concat(children, providers);
+        children = g_list_concat (children, providers);
     }
     for (iter = children; iter; iter = g_list_next (iter))
     {
@@ -1207,8 +1263,8 @@ _traverse_paths (GList **pvlist, const char *path)
 
 static void
 apteryx__traverse (Apteryx__Server_Service *service,
-                 const Apteryx__Traverse *traverse,
-                 Apteryx__TraverseResult_Closure closure, void *closure_data)
+                   const Apteryx__Traverse *traverse,
+                   Apteryx__TraverseResult_Closure closure, void *closure_data)
 {
     Apteryx__TraverseResult result = APTERYX__TRAVERSE_RESULT__INIT;
     GList *iter, *pvlist = NULL;
@@ -1308,7 +1364,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     }
 
     /* Collect the list of deleted paths for notification */
-    paths = g_list_prepend(paths, g_strdup(prune->path));
+    paths = g_list_prepend (paths, g_strdup (prune->path));
     _search_paths (&paths, prune->path);
 
     /* Prune from database */
@@ -1320,7 +1376,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     /* Call watchers for each pruned path */
     for (iter = paths; iter; iter = g_list_next (iter))
     {
-        notify_watchers ((const char *)iter->data);
+        notify_watchers ((const char *) iter->data);
     }
 
     g_list_free_full (paths, g_free);
@@ -1329,8 +1385,8 @@ apteryx__prune (Apteryx__Server_Service *service,
 
 static void
 apteryx__timestamp (Apteryx__Server_Service *service,
-                        const Apteryx__Get *get,
-                        Apteryx__TimeStampResult_Closure closure, void *closure_data)
+                    const Apteryx__Get *get,
+                    Apteryx__TimeStampResult_Closure closure, void *closure_data)
 {
     Apteryx__TimeStampResult result = APTERYX__TIME_STAMP_RESULT__INIT;
     uint64_t value = 0;
@@ -1355,7 +1411,7 @@ apteryx__timestamp (Apteryx__Server_Service *service,
     }
 
     /* Send result */
-    DEBUG ("     = %"PRIu64"\n", value);
+    DEBUG ("     = %" PRIu64 "\n", value);
     result.value = value;
     closure (&result, closure_data);
     return;
@@ -1377,8 +1433,8 @@ help (void)
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
             "  -m   memory profiling\n"
-            "  -p   use <pidfile> (defaults to "APTERYX_PID")\n"
-            "  -l   listen on URL <url> (defaults to "APTERYX_SERVER")\n");
+            "  -p   use <pidfile> (defaults to " APTERYX_PID ")\n"
+            "  -l   listen on URL <url> (defaults to " APTERYX_SERVER ")\n");
 }
 
 int
@@ -1457,7 +1513,9 @@ main (int argc, char **argv)
     pthread_mutex_init (&validating, &callback_recursive);
 
     /* Init the RPC for the server instance */
-    rpc = rpc_init ((ProtobufCService *)&apteryx_server_service, &apteryx__client__descriptor, RPC_TIMEOUT_US);
+    rpc =
+        rpc_init ((ProtobufCService *) &apteryx_server_service,
+                  &apteryx__client__descriptor, RPC_TIMEOUT_US);
     if (rpc == NULL)
     {
         ERROR ("Failed to initialise RPC service\n");
@@ -1503,7 +1561,9 @@ exit:
 
     /* Remove the pid file */
     if (background)
+    {
         unlink (pid_file);
+    }
 
     /* Memory profiling */
     g_mem_profile ();

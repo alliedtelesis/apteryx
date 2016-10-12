@@ -36,9 +36,13 @@ static bool
 handle_debug_set (const char *path, const char *value)
 {
     if (value)
+    {
         apteryx_debug = atoi (value);
+    }
     else
+    {
         apteryx_debug = false;
+    }
     DEBUG ("DEBUG %s\n", apteryx_debug ? "enabled" : "disabled");
     return true;
 }
@@ -46,25 +50,31 @@ handle_debug_set (const char *path, const char *value)
 static bool
 handle_sockets_set (const char *path, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_SOCKETS_PATH"/");
+    const char *guid = path + strlen (APTERYX_SOCKETS_PATH "/");
     bool res = true;
 
     DEBUG ("SOCKET %s:%s\n", guid, value);
 
     if (value)
+    {
         res = rpc_server_bind (rpc, guid, value);
+    }
     else
+    {
         res = rpc_server_release (rpc, guid);
+    }
 
     return res;
 }
 
 static cb_info_t *
-find_callback(const char *guid)
+find_callback (const char *guid)
 {
-    cb_info_t *found = g_hash_table_lookup(guid_to_callback, guid);
+    cb_info_t *found = g_hash_table_lookup (guid_to_callback, guid);
     if (found)
-        cb_take(found);
+    {
+        cb_take (found);
+    }
     return found;
 }
 
@@ -75,10 +85,9 @@ update_callback (struct callback_node *list, const char *guid, const char *value
     uint64_t pid, callback, hash;
 
     /* Parse callback info from the encoded guid */
-    if (sscanf (guid, "%"PRIX64"-%"PRIx64"-%"PRIx64"",
-            &pid, &callback, &hash) != 3)
+    if (sscanf (guid, "%" PRIX64 "-%" PRIx64 "-%" PRIx64 "", &pid, &callback, &hash) != 3)
     {
-        ERROR ("Invalid GUID (%s)\n", guid ?: "NULL");
+        ERROR ("Invalid GUID (%s)\n", guid ? : "NULL");
         return NULL;
     }
 
@@ -92,7 +101,7 @@ update_callback (struct callback_node *list, const char *guid, const char *value
     else if (cb && value)
     {
         DEBUG ("Callback GUID(%s) already exists - releasing old version\n", guid);
-        g_hash_table_remove(guid_to_callback, (char*)cb->guid);
+        g_hash_table_remove (guid_to_callback, (char *) cb->guid);
         cb_disable (cb);
         cb_release (cb);
     }
@@ -104,13 +113,13 @@ update_callback (struct callback_node *list, const char *guid, const char *value
         DEBUG ("Callback GUID(%s) created\n", guid);
         if (cb)
         {
-            cb_disable(cb);
-            cb_release(cb);
+            cb_disable (cb);
+            cb_release (cb);
         }
         cb = cb_create (list, guid, value, pid, callback);
 
         /* This will either replace the entry removed above, or add a new one. */
-        g_hash_table_replace(guid_to_callback, (char*)cb->guid, cb);
+        g_hash_table_replace (guid_to_callback, (char *) cb->guid, cb);
     }
     else
     {
@@ -118,7 +127,7 @@ update_callback (struct callback_node *list, const char *guid, const char *value
         DEBUG ("Callback GUID(%s) released\n", guid);
         if (cb)
         {
-            g_hash_table_remove(guid_to_callback, (char*)cb->guid);
+            g_hash_table_remove (guid_to_callback, (char *) cb->guid);
             cb_disable (cb);
             cb_release (cb);
         }
@@ -131,7 +140,7 @@ update_callback (struct callback_node *list, const char *guid, const char *value
 static bool
 handle_indexers_set (const char *path, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_INDEXERS_PATH"/");
+    const char *guid = path + strlen (APTERYX_INDEXERS_PATH "/");
     cb_info_t *cb;
 
     DEBUG ("CFG-Index: %s = %s\n", guid, value);
@@ -144,7 +153,7 @@ handle_indexers_set (const char *path, const char *value)
 static bool
 handle_watchers_set (const char *path, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_WATCHERS_PATH"/");
+    const char *guid = path + strlen (APTERYX_WATCHERS_PATH "/");
     cb_info_t *cb;
 
     DEBUG ("CFG-Watch: %s = %s\n", guid, value);
@@ -157,7 +166,7 @@ handle_watchers_set (const char *path, const char *value)
 static bool
 handle_providers_set (const char *path, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_PROVIDERS_PATH"/");
+    const char *guid = path + strlen (APTERYX_PROVIDERS_PATH "/");
     cb_info_t *cb;
 
     DEBUG ("CFG-Provide: %s = %s\n", guid, value);
@@ -170,7 +179,7 @@ handle_providers_set (const char *path, const char *value)
 static bool
 handle_validators_set (const char *path, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_VALIDATORS_PATH"/");
+    const char *guid = path + strlen (APTERYX_VALIDATORS_PATH "/");
     cb_info_t *cb;
 
     DEBUG ("CFG-Validate: %s = %s\n", guid, value);
@@ -183,7 +192,7 @@ handle_validators_set (const char *path, const char *value)
 static bool
 handle_proxies_set (const char *path, const char *value)
 {
-    const char *guid = path + strlen (APTERYX_PROXIES_PATH"/");
+    const char *guid = path + strlen (APTERYX_PROXIES_PATH "/");
     cb_info_t *cb;
 
     DEBUG ("CFG-Proxy: %s = %s\n", guid, value);
@@ -200,21 +209,23 @@ handle_proxies_set (const char *path, const char *value)
         path = strrchr (value, ':') + 1;
         cb = update_callback (proxy_list, guid, path);
         if (cb->uri)
+        {
             g_free ((void *) cb->uri);
+        }
         cb->uri = g_strndup (value, strlen (value) - strlen (path) - 1);
-        strcpy ((char*)cb->path, path);
+        strcpy ((char *) cb->path, path);
         DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
     }
     else
     {
-        cb = find_callback(guid);
+        cb = find_callback (guid);
     }
     cb_release (cb);
     return true;
 }
 
 
-static GList*
+static GList *
 handle_counters_index (const char *path)
 {
     GList *paths = NULL;
@@ -225,7 +236,7 @@ X_FIELDS
     return paths;
 }
 
-static char*
+static char *
 handle_counters_get (const char *path)
 {
     char *counter = strrchr (path, '/');
@@ -242,36 +253,47 @@ handle_counters_get (const char *path)
 void
 config_shutdown ()
 {
-    cb_shutdown(watch_list);
-    cb_shutdown(validation_list);
-    cb_shutdown(provide_list);
-    cb_shutdown(index_list);
-    cb_shutdown(proxy_list);
+    cb_shutdown (watch_list);
+    cb_shutdown (validation_list);
+    cb_shutdown (provide_list);
+    cb_shutdown (index_list);
+    cb_shutdown (proxy_list);
 }
 
-GList *config_get_indexers (const char *path)
+GList *
+config_get_indexers (const char *path)
 {
-    return cb_match(index_list, path);
+    return cb_match (index_list, path);
 }
-GList *config_search_providers (const char *path)
+
+GList *
+config_search_providers (const char *path)
 {
-    return cb_search(provide_list, path);
+    return cb_search (provide_list, path);
 }
-GList *config_get_providers (const char *path)
+
+GList *
+config_get_providers (const char *path)
 {
-    return cb_match(provide_list, path);
+    return cb_match (provide_list, path);
 }
-GList *config_get_proxies (const char *path)
+
+GList *
+config_get_proxies (const char *path)
 {
-    return cb_match(proxy_list, path);
+    return cb_match (proxy_list, path);
 }
-GList *config_get_watchers (const char *path)
+
+GList *
+config_get_watchers (const char *path)
 {
-    return cb_match(watch_list, path);
+    return cb_match (watch_list, path);
 }
-GList *config_get_validators (const char *path)
+
+GList *
+config_get_validators (const char *path)
 {
-    return cb_match(validation_list, path);
+    return cb_match (validation_list, path);
 }
 
 void
@@ -279,56 +301,58 @@ config_init (void)
 {
     cb_info_t *cb;
 
-    watch_list = cb_init();
-    validation_list = cb_init();
-    provide_list = cb_init();
-    index_list = cb_init();
-    proxy_list = cb_init();
+    watch_list = cb_init ();
+    validation_list = cb_init ();
+    provide_list = cb_init ();
+    index_list = cb_init ();
+    proxy_list = cb_init ();
 
-    guid_to_callback = g_hash_table_new(g_str_hash, g_str_equal);
+    guid_to_callback = g_hash_table_new (g_str_hash, g_str_equal);
 
     /* Debug set */
     cb = cb_create (watch_list, "debug", APTERYX_DEBUG_PATH,
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_debug_set);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_debug_set);
     cb_release (cb);
 
     /* Counters */
-    cb = cb_create (index_list, "counters", APTERYX_COUNTERS"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_index);
+    cb = cb_create (index_list, "counters", APTERYX_COUNTERS "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_index);
     cb_release (cb);
-    cb = cb_create (provide_list, "counters", APTERYX_COUNTERS"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
+    cb = cb_create (provide_list, "counters", APTERYX_COUNTERS "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
     cb_release (cb);
 
     /* Sockets */
-    cb = cb_create (watch_list, "sockets", APTERYX_SOCKETS_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
+    cb = cb_create (watch_list, "sockets", APTERYX_SOCKETS_PATH "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set);
     cb_release (cb);
 
     /* Indexers */
-    cb = cb_create (watch_list, "indexers", APTERYX_INDEXERS_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set);
+    cb = cb_create (watch_list, "indexers", APTERYX_INDEXERS_PATH "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set);
     cb_release (cb);
 
     /* Watchers */
-    cb = cb_create (watch_list, "watchers", APTERYX_WATCHERS_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set);
+    cb = cb_create (watch_list, "watchers", APTERYX_WATCHERS_PATH "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set);
     cb_release (cb);
 
     /* Providers */
-    cb = cb_create (watch_list, "providers", APTERYX_PROVIDERS_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_providers_set);
+    cb = cb_create (watch_list, "providers", APTERYX_PROVIDERS_PATH "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_providers_set);
     cb_release (cb);
 
     /* Validators */
-    cb = cb_create (watch_list, "validators", APTERYX_VALIDATORS_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set);
+    cb = cb_create (watch_list, "validators", APTERYX_VALIDATORS_PATH "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set);
     cb_release (cb);
 
     /* Proxies */
-    cb = cb_create (watch_list, "proxies", APTERYX_PROXIES_PATH"/",
-            (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set);
+    cb = cb_create (watch_list, "proxies", APTERYX_PROXIES_PATH "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set);
     cb_release (cb);
     if (!cb)
-    	return;
+    {
+        return;
+    }
 }

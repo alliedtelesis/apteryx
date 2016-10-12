@@ -61,7 +61,10 @@ assert_apteryx_empty (void)
         char *path = (char *) (iter->data);
         if (strncmp (TEST_PATH, path, strlen (TEST_PATH)) == 0)
         {
-            if (ret) fprintf (stderr, "\n");
+            if (ret)
+            {
+                fprintf (stderr, "\n");
+            }
             fprintf (stderr, "ERROR: Node still set: %s\n", path);
             ret = false;
         }
@@ -73,7 +76,7 @@ assert_apteryx_empty (void)
 void
 test_init ()
 {
-    const char *path = TEST_PATH"/entity/zones/private/name";
+    const char *path = TEST_PATH "/entity/zones/private/name";
     char *value = NULL;
 
     apteryx_shutdown_force ();
@@ -87,7 +90,7 @@ test_init ()
 void
 test_set_get ()
 {
-    const char *path = TEST_PATH"/entity/zones/private/name";
+    const char *path = TEST_PATH "/entity/zones/private/name";
     char *value = NULL;
 
     CU_ASSERT (apteryx_set (path, "private"));

@@ -120,7 +120,8 @@ extern pthread_rwlock_t db_lock;
 void db_init (void);
 void db_shutdown (void);
 bool db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts);
-bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+bool db_add_no_lock (const char *path, const unsigned char *value, size_t length,
+                     uint64_t ts);
 bool db_delete (const char *path, uint64_t ts);
 void db_prune (const char *path);
 bool db_delete_no_lock (const char *path, uint64_t ts);
@@ -134,7 +135,8 @@ uint64_t db_timestamp (const char *path);
 typedef struct rpc_instance_s *rpc_instance;
 #define RPC_TEST_DELAY_MASK 0x7FF
 extern bool rpc_test_random_watch_delay;
-rpc_instance rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descriptor, int timeout);
+rpc_instance rpc_init (ProtobufCService *service,
+                       const ProtobufCServiceDescriptor *descriptor, int timeout);
 void rpc_shutdown (rpc_instance rpc);
 bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
 bool rpc_server_release (rpc_instance rpc, const char *guid);
@@ -156,11 +158,12 @@ GList *config_get_watchers (const char *path);
 GList *config_get_validators (const char *path);
 
 /* Callbacks to clients */
-struct callback_node * cb_init (void);
-cb_info_t * cb_create (struct callback_node *list, const char *guid, const char *path, uint64_t id, uint64_t callback);
+struct callback_node *cb_init (void);
+cb_info_t *cb_create (struct callback_node *list, const char *guid, const char *path,
+                      uint64_t id, uint64_t callback);
 void cb_disable (cb_info_t *cb);
 void cb_destroy (cb_info_t *cb);
-void cb_take(cb_info_t *cb);
+void cb_take (cb_info_t *cb);
 void cb_release (cb_info_t *cb);
 #define CB_MATCH_PART       (1<<0)
 #define CB_MATCH_EXACT      (1<<1)
@@ -176,15 +179,15 @@ void cb_shutdown (struct callback_node *root);
 /* Schema */
 typedef void sch_instance;
 typedef void sch_node;
-sch_instance* sch_load (const char *path);
+sch_instance *sch_load (const char *path);
 void sch_free (sch_instance *schema);
-sch_node* sch_lookup (sch_instance *schema, const char *path);
+sch_node *sch_lookup (sch_instance *schema, const char *path);
 bool sch_is_leaf (sch_node *node);
 bool sch_is_readable (sch_node *node);
 bool sch_is_writable (sch_node *node);
-char* sch_name (sch_node *node);
-char* sch_translate_to (sch_node *node, char *value);
-char* sch_translate_from (sch_node *node, char *value);
+char *sch_name (sch_node *node);
+char *sch_translate_to (sch_node *node, char *value);
+char *sch_translate_from (sch_node *node, char *value);
 
 /* Tests */
 void run_unit_tests (const char *filter);
