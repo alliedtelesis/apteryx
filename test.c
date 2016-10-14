@@ -4203,7 +4203,7 @@ test_lua_basic_search (void)
         "apteryx = require('apteryx')                                 \n"
         "apteryx.set('"TEST_PATH"/list/eth0/name', 'eth0')            \n"
         "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
-        "assert(apteryx.search('"TEST_PATH"/list') == nil)            \n"
+        "assert(next(apteryx.search('"TEST_PATH"/list')) == nil)      \n"
         "paths = apteryx.search('"TEST_PATH"/list/')                  \n"
         "assert(#paths == 2)                                          \n"
         "apteryx.set('"TEST_PATH"/list/eth0/name')                    \n"
@@ -4221,7 +4221,7 @@ test_lua_basic_prune (void)
         "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
         "assert(apteryx.prune('"TEST_PATH"/list'))                    \n"
         "paths = apteryx.search('"TEST_PATH"/')                       \n"
-        "assert(paths == nil)                                         \n"
+        "assert(next(paths) == nil)                                   \n"
     ));
     CU_ASSERT (assert_apteryx_empty ());
 }
