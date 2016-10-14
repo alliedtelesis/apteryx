@@ -387,10 +387,6 @@ lua_apteryx_search (lua_State *L)
         return 0;
     }
     paths = apteryx_search (lua_tostring (L, 1));
-    if (!paths)
-    {
-        return 0;
-    }
     num = g_list_length (paths);
     GList *_iter = paths;
     lua_createtable (L, num, 0);
