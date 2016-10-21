@@ -552,17 +552,11 @@ gc_clients (rpc_instance rpc)
     }
 }
 
-ProtobufCService *
-rpc_client_connect (rpc_instance rpc, const char *url)
+static rpc_client_t *
+rpc_client_existing_s (rpc_instance rpc, const char *url)
 {
     rpc_client_t *client = NULL;
     char *name = NULL;
-
-    assert (rpc);
-    assert (url);
-
-    /* Protect the instance */
-    pthread_mutex_lock (&rpc->lock);
 
     /* Garbage collect any stale clients */
     gc_clients (rpc);
@@ -577,13 +571,52 @@ rpc_client_connect (rpc_instance rpc, const char *url)
         if (client->sock != NULL && !client->sock->dead && client->pid == getpid ())
         {
             /* This client will do */
-            pthread_mutex_unlock (&rpc->lock);
-            return (ProtobufCService *)client;
+            return client;
         }
 
         /* Otherwise chuck this one away and make another */
         DEBUG ("RPC[%d]: Pruning dead socket for %s\n", client->sock ? client->sock->sock : -1, url);
         client_release (rpc, client, false);
+    }
+
+    return NULL;
+}
+
+ProtobufCService *
+rpc_client_existing (rpc_instance rpc, const char *url)
+{
+    rpc_client_t *client = NULL;
+
+    assert (rpc);
+    assert (url);
+
+    /* Protect the instance */
+    pthread_mutex_lock (&rpc->lock);
+
+    client = rpc_client_existing_s (rpc, url);
+
+    /* Release the instance */
+    pthread_mutex_unlock (&rpc->lock);
+    return (ProtobufCService *)client;
+}
+
+ProtobufCService *
+rpc_client_connect (rpc_instance rpc, const char *url)
+{
+    rpc_client_t *client = NULL;
+
+    assert (rpc);
+    assert (url);
+
+    /* Protect the instance */
+    pthread_mutex_lock (&rpc->lock);
+
+    client = rpc_client_existing_s (rpc, url);
+    if (client)
+    {
+        /* Found a client */
+        pthread_mutex_unlock (&rpc->lock);
+        return (ProtobufCService *)client;
     }
 
     /* Create a new socket */
