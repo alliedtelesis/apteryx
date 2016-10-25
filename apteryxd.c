@@ -207,7 +207,7 @@ validate_set (const char *path, const char *value)
 }
 
 static void
-notify_watchers (const char *path)
+notify_watchers (const char *path, bool ack)
 {
     GList *watchers = NULL;
     GList *iter = NULL;
@@ -256,7 +256,7 @@ notify_watchers (const char *path)
             INC_COUNTER (counters.watched_no_handler);
             continue;
         }
-        rpc_msg_encode_uint8 (&msg, MODE_WATCH);
+        rpc_msg_encode_uint8 (&msg, ack ? MODE_WATCH_WITH_ACK : MODE_WATCH);
         rpc_msg_encode_uint64 (&msg, watcher->ref);
         rpc_msg_encode_string (&msg, path);
         if (value)

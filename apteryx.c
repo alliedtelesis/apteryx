@@ -267,6 +267,7 @@ msg_handler (rpc_message msg)
     case MODE_INDEX:
         return handle_index (msg);
     case MODE_WATCH:
+    case MODE_WATCH_WITH_ACK:
         return handle_watch (msg);
     case MODE_VALIDATE:
         return handle_validate (msg);
@@ -528,7 +529,7 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
         free (url);
         return false;
     }
-    rpc_msg_encode_uint8 (&msg, MODE_SET);
+    rpc_msg_encode_uint8 (&msg, ack ? MODE_SET_WITH_ACK : MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
     rpc_msg_encode_string (&msg, path);
     if (value)
@@ -560,7 +561,13 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
 bool
 apteryx_set (const char *path, const char *value)
 {
-    return apteryx_cas (path, value, UINT64_MAX);
+    return apteryx_cas (path, value, UINT64_MAX, 0);
+}
+
+bool
+apteryx_set_with_ack (const char *path, const char *value)
+{
+    return apteryx_cas (path, value, UINT64_MAX, 1);
 }
 
 bool
@@ -577,7 +584,7 @@ apteryx_cas_string (const char *path, const char *key, const char *value, uint64
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_cas (full_path, value, ts);
+        res = apteryx_cas (full_path, value, ts, 0);
         free (full_path);
     }
     return res;
@@ -608,7 +615,7 @@ apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
         len = asprintf ((char **) &v, "%d", value);
         if (len)
         {
-            res = apteryx_cas (full_path, v, ts);
+            res = apteryx_cas (full_path, v, ts, 0);
             free ((void *) v);
         }
         free (full_path);

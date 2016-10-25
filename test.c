@@ -97,6 +97,32 @@ test_set_get ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+static int test_wack_signal = 0;
+static bool
+test_watch_w_ack_callback (const char *path, const char *value)
+{
+    usleep(500000);
+    test_wack_signal = value ? 2 : 3;
+    return true;
+}
+
+void
+test_set_with_ack ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/name";
+
+    CU_ASSERT (apteryx_watch(path, test_watch_w_ack_callback));
+    CU_ASSERT (test_wack_signal == 0);
+    CU_ASSERT (apteryx_set_with_ack (path, "private"));
+    CU_ASSERT (test_wack_signal == 2);
+    CU_ASSERT (apteryx_set_with_ack (path, NULL));
+    CU_ASSERT (test_wack_signal == 3);
+    test_wack_signal = 0;
+    CU_ASSERT (apteryx_unwatch(path, test_watch_w_ack_callback));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_set_get_raw ()
 {
@@ -948,12 +974,12 @@ test_cas ()
     char *value;
     uint64_t ts;
 
-    CU_ASSERT (apteryx_cas (path, "1", 0));
-    CU_ASSERT (!apteryx_cas (path, "2", 0));
+    CU_ASSERT (apteryx_cas (path, "1", 0, 0));
+    CU_ASSERT (!apteryx_cas (path, "2", 0, 0));
     CU_ASSERT (errno == -EBUSY);
     CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
-    CU_ASSERT (apteryx_cas (path, "3", ts));
-    CU_ASSERT (!apteryx_cas (path, "4", ts));
+    CU_ASSERT (apteryx_cas (path, "3", ts, 0));
+    CU_ASSERT (!apteryx_cas (path, "4", ts, 0));
     CU_ASSERT (errno == -EBUSY);
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "3") == 0);
@@ -1025,7 +1051,7 @@ _bitmap_thread (void *data)
         }
         bitmap = (bitmap & ~clear) | set;
         if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
-            bool success = apteryx_cas (path, value, ts);
+            bool success = apteryx_cas (path, value, ts, 0);
             free (value);
             if (success || errno != -EBUSY)
                 break;
@@ -3499,12 +3525,12 @@ test_proxy_cas ()
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
 
     value = g_strdup_printf ("%d", 1);
-    CU_ASSERT (apteryx_cas (path, value, 0));
-    CU_ASSERT (!apteryx_cas (path, value, 0));
+    CU_ASSERT (apteryx_cas (path, value, 0, 0));
+    CU_ASSERT (!apteryx_cas (path, value, 0, 0));
     CU_ASSERT (errno == -EBUSY);
     CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
-    CU_ASSERT (apteryx_cas (path, value, ts));
-    CU_ASSERT (!apteryx_cas (path, value, ts));
+    CU_ASSERT (apteryx_cas (path, value, ts, 0));
+    CU_ASSERT (!apteryx_cas (path, value, ts, 0));
     CU_ASSERT (errno == -EBUSY);
     g_free (value);
 
@@ -4537,6 +4563,7 @@ static CU_TestInfo tests_api[] = {
     { "doc example", test_docs },
     { "initialisation", test_init },
     { "set and get", test_set_get },
+    { "set with ack", test_set_with_ack },
     { "raw byte streams", test_set_get_raw },
     { "long path", test_set_get_long_path },
     { "large value", test_set_get_large_value },
