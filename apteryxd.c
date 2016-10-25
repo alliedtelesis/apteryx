@@ -360,7 +360,7 @@ validate_set (const char *path, const char *value)
 }
 
 static void
-notify_watchers (const char *path)
+notify_watchers (const char *path, bool ack)
 {
     GList *watchers = NULL;
     GList *iter = NULL;
@@ -416,7 +416,10 @@ notify_watchers (const char *path)
         watch.value = value;
         watch.id = watcher->id;
         watch.cb = watcher->cb;
-        apteryx__client__watch (rpc_client, &watch, handle_watch_response, &is_done);
+        if (ack)
+            apteryx__client__watch_with_ack (rpc_client, &watch, handle_ok_response, &is_done);
+        else
+            apteryx__client__watch (rpc_client, &watch, handle_watch_response, &is_done);
         if (!is_done)
         {
             INC_COUNTER (counters.watched_timeout);
@@ -820,7 +823,7 @@ apteryx__set (Apteryx__Server_Service *service,
             /*  Result success */
             DEBUG ("SET: %s = %s proxied\n", path, value);
             /* Mark the set as processed */
-            notify_watchers (set->sets[i]->path);
+            notify_watchers (set->sets[i]->path, 0);
             free (set->sets[i]->path);
             set->sets[i]->path = NULL;
         }
@@ -890,7 +893,7 @@ exit:
         for (i=0; i<set->n_sets; i++)
         {
             if (set->sets[i]->path)
-                notify_watchers (set->sets[i]->path);
+                notify_watchers (set->sets[i]->path, set->ack);
         }
     }
 
@@ -1359,7 +1362,7 @@ apteryx__prune (Apteryx__Server_Service *service,
     /* Call watchers for each pruned path */
     for (iter = paths; iter; iter = g_list_next (iter))
     {
-        notify_watchers ((const char *)iter->data);
+        notify_watchers ((const char *)iter->data, 0);
     }
 
     g_list_free_full (paths, g_free);

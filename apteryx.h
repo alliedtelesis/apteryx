@@ -150,6 +150,7 @@ bool apteryx_dump (const char *path, FILE *fp);
  * @return false if the path is invalid
  */
 bool apteryx_set (const char *path, const char *value);
+bool apteryx_set_with_ack (const char *path, const char *value);
 /** Helper to extend the path with the specified key */
 bool apteryx_set_string (const char *path, const char *key, const char *value);
 /** Helper to store a simple int at an extended path */
@@ -220,7 +221,7 @@ uint64_t apteryx_timestamp (const char *path);
  * @return true on a successful set
  * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
  */
-bool apteryx_cas (const char *path, const char *value, uint64_t ts);
+bool apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack);
 /** Helper to extend the path with the specified key */
 bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts);
 /** Helper to store a simple int at an extended path */

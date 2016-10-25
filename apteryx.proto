@@ -24,6 +24,7 @@ message Set
 {
     repeated PathValue sets = 1;
     required uint64 ts = 2;
+    required uint64 ack = 3;
 };
 
 message Get
@@ -117,6 +118,7 @@ service client
 {
     rpc index (Index) returns (SearchResult);
     rpc watch (Watch) returns (NoResult);
+    rpc watch_with_ack (Watch) returns (OKResult);
     rpc provide (Provide) returns (GetResult);
     rpc validate (Validate) returns (ValidateResult);
 }

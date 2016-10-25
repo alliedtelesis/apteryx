@@ -158,6 +158,43 @@ apteryx__watch (Apteryx__Client_Service *service,
     return;
 }
 
+/* Callback for watched items where the setter is waiting for an answer */
+static void
+apteryx__watch_with_ack (Apteryx__Client_Service *service,
+                const Apteryx__Watch *watch,
+                Apteryx__OKResult_Closure closure, void *closure_data)
+{
+    (void) service;
+    char *value = NULL;
+    Apteryx__OKResult result = APTERYX__OKRESULT__INIT;
+
+    DEBUG ("WATCH w/ ACK CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+           watch->path, watch->value,
+           watch->id, watch->cb);
+
+    if (watch->value && (watch->value[0] != '\0'))
+    {
+        value = watch->value;
+    }
+
+    pthread_mutex_lock (&pending_watches_lock);
+    ++pending_watch_count;
+    pthread_mutex_unlock (&pending_watches_lock);
+
+    /* Call callback */
+    if (watch->cb)
+        ((apteryx_watch_callback) (long) watch->cb) (watch->path, value);
+    pthread_mutex_lock (&pending_watches_lock);
+    if (--pending_watch_count == 0)
+        pthread_cond_signal(&no_pending_watches);
+    pthread_mutex_unlock (&pending_watches_lock);
+
+    /* Now that we have executed the callback, return to Apteryxd */
+    closure (&result, closure_data);
+
+    return;
+}
+
 /* Callback for validated items */
 static void
 apteryx__validate (Apteryx__Client_Service *service,
@@ -456,7 +493,7 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_cas (const char *path, const char *value, uint64_t ts)
+apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack)
 {
     char *url = NULL;
     ProtobufCService *rpc_client;
@@ -493,7 +530,9 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
     set.n_sets = 1;
     set.sets = pv;
     set.ts = ts;
+    set.ack = ack;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &result);
+
     if (!result && errno == -ETIMEDOUT)
     {
         DEBUG ("SET: No response\n");
@@ -515,7 +554,13 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
 bool
 apteryx_set (const char *path, const char *value)
 {
-    return apteryx_cas (path, value, UINT64_MAX);
+    return apteryx_cas (path, value, UINT64_MAX, 0);
+}
+
+bool
+apteryx_set_with_ack (const char *path, const char *value)
+{
+    return apteryx_cas (path, value, UINT64_MAX, 1);
 }
 
 bool
@@ -532,7 +577,7 @@ apteryx_cas_string (const char *path, const char *key, const char *value, uint64
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_cas (full_path, value, ts);
+        res = apteryx_cas (full_path, value, ts, 0);
         free (full_path);
     }
     return res;
@@ -563,7 +608,7 @@ apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
         len = asprintf ((char **) &v, "%d", value);
         if (len)
         {
-            res = apteryx_cas (full_path, v, ts);
+            res = apteryx_cas (full_path, v, ts, 0);
             free ((void *) v);
         }
         free (full_path);
