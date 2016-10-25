@@ -577,8 +577,8 @@ parse_config_files (const char* config_dir)
             size_t n = 0;
             while (getline (&sync_path, &n, fp) != -1)
             {
-                /* ignore lines starting with '#' */
-                if (sync_path[0] == '#')
+                /* ignore empty lines or lines starting with '#' */
+                if (sync_path[0] == '#' || sync_path[0] == '\n')
                 {
                     free (sync_path);
                     sync_path = NULL;
