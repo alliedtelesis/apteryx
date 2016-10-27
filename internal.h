@@ -33,6 +33,10 @@
 #include <syslog.h>
 #include <glib.h>
 #include <protobuf-c/protobuf-c.h>
+#ifdef HAVE_LUA
+#include <lua.h>
+#include "apteryx.h"
+#endif
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
@@ -204,6 +208,17 @@ cb_info_t * cb_find (GList **list, const char *guid);
 #define CB_PATH_MATCH_PART  (1<<5)
 GList *cb_match (GList **list, const char *path, int critera);
 void cb_shutdown (void);
+
+/* Lua bindings */
+#ifdef HAVE_LUA
+extern int lua_watch_fn_table[];
+extern apteryx_watch_callback lua_watch_cb_table[];
+
+int lua_cb_register (lua_State *L, int function_table[]);
+int lua_cb_unregister (lua_State *L, int function_table[]);
+
+bool lua_watch_mux (int n, const char *path, const char *value);
+#endif
 
 /* Tests */
 void run_unit_tests (const char *filter);
