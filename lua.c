@@ -43,6 +43,123 @@
 #include "apteryx.h"
 #include "internal.h"
 
+#define lua_absindex(L, i) ((i) > 0 || (i) <= LUA_REGISTRYINDEX ? (i) : \
+                                        lua_gettop(L) + (i) + 1)
+
+static const char *
+lua_apteryx_tostring (lua_State *L, int i)
+{
+    const char *ret = NULL;
+    int abs_index = lua_absindex (L, i);
+
+    if (lua_type (L, i) != LUA_TNIL)
+    {
+        lua_getglobal (L, "tostring");
+        lua_pushvalue (L, abs_index);
+        lua_call (L, 1, 1);
+        ret = lua_tostring (L, -1);
+        lua_pop (L, 1);
+    }
+
+    return ret;
+}
+
+static void
+_lua_apteryx_tree2dict (lua_State *L, GNode *this)
+{
+    GNode *child = NULL;
+
+    if (!(this->children))
+    {
+        /* Something is wrong, either a value has been stored on a trunk
+         * or get_tree was called on a leaf node. Both we do not support */
+        return;
+    }
+
+    lua_pushstring (L, APTERYX_NAME (this));
+    /* is this a leaf? */
+    if (APTERYX_HAS_VALUE (this))
+    {
+        lua_pushstring (L, APTERYX_VALUE (this));
+    }
+    else
+    {
+        lua_newtable (L);
+        for (child = g_node_first_child (this); child; child = g_node_next_sibling (child))
+        {
+            _lua_apteryx_tree2dict (L, child);
+        }
+    }
+
+    lua_settable (L, -3);
+}
+
+static inline void
+lua_apteryx_tree2dict (lua_State *L, GNode *this)
+{
+    GNode *child = NULL;
+    lua_newtable (L);
+    if (this)
+    {
+        for (child = g_node_first_child (this); child; child = g_node_next_sibling (child))
+        {
+            _lua_apteryx_tree2dict (L, child);
+        }
+    }
+}
+
+static bool
+_lua_apteryx_dict2tree (lua_State *L, GNode *n)
+{
+    bool ret = false;
+    GNode *c = NULL;
+    const char *value = NULL;
+
+    lua_pushnil (L);
+    while (lua_next (L, -2))
+    {
+        if (lua_type (L, -1) == LUA_TTABLE)
+        {
+            c = APTERYX_NODE (n, (char *) lua_tostring (L, -2));
+            if (_lua_apteryx_dict2tree (L, c))
+            {
+                ret = true;
+            }
+            else
+            { /* destroy leafless sub-trees */
+                g_node_destroy (c);
+            }
+            break;
+        }
+        else
+        {
+            value = lua_apteryx_tostring (L, -1);
+            if (value)
+            {
+                APTERYX_LEAF (n, (char *) lua_tostring (L, -2), value);
+                ret = true;
+            }
+        }
+        lua_pop (L, 1);
+    }
+    return ret;
+}
+
+
+static inline GNode *
+lua_apteryx_dict2tree (lua_State *L)
+{
+    GNode *root = NULL;
+    root = APTERYX_NODE (NULL, (char *) lua_tostring (L, 1));
+    if (!_lua_apteryx_dict2tree (L, root))
+    {
+        g_node_destroy (root);
+        root = NULL;
+    }
+    return root;
+}
+
+
 static int
 lua_apteryx_set (lua_State *L)
 {
@@ -51,9 +168,11 @@ lua_apteryx_set (lua_State *L)
         luaL_error (L, "Invalid arguments: requires path");
         return 0;
     }
-    const char *path = lua_tostring (L, 1);
-    const char *value = lua_tostring (L, 2);
-    lua_pushboolean (L, apteryx_set (path, value));
+    if (lua_gettop (L) < 2)
+    {
+        lua_pushnil (L);
+    }
+    lua_pushboolean (L, apteryx_set (lua_tostring (L, 1), lua_apteryx_tostring (L, 2)));
     return 1;
 }
 
@@ -113,6 +232,48 @@ lua_apteryx_prune (lua_State *L)
     return 1;
 }
 
+static int
+lua_apteryx_set_tree (lua_State *L)
+{
+    GNode *root = NULL;
+
+    if (lua_gettop (L) < 1 || !lua_isstring (L, 1))
+    {
+        luaL_error (L, "Invalid arguments: requires path");
+        return 0;
+    }
+    if (lua_gettop (L) < 2 || !lua_istable (L, 2))
+    {
+        luaL_error (L, "Invalid arguments: requires table");
+        return 0;
+    }
+
+    root = lua_apteryx_dict2tree (L);
+    if (root)
+    {
+        lua_pushboolean (L, apteryx_set_tree (root));
+        g_node_destroy (root);
+    }
+
+    return 1;
+}
+
+static int
+lua_apteryx_get_tree (lua_State *L)
+{
+    GNode *tree = NULL;
+
+    if (lua_gettop (L) != 1 || !lua_isstring (L, 1))
+    {
+        luaL_error (L, "Invalid arguments: requires path");
+        return 0;
+    }
+    tree = apteryx_get_tree (lua_tostring (L, 1));
+    lua_apteryx_tree2dict (L, tree);
+    g_node_destroy (tree);
+    return 1;
+}
+
 int
 luaopen_libapteryx (lua_State *L)
 {
@@ -122,6 +283,8 @@ luaopen_libapteryx (lua_State *L)
         { "get", lua_apteryx_get },
         { "search", lua_apteryx_search },
         { "prune", lua_apteryx_prune },
+        { "get_tree", lua_apteryx_get_tree },
+        { "set_tree", lua_apteryx_set_tree },
         { NULL, NULL }
     };
 
