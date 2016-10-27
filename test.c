@@ -2641,6 +2641,68 @@ test_get_tree_null ()
 }
 
 void
+test_tree_non_leaf_value ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_set (path, "eth0"));
+    CU_ASSERT (apteryx_set_string (path, "state", "up"));
+    CU_ASSERT (apteryx_set_string (path, "speed", "1000"));
+    CU_ASSERT (apteryx_set_string (path, "duplex", "full"));
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    if (root) apteryx_sort_children (root, strcmp);
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/interfaces") == 0);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
+    if (node) apteryx_sort_children (node, strcmp);
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 3);
+    if (g_node_n_children (node) == 3)
+    {
+        CU_ASSERT (node && strcmp (APTERYX_NAME (g_node_nth_child (node, 0)), "duplex") == 0);
+        CU_ASSERT (node && strcmp (APTERYX_VALUE (g_node_nth_child (node, 0)), "full") == 0);
+        CU_ASSERT (node && strcmp (APTERYX_NAME (g_node_nth_child (node, 1)), "speed") == 0);
+        CU_ASSERT (node && strcmp (APTERYX_VALUE (g_node_nth_child (node, 1)), "1000") == 0);
+        CU_ASSERT (node && strcmp (APTERYX_NAME (g_node_nth_child (node, 2)), "state") == 0);
+        CU_ASSERT (node && strcmp (APTERYX_VALUE (g_node_nth_child (node, 2)), "up") == 0);
+    }
+    CU_ASSERT (apteryx_prune (path));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_tree_duplicate_non_leaf ()
+{
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_set (TEST_PATH"/b", "b"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/b/b/b", "bbb"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/b/b", "bb"));
+    root = apteryx_get_tree (TEST_PATH);
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH) == 0);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "b") == 0);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "b") == 0);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "b") == 0);
+    CU_ASSERT (node && APTERYX_HAS_VALUE (node) && strcmp (APTERYX_VALUE (node), "bbb") == 0);
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_cas_tree ()
 {
     const char *path = TEST_PATH"/interfaces/eth0";
@@ -4460,6 +4522,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree", test_get_tree },
     { "get tree single node", test_get_tree_single_node },
     { "get tree null", test_get_tree_null },
+    { "get tree non-leaf value", test_tree_non_leaf_value},
+    { "get tree duplicate non-leaf", test_tree_duplicate_non_leaf },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     { "get tree provided", test_get_tree_provided },
     { "cas tree", test_cas_tree},

@@ -984,7 +984,14 @@ path_to_node (GNode* root, const char *path, const char *value)
         next = strchr (path, '/');
         if (!next)
         {
-            APTERYX_LEAF (root, strdup (path), strdup (value));
+            if (apteryx_find_child (root, path))
+            {
+                ERROR ("GET_TREE: Value on a non-leaf (%s=%s)\n", path, value);
+            }
+            else
+            {
+                APTERYX_LEAF (root, strdup (path), strdup (value));
+            }
         }
         else
         {
