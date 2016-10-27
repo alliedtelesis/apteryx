@@ -417,6 +417,11 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         DEBUG ("XML: %s: %s\n", node->name, content);
         pthread_mutex_lock (&alfred->ls_lock);
         ret = alfred_exec (alfred->ls, (char *) content);
+        if (lua_gettop (alfred_inst->ls) != 0)
+        {
+            ERROR ("Lua: Stack not zero(%d) after script: %s\n",
+                    lua_gettop (alfred_inst->ls), parent);
+        }
         pthread_mutex_unlock (&alfred->ls_lock);
         if (!ret)
         {
@@ -589,6 +594,11 @@ delayed_work_process (gpointer arg1)
     /* Execute the script */
     pthread_mutex_lock (&alfred_inst->ls_lock);
     alfred_exec (alfred_inst->ls, script);
+    if (lua_gettop (alfred_inst->ls) != 0)
+    {
+        ERROR ("Lua: Stack not zero(%d) after delayed work: %s\n",
+                lua_gettop (alfred_inst->ls), script);
+    }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     g_free (script);
     return false;
