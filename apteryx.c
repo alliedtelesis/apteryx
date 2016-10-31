@@ -499,7 +499,7 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_cas (const char *path, const char *value, uint64_t ts)
+apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack)
 {
     char *url = NULL;
     rpc_client rpc_client;
@@ -905,7 +905,7 @@ _set_multi (GNode *node, gpointer data)
 }
 
 bool
-apteryx_cas_tree (GNode* root, uint64_t ts)
+apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
 {
     const char *path = NULL;
     char *old_root_name = NULL;
@@ -947,7 +947,7 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
     root->data = (char*) path;
 
     /* Create the list of Paths/Value's */
-    rpc_msg_encode_uint8 (&msg, MODE_SET);
+    rpc_msg_encode_uint8 (&msg, wait_for_completion ? MODE_SET_WITH_ACK : MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &msg);
     if (!rpc_msg_send (rpc_client, &msg))
