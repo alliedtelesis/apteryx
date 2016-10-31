@@ -143,8 +143,9 @@ bool apteryx_prune (const char *path);
 bool apteryx_dump (const char *path, FILE *fp);
 
 
-bool apteryx_set_full (const char *path, const char *value, uint64_t ts, bool wait_for_completion);
-bool apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion);
+bool apteryx_set_full (const char *path, const char *value, uint64_t ts,
+                       bool wait_for_completion);
+bool apteryx_set_tree_full (GNode *root, uint64_t ts, bool wait_for_completion);
 
 /**
  * Set a path/value in Apteryx
@@ -326,16 +327,16 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
 })
 
 /** Free an N-ary tree of nodes when the data need freeing (e.g. from apteryx_get_tree) */
-void apteryx_free_tree (GNode* root);
+void apteryx_free_tree (GNode *root);
 /** Find the child of the node with the specified name */
 GNode *apteryx_find_child (GNode *parent, const char *name);
 /** Sort the children of a node using the supplied compare function */
 void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b));
 /** Get the full path of an Apteryx node in an N-ary tree */
-char* apteryx_node_path (GNode* node);
+char *apteryx_node_path (GNode *node);
 
 /**
- * Find a list of paths that match this tree below the root path given 
+ * Find a list of paths that match this tree below the root path given
  * @param root pointer to the N-ary tree of nodes with a wildcard root path
  * @return GList of paths where this tree can be found
  */
@@ -370,7 +371,7 @@ GList *apteryx_find (const char *path, const char *value);
  * @param path path to the root of the tree to return.
  * @return N-ary tree of nodes.
  */
-GNode* apteryx_get_tree (const char *path);
+GNode *apteryx_get_tree (const char *path);
 
 /**
  * Set a tree of multiple values in Apteryx, but only if
@@ -425,7 +426,7 @@ char *apteryx_search_simple (const char *root);
  * @param root root of the searched path
  * @return GList of full paths
  */
-typedef GList* (*apteryx_index_callback) (const char *path);
+typedef GList *(*apteryx_index_callback) (const char *path);
 
 /**
  * Provide search results for a root path
@@ -503,7 +504,7 @@ bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
  * @param path path to the requested value
  * @return the provided value on success, otherwise NULL
  */
-typedef char* (*apteryx_provide_callback) (const char *path);
+typedef char *(*apteryx_provide_callback) (const char *path);
 
 /**
  * Provide a value that can be read on demand
