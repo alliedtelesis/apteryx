@@ -168,7 +168,17 @@ lua_cb_unregister (lua_State *L, int fn_table[LUA_CB_TABLE_LEN])
 
     lua_pushvalue (L, -1);                  /* duplicate the lua function */
     lua_gettable (L, LUA_REGISTRYINDEX);    /* cb_table_index = registry[function] */
+    if (lua_isnil (L, -1))
+    {
+        luaL_error (L, "Cannot find registered callback");
+        return -1;
+    }
     cb_table_index = lua_tointeger (L, -1);
+    if (!lua_watch_fn_table[cb_table_index])
+    {
+        luaL_error (L, "Empty callback table entry");
+        return -1;
+    }
     lua_pop (L, 1);
     /* Remove registry entries for this cb */
     lua_pushnil (L);
