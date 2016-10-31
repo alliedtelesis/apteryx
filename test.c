@@ -4132,6 +4132,7 @@ _run_lua (char *script)
         CU_ASSERT (res == 0);
         line = strtok (NULL,"\n");
     }
+    CU_ASSERT (lua_gettop (L) == 0);
     lua_close (L);
     free (buffer);
     return res == 0;
