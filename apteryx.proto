@@ -24,7 +24,7 @@ message Set
 {
     repeated PathValue sets = 1;
     required uint64 ts = 2;
-    required uint64 ack = 3;
+    required uint64 wait = 3;
 };
 
 message Get

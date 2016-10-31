@@ -493,7 +493,7 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack)
+apteryx_set_full (const char *path, const char *value, uint64_t ts, bool wait_for_completion)
 {
     char *url = NULL;
     ProtobufCService *rpc_client;
@@ -530,7 +530,7 @@ apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack)
     set.n_sets = 1;
     set.sets = pv;
     set.ts = ts;
-    set.ack = ack;
+    set.wait = wait_for_completion;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &result);
 
     if (!result && errno == -ETIMEDOUT)
@@ -552,18 +552,6 @@ apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack)
 }
 
 bool
-apteryx_set (const char *path, const char *value)
-{
-    return apteryx_cas (path, value, UINT64_MAX, 0);
-}
-
-bool
-apteryx_set_with_ack (const char *path, const char *value)
-{
-    return apteryx_cas (path, value, UINT64_MAX, 1);
-}
-
-bool
 apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
 {
     char *full_path;
@@ -577,7 +565,7 @@ apteryx_cas_string (const char *path, const char *key, const char *value, uint64
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_cas (full_path, value, ts, 0);
+        res = apteryx_cas (full_path, value, ts);
         free (full_path);
     }
     return res;
@@ -608,7 +596,7 @@ apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
         len = asprintf ((char **) &v, "%d", value);
         if (len)
         {
-            res = apteryx_cas (full_path, v, ts, 0);
+            res = apteryx_cas (full_path, v, ts);
             free ((void *) v);
         }
         free (full_path);
@@ -925,7 +913,7 @@ _set_multi (GNode *node, gpointer data)
 }
 
 bool
-apteryx_cas_tree (GNode* root, uint64_t ts)
+apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
 {
     const char *path = NULL;
     char *old_root_name = NULL;
@@ -976,6 +964,7 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
     set.n_sets = 0;
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &set);
     set.ts = ts;
+    set.wait = wait_for_completion;
     apteryx__server__set (rpc_client, &set, handle_ok_response, &is_done);
     if (!is_done)
     {
@@ -1003,12 +992,6 @@ apteryx_cas_tree (GNode* root, uint64_t ts)
 
     /* Return result */
     return rc;
-}
-
-bool
-apteryx_set_tree (GNode* root)
-{
-    return apteryx_cas_tree (root, UINT64_MAX);
 }
 
 typedef struct _traverse_data_t

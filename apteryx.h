@@ -142,6 +142,10 @@ bool apteryx_prune (const char *path);
  */
 bool apteryx_dump (const char *path, FILE *fp);
 
+
+bool apteryx_set_full (const char *path, const char *value, uint64_t ts, bool wait_for_completion);
+bool apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion);
+
 /**
  * Set a path/value in Apteryx
  * @param path path to the value to set
@@ -149,8 +153,17 @@ bool apteryx_dump (const char *path, FILE *fp);
  * @return true on a successful set
  * @return false if the path is invalid
  */
-bool apteryx_set (const char *path, const char *value);
-bool apteryx_set_with_ack (const char *path, const char *value);
+#define apteryx_set(path,value) apteryx_set_full((path), (value), UINT64_MAX, 0)
+
+/**
+ * Set a path/value in Apteryx and wait for all watches to complete.
+ * @param path path to the value to set
+ * @param value value to set at the specified path
+ * @return true on a successful set after watches are complete
+ * @return false if the path is invalid
+ */
+#define apteryx_set_wait(path,value) apteryx_set_full((path), (value), UINT64_MAX, 1)
+
 /** Helper to extend the path with the specified key */
 bool apteryx_set_string (const char *path, const char *key, const char *value);
 /** Helper to store a simple int at an extended path */
@@ -221,9 +234,11 @@ uint64_t apteryx_timestamp (const char *path);
  * @return true on a successful set
  * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
  */
-bool apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack);
+#define apteryx_cas(path, value, ts) apteryx_set_full((path), (value), (ts), 0)
+
 /** Helper to extend the path with the specified key */
 bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts);
+
 /** Helper to store a simple int at an extended path */
 bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts);
 
@@ -299,7 +314,7 @@ GList *apteryx_find (const char *path, const char *value);
  * @return true on a successful set.
  * @return false on failure.
  */
-bool apteryx_set_tree (GNode* root);
+#define apteryx_set_tree(root) apteryx_set_tree_full((root), UINT64_MAX, 0)
 
 /**
  * Get a tree of multiple values from Apteryx.
@@ -316,7 +331,7 @@ GNode* apteryx_get_tree (const char *path);
  * @return true on a successful set.
  * @return false on failure.
  */
-bool apteryx_cas_tree (GNode* root, uint64_t ts);
+#define apteryx_cas_tree(root, ts) apteryx_set_tree_full((root), (ts), 0)
 
 /**
  * Search for all children that start with the root path.

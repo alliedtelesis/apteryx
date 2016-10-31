@@ -893,7 +893,7 @@ exit:
         for (i=0; i<set->n_sets; i++)
         {
             if (set->sets[i]->path)
-                notify_watchers (set->sets[i]->path, set->ack);
+                notify_watchers (set->sets[i]->path, set->wait);
         }
     }
 
