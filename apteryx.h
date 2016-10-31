@@ -261,7 +261,7 @@ uint64_t apteryx_timestamp (const char *path);
         }
         bitmap = (bitmap & ~clear) | set;
         if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
-            bool success = apteryx_cas (path, value, ts);
+            bool success = apteryx_cas_wait (path, value, ts);
             free (value);
             if (success || errno != -EBUSY)
             {
