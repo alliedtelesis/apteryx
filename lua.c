@@ -52,8 +52,13 @@ lua_apteryx_tostring (lua_State *L, int i)
     const char *ret = NULL;
     int abs_index = lua_absindex (L, i);
 
-    if (lua_type (L, i) != LUA_TNIL)
+    switch (lua_type (L, i))
     {
+    case LUA_TNIL:
+        return NULL;
+    case LUA_TBOOLEAN:
+        return lua_toboolean (L, i) ? "1" : "0";
+    default:
         lua_getglobal (L, "tostring");
         lua_pushvalue (L, abs_index);
         lua_call (L, 1, 1);
