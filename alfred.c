@@ -96,12 +96,19 @@ static bool
 alfred_exec (lua_State *ls, const char *script)
 {
     int res = 0;
+    int s_0 = lua_gettop (ls);
 
     res = luaL_loadstring (ls, script);
     if (res == 0)
         res = lua_pcall (ls, 0, 0, 0);
     if (res != 0)
         alfred_error (ls, res);
+
+    if (lua_gettop (ls) != s_0)
+    {
+        ERROR ("Lua: Stack not zero(%d) after script: %s\n",
+                lua_gettop (ls), script);
+    }
 
     return (res == 0);
 }
@@ -144,11 +151,6 @@ watch_node_changed (const char *path, const char *value)
     g_list_free_full (matches, (GDestroyNotify) cb_release);
     DEBUG("LUA: Stack:%d Memory:%dkb\n", lua_gettop (alfred_inst->ls),
             lua_gc (alfred_inst->ls, LUA_GCCOUNT, 0));
-    if (lua_gettop (alfred_inst->ls) != 0)
-    {
-        ERROR ("Lua: Stack not zero(%d) after watch: %s\n",
-                lua_gettop (alfred_inst->ls), path);
-    }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     DEBUG ("ALFRED WATCH: %s = %s\n", path, value);
     return ret;
@@ -162,6 +164,7 @@ provide_node_changed (const char *path)
     GList *matches = NULL;
     char *script = NULL;
     cb_info_t *cb = NULL;
+    int s_0;
 
     matches = cb_match (&alfred_inst->provides, path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
     if (matches == NULL)
@@ -175,6 +178,7 @@ provide_node_changed (const char *path)
     script = (char *) (long) cb->cb;
     lua_pushstring (alfred_inst->ls, path);
     lua_setglobal (alfred_inst->ls, "_path");
+    s_0 = lua_gettop (alfred_inst->ls);
     if ((alfred_lua_dostring (alfred_inst->ls, script)) != 0)
     {
         ERROR ("Lua: Failed to execute provide script for path: %s\n", path);
@@ -186,7 +190,7 @@ provide_node_changed (const char *path)
     ret = g_strdup (const_value);
     DEBUG("LUA: Stack:%d Memory:%dkb\n", lua_gettop (alfred_inst->ls),
             lua_gc (alfred_inst->ls, LUA_GCCOUNT, 0));
-    if (lua_gettop (alfred_inst->ls) != 0)
+    if (lua_gettop (alfred_inst->ls) != s_0)
     {
         ERROR ("Lua: Stack not zero(%d) after provide: %s\n",
                 lua_gettop (alfred_inst->ls), path);
@@ -204,6 +208,7 @@ index_node_changed (const char *path)
     GList *ret = NULL;
     GList *matches = NULL;
     cb_info_t *cb = NULL;
+    int s_0;
 
     matches = cb_match (&alfred_inst->indexes, path, CB_MATCH_EXACT | CB_MATCH_WILD_PATH);
     if (matches == NULL)
@@ -216,6 +221,7 @@ index_node_changed (const char *path)
     pthread_mutex_lock (&alfred_inst->ls_lock);
     lua_pushstring (alfred_inst->ls, path);
     lua_setglobal (alfred_inst->ls, "_path");
+    s_0 = lua_gettop (alfred_inst->ls);
     if ((alfred_lua_dostring (alfred_inst->ls, script)) != 0)
     {
         ERROR ("Lua: Failed to execute index script for path: %s\n", path);
@@ -240,7 +246,7 @@ index_node_changed (const char *path)
     }
     DEBUG("LUA: Stack:%d Memory:%dkb\n", lua_gettop(alfred_inst->ls),
             lua_gc (alfred_inst->ls, LUA_GCCOUNT, 0));
-    if (lua_gettop (alfred_inst->ls) != 0)
+    if (lua_gettop (alfred_inst->ls) != s_0)
     {
         ERROR ("Lua: Stack not zero(%d) after index: %s\n",
                 lua_gettop (alfred_inst->ls), path);
@@ -409,11 +415,6 @@ process_node (alfred_instance alfred, xmlNode *node, char *parent)
         DEBUG ("XML: %s: %s\n", node->name, content);
         pthread_mutex_lock (&alfred->ls_lock);
         ret = alfred_exec (alfred->ls, (char *) content);
-        if (lua_gettop (alfred_inst->ls) != 0)
-        {
-            ERROR ("Lua: Stack not zero(%d) after script: %s\n",
-                    lua_gettop (alfred_inst->ls), parent);
-        }
         pthread_mutex_unlock (&alfred->ls_lock);
         if (!ret)
         {
@@ -586,11 +587,6 @@ delayed_work_process (gpointer arg1)
     /* Execute the script */
     pthread_mutex_lock (&alfred_inst->ls_lock);
     alfred_exec (alfred_inst->ls, script);
-    if (lua_gettop (alfred_inst->ls) != 0)
-    {
-        ERROR ("Lua: Stack not zero(%d) after delayed work: %s\n",
-                lua_gettop (alfred_inst->ls), script);
-    }
     pthread_mutex_unlock (&alfred_inst->ls_lock);
     g_free (script);
     return false;
