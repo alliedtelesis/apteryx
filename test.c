@@ -4229,6 +4229,22 @@ test_lua_basic_prune (void)
 }
 
 void
+test_lua_basic_set_tree_get_tree (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "t={a='a', b={a='ba', b='bb'}, c = 'c'}                       \n"
+        "apteryx.set_tree('"TEST_PATH"/t', t);                        \n"
+        "t2 = apteryx.get_tree('"TEST_PATH"/t')                       \n"
+        "assert (t2 and t2.a and t2.b.a)                              \n"
+        "assert (#t2 == #t and #t2.b == #t.b)                         \n"
+        "assert (t.a == t2.a and t.b.a == t2.b.a and t.c == t2.c)     \n"
+        "apteryx.prune('"TEST_PATH"/t')                               \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_lua_basic_timestamp (void)
 {
     CU_ASSERT (_run_lua (
@@ -4725,6 +4741,7 @@ CU_TestInfo tests_lua[] = {
     { "lua basic set get", test_lua_basic_set_get },
     { "lua basic search", test_lua_basic_search },
     { "lua basic prune", test_lua_basic_prune },
+    { "lua basic set_tree get_tree", test_lua_basic_set_tree_get_tree},
     { "lua basic timestamp", test_lua_basic_timestamp },
     { "lua basic watch", test_lua_basic_watch },
     { "lua basic provide", test_lua_basic_provide },
