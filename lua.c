@@ -128,7 +128,9 @@ _lua_apteryx_dict2tree (lua_State *L, GNode *n)
     {
         if (lua_type (L, -1) == LUA_TTABLE)
         {
-            c = APTERYX_NODE (n, (char *) lua_tostring (L, -2));
+            lua_pushvalue (L, -2);
+            c = APTERYX_NODE (n, strdup ((char *) lua_tostring (L, -1)));
+            lua_pop (L, 1);
             if (_lua_apteryx_dict2tree (L, c))
             {
                 ret = true;
@@ -137,14 +139,15 @@ _lua_apteryx_dict2tree (lua_State *L, GNode *n)
             { /* destroy leafless sub-trees */
                 g_node_destroy (c);
             }
-            break;
         }
         else
         {
             value = lua_apteryx_tostring (L, -1);
             if (value)
             {
-                APTERYX_LEAF (n, (char *) lua_tostring (L, -2), value);
+                lua_pushvalue (L, -2);
+                APTERYX_LEAF (n, strdup ((char *) lua_tostring (L, -1)), value);
+                lua_pop (L, 1);
                 ret = true;
             }
         }
@@ -260,7 +263,7 @@ lua_apteryx_set_tree (lua_State *L)
     if (root)
     {
         lua_pushboolean (L, apteryx_set_tree (root));
-        g_node_destroy (root);
+        apteryx_free_tree (root);
     }
 
     return 1;
@@ -278,7 +281,7 @@ lua_apteryx_get_tree (lua_State *L)
     }
     tree = apteryx_get_tree (lua_tostring (L, 1));
     lua_apteryx_tree2dict (L, tree);
-    g_node_destroy (tree);
+    apteryx_free_tree (tree);
     return 1;
 }
 
