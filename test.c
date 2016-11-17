@@ -4189,6 +4189,25 @@ test_lua_basic_prune (void)
 }
 
 void
+test_lua_basic_timestamp (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "assert(apteryx.timestamp ('/nonex') == 0)                    \n"
+        "apteryx.set('"TEST_PATH"/list/eth0/name', 'eth0')            \n"
+        "assert(apteryx.timestamp('"TEST_PATH"/list') ~= 0)           \n"
+        "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
+        "t1 = apteryx.timestamp('"TEST_PATH"/list/eth0')              \n"
+        "t2 = apteryx.timestamp('"TEST_PATH"/list/eth1')              \n"
+        "assert(t2 > t1)                                              \n"
+        "t1, t2 = nil, nil                                            \n"
+        "assert(apteryx.prune('"TEST_PATH"/list'))                    \n"
+        "assert(apteryx.timestamp ('/list') == 0)                     \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_lua_basic_watch (void)
 {
     CU_ASSERT (_run_lua (
@@ -4664,6 +4683,7 @@ CU_TestInfo tests_lua[] = {
     { "lua basic set get", test_lua_basic_set_get },
     { "lua basic search", test_lua_basic_search },
     { "lua basic prune", test_lua_basic_prune },
+    { "lua basic timestamp", test_lua_basic_timestamp },
     { "lua basic watch", test_lua_basic_watch },
     { "lua basic provide", test_lua_basic_provide },
     { "lua basic index", test_lua_basic_index },

@@ -611,6 +611,24 @@ termination_handler (void)
 }
 
 static int
+lua_apteryx_timestamp (lua_State *L)
+{
+    uint64_t ret;
+
+    if (lua_gettop (L) != 1 || !lua_isstring (L, 1))
+    {
+        luaL_error (L, "Invalid arguments: requires path");
+        return 0;
+    }
+
+    ret = apteryx_timestamp (lua_tostring (L, 1));
+    lua_pop (L, 1);
+    lua_pushinteger (L, ret);
+
+    return 1;
+}
+
+static int
 lua_apteryx_mainloop (lua_State *L)
 {
     int fd = 0;
@@ -657,6 +675,7 @@ luaopen_libapteryx (lua_State *L)
         { "prune", lua_apteryx_prune },
         { "get_tree", lua_apteryx_get_tree },
         { "set_tree", lua_apteryx_set_tree },
+        { "timestamp", lua_apteryx_timestamp },
         { "index", lua_apteryx_index },
         { "unindex", lua_apteryx_unindex },
         { "watch", lua_apteryx_watch },
