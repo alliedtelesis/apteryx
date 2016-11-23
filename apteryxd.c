@@ -231,15 +231,15 @@ index_get (const char *path, GList **result)
         /* Check for local provider */
         if (indexer->id == getpid ())
         {
-            apteryx_index_callback cb = (apteryx_index_callback) (long) indexer->cb;
+            apteryx_index_callback cb = (apteryx_index_callback) (long) indexer->ref;
             DEBUG ("INDEX LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                    indexer->path, indexer->id, indexer->cb);
+                    indexer->path, indexer->id, indexer->ref);
             results = cb (path);
             break;
         }
 
         DEBUG ("INDEX CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                indexer->path, indexer->id, indexer->cb);
+                indexer->path, indexer->id, indexer->ref);
 
         /* Setup IPC */
         rpc_client = rpc_client_connect (rpc, indexer->uri);
@@ -247,7 +247,7 @@ index_get (const char *path, GList **result)
         {
             /* Throw away the no good validator */
             ERROR ("Invalid INDEX CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                    indexer->path, indexer->id, indexer->cb);
+                    indexer->path, indexer->id, indexer->ref);
             cb_destroy (indexer);
             INC_COUNTER (counters.indexed_no_handler);
             continue;
@@ -256,7 +256,7 @@ index_get (const char *path, GList **result)
         /* Do remote get */
         index.path = (char *) path;
         index.id = indexer->id;
-        index.cb = indexer->cb;
+        index.ref = indexer->ref;
         apteryx__client__index (rpc_client, &index, handle_search_response, &data);
         if (!data.done)
         {
@@ -310,15 +310,15 @@ validate_set (const char *path, const char *value)
         /* Check for local validator */
         if (validator->id == getpid ())
         {
-            apteryx_watch_callback cb = (apteryx_watch_callback) (long) validator->cb;
+            apteryx_watch_callback cb = (apteryx_watch_callback) (long) validator->ref;
             DEBUG ("VALIDATE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                    validator->path, validator->id, validator->cb);
+                    validator->path, validator->id, validator->ref);
             cb (path, value);
             continue;
         }
 
         DEBUG ("VALIDATE CB %s = %s (0x%"PRIx64",0x%"PRIx64")\n",
-                 validator->path, value, validator->id, validator->cb);
+                 validator->path, value, validator->id, validator->ref);
 
         /* Setup IPC */
         rpc_client = rpc_client_connect (rpc, validator->uri);
@@ -326,7 +326,7 @@ validate_set (const char *path, const char *value)
         {
             /* Throw away the no good validator */
             ERROR ("Invalid VALIDATE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                    validator->path, validator->id, validator->cb);
+                    validator->path, validator->id, validator->ref);
             cb_destroy (validator);
             INC_COUNTER (counters.validated_no_handler);
             continue;
@@ -336,7 +336,7 @@ validate_set (const char *path, const char *value)
         validate.path = (char *)path;
         validate.value = (char *)value;
         validate.id = validator->id;
-        validate.cb = validator->cb;
+        validate.ref = validator->ref;
         apteryx__client__validate (rpc_client, &validate, handle_validate_response, &result);
         if (result < 0)
         {
@@ -389,15 +389,15 @@ notify_watchers (const char *path)
         /* Check for local watcher */
         if (watcher->id == getpid ())
         {
-            apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->cb;
+            apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->ref;
             DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                    watcher->path, watcher->id, watcher->cb);
+                    watcher->path, watcher->id, watcher->ref);
             cb (path, value);
             continue;
         }
 
         DEBUG ("WATCH CB %s = %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
-                path, value, watcher->path, watcher->id, watcher->cb, watcher->uri);
+                path, value, watcher->path, watcher->id, watcher->ref, watcher->uri);
 
         /* Setup IPC */
         rpc_client = rpc_client_connect (rpc, watcher->uri);
@@ -405,7 +405,7 @@ notify_watchers (const char *path)
         {
             /* Throw away the no good validator */
             ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                   watcher->path, watcher->id, watcher->cb);
+                   watcher->path, watcher->id, watcher->ref);
             cb_destroy (watcher);
             INC_COUNTER (counters.watched_no_handler);
             continue;
@@ -415,7 +415,7 @@ notify_watchers (const char *path)
         watch.path = (char *)path;
         watch.value = value;
         watch.id = watcher->id;
-        watch.cb = watcher->cb;
+        watch.ref = watcher->ref;
         apteryx__client__watch (rpc_client, &watch, handle_watch_response, &is_done);
         if (!is_done)
         {
@@ -462,15 +462,15 @@ provide_get (const char *path)
         /* Check for local provider */
         if (provider->id == getpid ())
         {
-            apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->cb;
+            apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->ref;
             DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                                       provider->path, provider->id, provider->cb);
+                                       provider->path, provider->id, provider->ref);
             value = cb (path);
             break;
         }
 
         DEBUG ("PROVIDE CB \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-               provider->path, provider->id, provider->cb);
+               provider->path, provider->id, provider->ref);
 
         /* Setup IPC */
         rpc_client = rpc_client_connect (rpc, provider->uri);
@@ -478,7 +478,7 @@ provide_get (const char *path)
         {
             /* Throw away the no good validator */
             ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                   provider->path, provider->id, provider->cb);
+                   provider->path, provider->id, provider->ref);
             cb_destroy (provider);
             INC_COUNTER (counters.provided_no_handler);
             continue;
@@ -487,7 +487,7 @@ provide_get (const char *path)
         /* Do remote get */
         provide.path = (char *) path;
         provide.id = provider->id;
-        provide.cb = provider->cb;
+        provide.ref = provider->ref;
         apteryx__client__provide (rpc_client, &provide, handle_get_response, &data);
         if (!data.done)
         {

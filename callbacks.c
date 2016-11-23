@@ -32,7 +32,7 @@ static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
 cb_create (GList **list, const char *guid, const char *path,
-        uint64_t id, uint64_t callback)
+        uint64_t id, uint64_t ref)
 {
     cb_info_t *cb = (cb_info_t *) g_malloc0 (sizeof (cb_info_t));
     cb->active = true;
@@ -40,7 +40,7 @@ cb_create (GList **list, const char *guid, const char *path,
     cb->path = g_strdup (path);
     cb->id = id;
     cb->uri = g_strdup_printf (APTERYX_SERVER".%"PRIu64, cb->id);
-    cb->cb = callback;
+    cb->ref = ref;
     cb->list = list;
     cb->refcnt = 1;
     cb->refcnt++;
