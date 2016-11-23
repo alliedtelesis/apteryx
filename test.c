@@ -1546,10 +1546,10 @@ test_watch_removes_all_watches ()
     apteryx_watch (TEST_PATH"/entity/zones/public/state", test_watch_removes_all_watchs_cb);
     apteryx_set (path, NULL);
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_cb_count == 3);
+    CU_ASSERT (_cb_count == 1);
     apteryx_set_string (path, NULL, "new_cb_two");
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_cb_count == 3);
+    CU_ASSERT (_cb_count == 1);
     apteryx_set_string (path, NULL, NULL);
     _watch_cleanup ();
 }
@@ -3524,8 +3524,8 @@ test_deadlock2 ()
     {
         char *path = NULL;
         CU_ASSERT (asprintf (&path, TEST_PATH"/zones/private/state/%d", i) > 0);
-        CU_ASSERT (apteryx_unwatch (path, test_deadlock2_callback));
-        CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
+        apteryx_unwatch (path, test_deadlock2_callback);
+        apteryx_unwatch (path, test_deadlock_callback);
         free (path);
     }
     CU_ASSERT (apteryx_prune (TEST_PATH));

@@ -104,7 +104,7 @@ typedef struct _cb_info_t
     const char *path;
     const char *uri;
     uint64_t id;
-    uint64_t cb;
+    uint64_t ref;
 
     GList **list;
     int refcnt;
@@ -192,7 +192,7 @@ extern GList *index_list;
 extern GList *proxy_list;
 extern rpc_instance proxy_rpc;
 void cb_init (void);
-cb_info_t * cb_create (GList **list, const char *guid, const char *path, uint64_t id, uint64_t callback);
+cb_info_t * cb_create (GList **list, const char *guid, const char *path, uint64_t id, uint64_t ref);
 void cb_destroy (cb_info_t *cb);
 void cb_release (cb_info_t *cb);
 cb_info_t * cb_find (GList **list, const char *guid);

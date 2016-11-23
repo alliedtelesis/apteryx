@@ -48,6 +48,42 @@ static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
 static int pending_watch_count = 0;
 
+/* Callback */
+typedef struct _cb_t
+{
+    uint64_t ref;
+    const char *path;
+    void *fn;
+} cb_t;
+static uint64_t next_ref = 0;
+static GList *cb_list = NULL;
+
+static void *
+find_callback (uint64_t ref)
+{
+    cb_t *cb = NULL;
+    GList *iter;
+    void *fn = NULL;
+
+    pthread_mutex_lock (&lock);
+    for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
+    {
+        cb = (cb_t *) iter->data;
+        if (cb->ref == ref)
+        {
+            fn = cb->fn;
+            break;
+        }
+    }
+    pthread_mutex_unlock (&lock);
+    if (!fn)
+    {
+        DEBUG ("CB[%"PRIu64"]: not found\n", ref);
+        return NULL;
+    }
+    return fn;
+}
+
 static const char *
 validate_path (const char *path, char **url)
 {
@@ -94,14 +130,14 @@ apteryx__index (Apteryx__Client_Service *service,
                   Apteryx__SearchResult_Closure closure, void *closure_data)
 {
     Apteryx__SearchResult result = APTERYX__SEARCH_RESULT__INIT;
-    apteryx_index_callback cb = (apteryx_index_callback) (long) index->cb;
+    apteryx_index_callback cb = (apteryx_index_callback) find_callback (index->ref);
     GList *results = NULL;
     GList *iter = NULL;
     int i;
     (void) service;
 
     DEBUG ("INDEX CB: \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-            index->path, index->id, index->cb);
+            index->path, index->id, index->ref);
 
     /* Call the callback */
     if (cb)
@@ -131,12 +167,13 @@ apteryx__watch (Apteryx__Client_Service *service,
                 const Apteryx__Watch *watch,
                 Apteryx__NoResult_Closure closure, void *closure_data)
 {
+    apteryx_watch_callback cb = (apteryx_watch_callback) find_callback (watch->ref);
     (void) service;
     char *value = NULL;
 
     DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
            watch->path, watch->value,
-           watch->id, watch->cb);
+           watch->id, watch->ref);
 
     if (watch->value && (watch->value[0] != '\0'))
     {
@@ -148,8 +185,8 @@ apteryx__watch (Apteryx__Client_Service *service,
     pthread_mutex_unlock (&pending_watches_lock);
 
     /* Call callback */
-    if (watch->cb)
-        ((apteryx_watch_callback) (long) watch->cb) (watch->path, value);
+    if (cb)
+        cb (watch->path, value);
     pthread_mutex_lock (&pending_watches_lock);
     if (--pending_watch_count == 0)
         pthread_cond_signal(&no_pending_watches);
@@ -165,14 +202,15 @@ apteryx__validate (Apteryx__Client_Service *service,
                 Apteryx__ValidateResult_Closure closure, void *closure_data)
 {
     Apteryx__ValidateResult result = APTERYX__VALIDATE_RESULT__INIT;
+    apteryx_validate_callback cb = (apteryx_validate_callback) find_callback (validate->ref);
     (void) service;
     char *value = NULL;
 
     DEBUG ("VALIDATE CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
            validate->path, validate->value,
-           validate->id, validate->cb);
+           validate->id, validate->ref);
 
-    if (!validate->cb)
+    if (!cb)
     {
         result.result = 0;
         goto exit;
@@ -193,7 +231,7 @@ apteryx__validate (Apteryx__Client_Service *service,
     {
         value = validate->value;
     }
-    result.result = ((apteryx_validate_callback)(size_t)validate->cb) (validate->path, value);
+    result.result = cb (validate->path, value);
 
 exit:
     /* Return result */
@@ -208,12 +246,12 @@ apteryx__provide (Apteryx__Client_Service *service,
                   Apteryx__GetResult_Closure closure, void *closure_data)
 {
     Apteryx__GetResult result = APTERYX__GET_RESULT__INIT;
-    apteryx_provide_callback cb = (apteryx_provide_callback) (long) provide->cb;
+    apteryx_provide_callback cb = (apteryx_provide_callback) find_callback (provide->ref);
     char *value = NULL;
     (void) service;
 
     DEBUG ("PROVIDE CB: \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-           provide->path, provide->id, provide->cb);
+           provide->path, provide->id, provide->ref);
 
     /* Call the callback */
     if (cb)
@@ -1422,22 +1460,29 @@ apteryx_find_tree (GNode *root)
 }
 
 static bool
-add_callback (const char *type, const char *path, void *cb)
+add_callback (const char *type, const char *path, void *fn)
 {
     size_t pid = getpid ();
     char _path[PATH_MAX];
+    cb_t *cb;
 
     ASSERT ((ref_count > 0), return false, "ADD_CB: Not initialised\n");
     ASSERT (type, return false, "ADD_CB: Invalid type\n");
     ASSERT (path, return false, "ADD_CB: Invalid path\n");
-    ASSERT (cb, return false, "ADD_CB: Invalid callback\n");
+    ASSERT (fn, return false, "ADD_CB: Invalid callback\n");
 
+    cb = calloc (1, sizeof (cb_t));
+    cb->ref = next_ref++;
+    cb->path = strdup (path);
+    cb->fn = fn;
+
+    pthread_mutex_lock (&lock);
+    cb_list = g_list_prepend (cb_list, (void *) cb);
     if (!bound)
     {
         char * uri = NULL;
 
         /* Bind to the default uri for this client */
-        pthread_mutex_lock (&lock);
         if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
                 || !rpc_server_bind (rpc, uri, uri))
         {
@@ -1447,13 +1492,13 @@ add_callback (const char *type, const char *path, void *cb)
             return false;
         }
         DEBUG ("Bound to uri %s\n", uri);
-        pthread_mutex_unlock (&lock);
         free ((void*) uri);
         bound = true;
     }
+    pthread_mutex_unlock (&lock);
 
     if (sprintf (_path, "%s/%zX-%zX-%zX",
-            type, (size_t)pid, (size_t)cb, (size_t)g_str_hash (path)) <= 0)
+            type, (size_t)pid, cb->ref, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
         return false;
@@ -1462,17 +1507,37 @@ add_callback (const char *type, const char *path, void *cb)
 }
 
 static bool
-delete_callback (const char *type, const char *path,  void *cb)
+delete_callback (const char *type, const char *path, void *fn)
 {
     char _path[PATH_MAX];
+    uint64_t ref;
+    GList *iter;
+    cb_t *cb;
 
     ASSERT ((ref_count > 0), return false, "DEL_CB: Not initialised\n");
     ASSERT (type, return false, "DEL_CB: Invalid type\n");
     ASSERT (path, return false, "DEL_CB: Invalid path\n");
-    ASSERT (cb, return false, "DEL_CB: Invalid callback\n");
+    ASSERT (fn, return false, "DEL_CB: Invalid callback\n");
+
+    pthread_mutex_lock (&lock);
+    for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
+    {
+        cb = (cb_t *) iter->data;
+        if (cb->fn == fn && strcmp (cb->path, path) == 0)
+        {
+            cb_list = g_list_remove (cb_list, cb);
+            break;
+        }
+        cb = NULL;
+    }
+    pthread_mutex_unlock (&lock);
+    ASSERT (cb, return false, "CB[%"PRIu64"]: not found (%s)\n", ref, path);
+    ref = cb->ref;
+    free ((void *) cb->path);
+    free (cb);
 
     if (sprintf (_path, "%s/%zX-%zX-%zX",
-            type, (size_t)getpid (), (size_t)cb, (size_t)g_str_hash (path)) <= 0)
+            type, (size_t)getpid (), ref, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, NULL))
         return false;
