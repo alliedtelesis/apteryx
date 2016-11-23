@@ -42,6 +42,10 @@
 #include <lauxlib.h>
 #include "apteryx.h"
 #include "internal.h"
+#include <pthread.h>
+
+static lua_State *gL = NULL;
+pthread_mutex_t gL_lock;
 
 #define lua_absindex(L, i) ((i) > 0 || (i) <= LUA_REGISTRYINDEX ? (i) : \
                                         lua_gettop(L) + (i) + 1)
@@ -259,7 +263,6 @@ lua_apteryx_set_tree (lua_State *L)
         lua_pushboolean (L, apteryx_set_tree (root));
         g_node_destroy (root);
     }
-
     return 1;
 }
 
@@ -279,6 +282,85 @@ lua_apteryx_get_tree (lua_State *L)
     return 1;
 }
 
+bool
+lua_watch_mux (int n, const char *path, const char *value)
+{
+    bool ret;
+
+    pthread_mutex_lock (&gL_lock);
+
+    if (!gL)
+    { /* must have exclusive access to the global lua state */
+        ERROR ("LUA cb: Lua state is NULL");
+        pthread_mutex_unlock (&gL_lock);
+        return false;
+    }
+
+    lua_pushinteger (gL, lua_watch_fn_table[n]);
+    lua_gettable (gL, LUA_REGISTRYINDEX);
+    if (!lua_isfunction (gL, -1))
+    {
+        luaL_error (gL, "lua function expected");
+    }
+    lua_pushstring (gL, path);
+    lua_pushstring (gL, value);
+    lua_call (gL, 2, 1);
+    /* boolean return type is not enforced */
+    ret = !(lua_toboolean (gL, -1) == 0);
+    lua_pop (gL, 1);    /* Remove the result to clean up */
+
+    pthread_mutex_unlock (&gL_lock);
+    return ret;
+}
+
+static int
+lua_apteryx_watch (lua_State *L)
+{
+    int cb_table_index;
+
+    if ((cb_table_index = lua_cb_register (L, lua_watch_fn_table)) < 0)
+    {
+        return 0;
+    }
+
+    if (!apteryx_watch (lua_tostring (L, 1), lua_watch_cb_table[cb_table_index]))
+    {
+        ERROR ("Could not register watch at index %d\n", cb_table_index);
+        return 0;
+    }
+
+    DEBUG ("Registered watch with index %d\n", cb_table_index);
+    return 1;
+}
+
+static int
+lua_apteryx_unwatch (lua_State *L)
+{
+    int cb_table_index;
+
+    if ((cb_table_index = lua_cb_unregister (L, lua_watch_fn_table)) < 0)
+    {
+        return 0;
+    }
+
+    if (!apteryx_unwatch (lua_tostring (L, 1), lua_watch_cb_table[cb_table_index]))
+    {
+        ERROR ("Could not unregister watch at index %d\n", cb_table_index);
+    }
+
+    DEBUG ("Unregistered watch index %d\n", cb_table_index);
+    return 1;
+}
+
+int
+lua_apteryx_mainloop (lua_State *L)
+{
+    gL = L;
+    pthread_mutex_unlock (&gL_lock);
+    pause ();
+    exit (0);
+}
+
 int
 luaopen_libapteryx (lua_State *L)
 {
@@ -290,12 +372,24 @@ luaopen_libapteryx (lua_State *L)
         { "prune", lua_apteryx_prune },
         { "get_tree", lua_apteryx_get_tree },
         { "set_tree", lua_apteryx_set_tree },
+        { "watch", lua_apteryx_watch },
+        { "unwatch", lua_apteryx_unwatch },
+        { "mainloop", lua_apteryx_mainloop },
         { NULL, NULL }
     };
+
+    if (pthread_mutex_init (&gL_lock, NULL) != 0)
+    {
+        luaL_error (L, "Initialization failed");
+        return 0;
+    }
+
+    pthread_mutex_lock (&gL_lock);
 
     /* Initialise Apteryx */
     if (!apteryx_init (false))
     {
+        luaL_error (L, "Initialization failed");
         return 0;
     }
 

@@ -4188,6 +4188,24 @@ test_lua_basic_prune (void)
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_lua_basic_watch (void)
+{
+    CU_ASSERT (system ("sleep 2 && apteryx -s "TEST_PATH"/watch lua_watch &"));
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "function test_watch (path, value)                            \n"
+        "  assert (path == '"TEST_PATH"/watch')                       \n"
+        "  assert (value == 'lua_watch')                              \n"
+        "  os.exit(0)                                                 \n"
+        "end                                                          \n"
+        "apteryx.watch('"TEST_PATH"/watch', test_watch)               \n"
+        "apteryx.mainloop()                                           \n"
+    ));
+    CU_ASSERT (system ("apteryx -s /test"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static inline unsigned long
 _memory_usage (void)
 {
@@ -4535,6 +4553,7 @@ CU_TestInfo tests_lua[] = {
     { "lua basic set get", test_lua_basic_set_get },
     { "lua basic search", test_lua_basic_search },
     { "lua basic prune", test_lua_basic_prune },
+    { "lua basic watch", test_lua_basic_watch },
     { "lua load memory usage", test_lua_load_memory },
     { "lua load performance", test_lua_load_performance },
     { "lua get performance", test_lua_perf_get },
