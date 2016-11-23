@@ -4188,6 +4188,135 @@ test_lua_basic_prune (void)
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_lua_basic_watch (void)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "local v = nil                                                \n"
+            "function test_watch (path, value)                              "
+            "    assert (path == '"TEST_PATH"/watch')                       "
+            "    assert (value == 'me')                                     "
+            "    v = value                                                  "
+            "end                                                          \n"
+            "apteryx.watch('"TEST_PATH"/watch', test_watch)               \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch', 'me')                       \n"
+            "apteryx.process()                                            \n"
+            "assert(v == 'me')                                            \n"
+            "apteryx.unwatch('"TEST_PATH"/watch', test_watch)             \n"
+            "apteryx.set('"TEST_PATH"/watch')                             \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_lua_provide_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_provide (path)                                   "
+            "    assert (path == '"TEST_PATH"/provide')                     "
+            "    return 'me'                                                "
+            "end                                                          \n"
+            "apteryx.provide('"TEST_PATH"/provide', test_provide)         \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unprovide('"TEST_PATH"/provide', test_provide)       \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_basic_provide (void)
+{
+    pthread_t client;
+    char *value = NULL;
+
+    pthread_create (&client, NULL, (void *) &test_lua_provide_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/provide")) != NULL);
+    CU_ASSERT (value && strcmp (value, "me") == 0);
+    if (value)
+        free ((void *) value);
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_lua_index_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_index (path)                                   "
+            "    assert (path == '"TEST_PATH"/index/')                     "
+            "    return {'"TEST_PATH"/index/dog','"TEST_PATH"/index/cat'}  "
+            "end                                                          \n"
+            "apteryx.index('"TEST_PATH"/index/', test_index)              \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unindex('"TEST_PATH"/index/', test_index)            \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_basic_index (void)
+{
+    pthread_t client;
+    GList *paths = NULL;
+
+    pthread_create (&client, NULL, (void *) &test_lua_index_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/index/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/index/dog", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/index/cat", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_lua_validate_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_validate (path, value)                           "
+            "    assert (path == '"TEST_PATH"/validate')                    "
+            "    return value == 'cat' and -22 or 0                          "
+            "end                                                          \n"
+            "apteryx.validate('"TEST_PATH"/validate', test_validate)      \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unvalidate('"TEST_PATH"/validate', test_validate)    \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_basic_validate (void)
+{
+    pthread_t client;
+
+    pthread_create (&client, NULL, (void *) &test_lua_validate_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_set (TEST_PATH"/validate", "dog"));
+    CU_ASSERT (!apteryx_set (TEST_PATH"/validate", "cat") && errno == -EINVAL);
+    CU_ASSERT (apteryx_set (TEST_PATH"/validate", NULL));
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static inline unsigned long
 _memory_usage (void)
 {
@@ -4535,6 +4664,10 @@ CU_TestInfo tests_lua[] = {
     { "lua basic set get", test_lua_basic_set_get },
     { "lua basic search", test_lua_basic_search },
     { "lua basic prune", test_lua_basic_prune },
+    { "lua basic watch", test_lua_basic_watch },
+    { "lua basic provide", test_lua_basic_provide },
+    { "lua basic index", test_lua_basic_index },
+    { "lua basic validate", test_lua_basic_validate },
     { "lua load memory usage", test_lua_load_memory },
     { "lua load performance", test_lua_load_performance },
     { "lua get performance", test_lua_perf_get },
