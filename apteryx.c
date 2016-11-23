@@ -53,17 +53,21 @@ typedef struct _cb_t
 {
     uint64_t ref;
     const char *path;
+    bool value;
     void *fn;
+    void *data;
 } cb_t;
 static uint64_t next_ref = 0;
 static GList *cb_list = NULL;
 
 static void *
-find_callback (uint64_t ref)
+call_callback (uint64_t ref, const char *path, const char *value)
 {
     cb_t *cb = NULL;
     GList *iter;
     void *fn = NULL;
+    void *data = NULL;
+    bool val = false;
 
     pthread_mutex_lock (&lock);
     for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
@@ -72,6 +76,8 @@ find_callback (uint64_t ref)
         if (cb->ref == ref)
         {
             fn = cb->fn;
+            data = cb->data;
+            val = cb->value;
             break;
         }
     }
@@ -81,7 +87,15 @@ find_callback (uint64_t ref)
         DEBUG ("CB[%"PRIu64"]: not found\n", ref);
         return NULL;
     }
-    return fn;
+
+    if (val && data)
+        return ((void*(*)(const char*, const char*, void*)) fn) (path, value, data);
+    else if (val)
+        return ((void*(*)(const char*, const char*)) fn) (path, value);
+    else if (data)
+        return ((void*(*)(const char*, void*)) fn) (path, data);
+    else
+        return ((void*(*)(const char*)) fn) (path);
 }
 
 static const char *
@@ -130,7 +144,6 @@ apteryx__index (Apteryx__Client_Service *service,
                   Apteryx__SearchResult_Closure closure, void *closure_data)
 {
     Apteryx__SearchResult result = APTERYX__SEARCH_RESULT__INIT;
-    apteryx_index_callback cb = (apteryx_index_callback) find_callback (index->ref);
     GList *results = NULL;
     GList *iter = NULL;
     int i;
@@ -140,8 +153,7 @@ apteryx__index (Apteryx__Client_Service *service,
             index->path, index->id, index->ref);
 
     /* Call the callback */
-    if (cb)
-        results = cb (index->path);
+    results = (GList *) call_callback (index->ref, index->path, NULL);
 
     /* Return result */
     result.n_paths = g_list_length (results);
@@ -167,7 +179,6 @@ apteryx__watch (Apteryx__Client_Service *service,
                 const Apteryx__Watch *watch,
                 Apteryx__NoResult_Closure closure, void *closure_data)
 {
-    apteryx_watch_callback cb = (apteryx_watch_callback) find_callback (watch->ref);
     (void) service;
     char *value = NULL;
 
@@ -185,8 +196,7 @@ apteryx__watch (Apteryx__Client_Service *service,
     pthread_mutex_unlock (&pending_watches_lock);
 
     /* Call callback */
-    if (cb)
-        cb (watch->path, value);
+    call_callback (watch->ref, watch->path, value);
     pthread_mutex_lock (&pending_watches_lock);
     if (--pending_watch_count == 0)
         pthread_cond_signal(&no_pending_watches);
@@ -202,19 +212,12 @@ apteryx__validate (Apteryx__Client_Service *service,
                 Apteryx__ValidateResult_Closure closure, void *closure_data)
 {
     Apteryx__ValidateResult result = APTERYX__VALIDATE_RESULT__INIT;
-    apteryx_validate_callback cb = (apteryx_validate_callback) find_callback (validate->ref);
     (void) service;
     char *value = NULL;
 
     DEBUG ("VALIDATE CB \"%s\" = \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
            validate->path, validate->value,
            validate->id, validate->ref);
-
-    if (!cb)
-    {
-        result.result = 0;
-        goto exit;
-    }
 
     /* We want to wait for all pending watches to be processed */
     pthread_mutex_lock (&pending_watches_lock);
@@ -231,9 +234,8 @@ apteryx__validate (Apteryx__Client_Service *service,
     {
         value = validate->value;
     }
-    result.result = cb (validate->path, value);
+    result.result = (int32_t) (size_t) call_callback (validate->ref, validate->path, value);
 
-exit:
     /* Return result */
     closure (&result, closure_data);
     return;
@@ -246,7 +248,6 @@ apteryx__provide (Apteryx__Client_Service *service,
                   Apteryx__GetResult_Closure closure, void *closure_data)
 {
     Apteryx__GetResult result = APTERYX__GET_RESULT__INIT;
-    apteryx_provide_callback cb = (apteryx_provide_callback) find_callback (provide->ref);
     char *value = NULL;
     (void) service;
 
@@ -254,8 +255,7 @@ apteryx__provide (Apteryx__Client_Service *service,
            provide->path, provide->id, provide->ref);
 
     /* Call the callback */
-    if (cb)
-        value = cb (provide->path);
+    value = (char *) call_callback (provide->ref, provide->path, NULL);
 
     /* Return result */
     result.value = value;
@@ -541,7 +541,7 @@ apteryx_cas (const char *path, const char *value, uint64_t ts)
     }
     else if (!result)
     {
-        DEBUG ("SET: Error response: %s\n", strerror (errno));
+        DEBUG ("SET: Error response: %s\n", strerror (-errno));
     }
     rpc_client_release (rpc, rpc_client, true);
     free (url);
@@ -1459,8 +1459,8 @@ apteryx_find_tree (GNode *root)
     return data.paths;
 }
 
-static bool
-add_callback (const char *type, const char *path, void *fn)
+bool
+add_callback (const char *type, const char *path, void *fn, bool value, void *data)
 {
     size_t pid = getpid ();
     char _path[PATH_MAX];
@@ -1475,6 +1475,8 @@ add_callback (const char *type, const char *path, void *fn)
     cb->ref = next_ref++;
     cb->path = strdup (path);
     cb->fn = fn;
+    cb->value = value;
+    cb->data = data;
 
     pthread_mutex_lock (&lock);
     cb_list = g_list_prepend (cb_list, (void *) cb);
@@ -1506,7 +1508,7 @@ add_callback (const char *type, const char *path, void *fn)
     return true;
 }
 
-static bool
+bool
 delete_callback (const char *type, const char *path, void *fn)
 {
     char _path[PATH_MAX];
@@ -1547,7 +1549,7 @@ delete_callback (const char *type, const char *path, void *fn)
 bool
 apteryx_index (const char *path, apteryx_index_callback cb)
 {
-    return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb);
+    return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb, false, NULL);
 }
 
 bool
@@ -1559,7 +1561,7 @@ apteryx_unindex (const char *path, apteryx_index_callback cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL);
 }
 
 bool
@@ -1571,7 +1573,7 @@ apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
-    return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb);
+    return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb, true, NULL);
 }
 
 bool
@@ -1583,7 +1585,7 @@ apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 bool
 apteryx_provide (const char *path, apteryx_provide_callback cb)
 {
-    return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
+    return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb, false, NULL);
 }
 
 bool
@@ -1601,7 +1603,7 @@ apteryx_proxy (const char *path, const char *url)
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = add_callback (APTERYX_PROXIES_PATH, value,
-            (void *)(size_t)g_str_hash (url));
+            (void *)(size_t)g_str_hash (url), false, NULL);
     free (value);
     return res;
 }

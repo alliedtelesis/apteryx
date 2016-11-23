@@ -38,6 +38,7 @@
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
 #ifdef HAVE_LUA
+#include <sys/poll.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include "apteryx.h"
@@ -45,6 +46,8 @@
 
 #define lua_absindex(L, i) ((i) > 0 || (i) <= LUA_REGISTRYINDEX ? (i) : \
                                         lua_gettop(L) + (i) + 1)
+
+lua_State *g_L = NULL;
 
 static const char *
 lua_apteryx_tostring (lua_State *L, int i)
@@ -279,6 +282,364 @@ lua_apteryx_get_tree (lua_State *L)
     return 1;
 }
 
+#define APTERYX_CB_TABLE_REGISTRY_INDEX "apteryx_cb_table"
+
+static int
+find_callback (lua_State *L, int index)
+{
+    int ref = 0;
+    luaL_checktype (L, -1, LUA_TTABLE);
+    lua_pushvalue (L, -1);
+    lua_pushnil (L);
+    while (lua_next (L, -2))
+    {
+        lua_pushvalue (L, -2);
+        if (lua_rawequal (L, index, -2))
+        {
+            ref = lua_tonumber (L, -1);
+            lua_pop (L, 2);
+            break;
+        }
+        lua_pop(L, 2);
+    }
+    lua_pop(L, 1);
+    return ref;
+}
+
+static int
+ref_callback (lua_State* L, int index)
+{
+    luaL_checktype (L, index, LUA_TFUNCTION);
+    lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+    lua_gettable (L, LUA_REGISTRYINDEX);
+    if (lua_isnil (L, -1))
+    {
+        lua_pop (L, 1); /* pop nil */
+        lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+        lua_newtable (L);
+        lua_settable (L, LUA_REGISTRYINDEX);
+        lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+        lua_gettable (L, LUA_REGISTRYINDEX);
+    }
+    int ref = find_callback (L, index);
+    if (ref == 0)
+    {
+        lua_pushvalue (L, index);
+        ref = luaL_ref (L, -2);
+    }
+    lua_pop (L, 1); /* pop table */
+    return ref;
+}
+
+static bool
+push_callback (lua_State* L, size_t ref)
+{
+    if (L == NULL)
+        return false;
+    lua_pushlightuserdata (L, APTERYX_CB_TABLE_REGISTRY_INDEX);
+    lua_gettable (L, LUA_REGISTRYINDEX);
+    if (lua_isnil (L, -1))
+    {
+        ERROR ("LUA: Callback not found\n");
+        lua_pop (L, 1); /* pop nil */
+        return false;
+    }
+    lua_rawgeti (L, -1, ref);
+    if (!lua_isfunction (L, -1))
+    {
+        ERROR ("LUA: Callback not a function\n");
+        lua_pop (L, 1);
+        return false;
+    }
+    return true;
+}
+
+static GList*
+lua_do_index (const char *path, size_t ref)
+{
+    lua_State* L = g_L;
+    GList *paths = NULL;
+    if (!push_callback (L, ref))
+        return false;
+    lua_pushstring (L, path);
+    lua_pcall (L, 1, 1, 0);
+    if (lua_gettop (L))
+    {
+        if (lua_istable (L, -1))
+        {
+            lua_pushnil (L);
+            while (lua_next(L, -2) != 0)
+            {
+                paths = g_list_append (paths, strdup (lua_tostring (L, -1)));
+                lua_pop (L, 1);
+            }
+            lua_pop (L, 1);
+        }
+        else
+        {
+            ERROR ("LUA: Index did not return a table\n");
+            lua_pop (L, 1);
+        }
+    }
+    lua_pop (L, 1); /* pop fn */
+    ASSERT (lua_gettop (L) == 0, return paths, "Stack not zero after index");
+    return paths;
+}
+
+static int
+lua_apteryx_index (lua_State *L)
+{
+    luaL_checktype (L, 1, LUA_TSTRING);
+    luaL_checktype (L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
+
+    if (!add_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, false, (void *) ref))
+    {
+        luaL_error (L, "Failed to register callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_apteryx_unindex (lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TSTRING);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+
+    if (!delete_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index))
+    {
+        luaL_error (L, "Failed to unregister callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static bool
+lua_do_watch (const char *path, const char *value, size_t ref)
+{
+    lua_State* L = g_L;
+    if (!push_callback (L, ref))
+        return false;
+    lua_pushstring (L, path);
+    lua_pushstring (L, value);
+    lua_pcall (L, 2, 0, 0);
+    lua_pop (L, 1); /* pop fn */
+    ASSERT (lua_gettop (L) == 0, return false, "Stack not zero after watch\n");
+    return true;
+}
+
+static int
+lua_apteryx_watch (lua_State *L)
+{
+    luaL_checktype (L, 1, LUA_TSTRING);
+    luaL_checktype (L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
+
+    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, true, (void *) ref))
+    {
+        luaL_error (L, "Failed to register watch\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_apteryx_unwatch (lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TSTRING);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+
+    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch))
+    {
+        luaL_error (L, "Failed to unregister callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_do_validate (const char *path, const char *value, size_t ref)
+{
+    lua_State* L = g_L;
+    int rc = 0;
+    if (!push_callback (L, ref))
+        return false;
+    lua_pushstring (L, path);
+    lua_pushstring (L, value);
+    lua_pcall (L, 2, 1, 0);
+    if (lua_gettop (L))
+    {
+        rc = lua_tonumber (L, -1);
+        lua_pop (L, 1);
+    }
+    lua_pop (L, 1); /* pop fn */
+    ASSERT (lua_gettop (L) == 0, return rc, "Stack not zero after validate\n");
+    return rc;
+}
+
+static int
+lua_apteryx_validate (lua_State *L)
+{
+    luaL_checktype (L, 1, LUA_TSTRING);
+    luaL_checktype (L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
+
+    if (!add_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, true, (void *) ref))
+    {
+        luaL_error (L, "Failed to register callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_apteryx_unvalidate (lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TSTRING);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+
+    if (!delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate))
+    {
+        luaL_error (L, "Failed to unregister callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static char*
+lua_do_provide (const char *path, size_t ref)
+{
+    lua_State* L = g_L;
+    char *value = NULL;
+    if (!push_callback (L, ref))
+        return NULL;
+    lua_pushstring (L, path);
+    lua_pcall (L, 1, 1, 0);
+    if (lua_gettop (L))
+    {
+        value = strdup (lua_apteryx_tostring (L, -1));
+        lua_pop (L, 1);
+    }
+    lua_pop (L, 1); /* pop fn */
+    ASSERT (lua_gettop (L) == 0, return value, "Stack not zero after provide\n");
+    return value;
+}
+
+static int
+lua_apteryx_provide (lua_State *L)
+{
+    luaL_checktype (L, 1, LUA_TSTRING);
+    luaL_checktype (L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
+
+    if (!add_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, false, (void *) ref))
+    {
+        luaL_error (L, "Failed to register callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_apteryx_unprovide (lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TSTRING);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+
+    if (!delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide))
+    {
+        luaL_error (L, "Failed to unregister callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_apteryx_process (lua_State *L)
+{
+    if (lua_gettop (L) == 1 && !lua_isboolean (L, 1))
+    {
+        luaL_error (L, "Invalid arguments: process(bool poll)");
+        return 0;
+    }
+    bool poll = lua_gettop (L) == 1 ? lua_toboolean (L, 1) : true;
+    g_L = L;
+    int fd = apteryx_process (poll);
+    lua_pushnumber (L, fd);
+    g_L = NULL;
+    return 1;
+}
+
+static bool running = false;
+static void
+termination_handler (void)
+{
+    running = false;
+}
+
+static int
+lua_apteryx_mainloop (lua_State *L)
+{
+    int fd = 0;
+    struct pollfd pfd;
+    uint8_t dummy = 0;
+
+    if (lua_gettop (L) > 1 ||
+        (lua_gettop (L) == 1 && !lua_isboolean (L, 1)))
+    {
+        luaL_error (L, "Invalid arguments: mainloop(bool catch_sig)");
+        return 0;
+    }
+    if (lua_gettop (L) == 1 && lua_toboolean (L, 1))
+    {
+        signal (SIGTERM, (__sighandler_t) termination_handler);
+        signal (SIGINT, (__sighandler_t) termination_handler);
+    }
+
+    running = true;
+    while (running && fd >= 0)
+    {
+        fd = apteryx_process (true);
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        poll (&pfd, 1, 0);
+        if (running && read (fd, &dummy, 1) == 0)
+        {
+            luaL_error (L, "Poll/Read error: %s\n", strerror (errno));
+        }
+    }
+    return 0;
+}
+
 int
 luaopen_libapteryx (lua_State *L)
 {
@@ -290,6 +651,16 @@ luaopen_libapteryx (lua_State *L)
         { "prune", lua_apteryx_prune },
         { "get_tree", lua_apteryx_get_tree },
         { "set_tree", lua_apteryx_set_tree },
+        { "index", lua_apteryx_index },
+        { "unindex", lua_apteryx_unindex },
+        { "watch", lua_apteryx_watch },
+        { "unwatch", lua_apteryx_unwatch },
+        { "validate", lua_apteryx_validate },
+        { "unvalidate", lua_apteryx_unvalidate },
+        { "provide", lua_apteryx_provide },
+        { "unprovide", lua_apteryx_unprovide },
+        { "process", lua_apteryx_process },
+        { "mainloop", lua_apteryx_mainloop },
         { NULL, NULL }
     };
 
