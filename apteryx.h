@@ -396,7 +396,7 @@ bool apteryx_unwatch (const char *path, apteryx_watch_callback cb);
  * Callback function to be called to validate a new value
  * @param path path for the proposed value
  * @param value new proposed value
- * @return 0 on success, error code on failure
+ * @return 0 on success, error code on failure. The error code must be a negative number.
  */
 typedef int (*apteryx_validate_callback) (const char *path, const char *value);
 
