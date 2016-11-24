@@ -47,7 +47,7 @@
 #define lua_absindex(L, i) ((i) > 0 || (i) <= LUA_REGISTRYINDEX ? (i) : \
                                         lua_gettop(L) + (i) + 1)
 
-lua_State *g_L = NULL;
+static lua_State *g_L = NULL;
 
 static const char *
 lua_apteryx_tostring (lua_State *L, int i)
@@ -358,6 +358,7 @@ static GList*
 lua_do_index (const char *path, size_t ref)
 {
     lua_State* L = g_L;
+    int ssize = lua_gettop (L);
     GList *paths = NULL;
     if (!push_callback (L, ref))
         return false;
@@ -382,7 +383,7 @@ lua_do_index (const char *path, size_t ref)
         }
     }
     lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == 0, return paths, "Stack not zero after index");
+    ASSERT (lua_gettop (L) == ssize, return paths, "Index: Stack changed\n");
     return paths;
 }
 
@@ -426,13 +427,14 @@ static bool
 lua_do_watch (const char *path, const char *value, size_t ref)
 {
     lua_State* L = g_L;
+    int ssize = lua_gettop (L);
     if (!push_callback (L, ref))
         return false;
     lua_pushstring (L, path);
     lua_pushstring (L, value);
     lua_pcall (L, 2, 0, 0);
     lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == 0, return false, "Stack not zero after watch\n");
+    ASSERT (lua_gettop (L) == ssize, return true, "Watch: Stack changed\n");
     return true;
 }
 
@@ -476,6 +478,7 @@ static int
 lua_do_validate (const char *path, const char *value, size_t ref)
 {
     lua_State* L = g_L;
+    int ssize = lua_gettop (L);
     int rc = 0;
     if (!push_callback (L, ref))
         return false;
@@ -488,7 +491,7 @@ lua_do_validate (const char *path, const char *value, size_t ref)
         lua_pop (L, 1);
     }
     lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == 0, return rc, "Stack not zero after validate\n");
+    ASSERT (lua_gettop (L) == ssize, return rc, "Validate: Stack changed\n");
     return rc;
 }
 
@@ -532,6 +535,7 @@ static char*
 lua_do_provide (const char *path, size_t ref)
 {
     lua_State* L = g_L;
+    int ssize = lua_gettop (L);
     char *value = NULL;
     if (!push_callback (L, ref))
         return NULL;
@@ -543,7 +547,7 @@ lua_do_provide (const char *path, size_t ref)
         lua_pop (L, 1);
     }
     lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == 0, return value, "Stack not zero after provide\n");
+    ASSERT (lua_gettop (L) == ssize, return value, "Provide: Stack changed\n");
     return value;
 }
 
@@ -628,11 +632,13 @@ lua_apteryx_mainloop (lua_State *L)
     running = true;
     while (running && fd >= 0)
     {
+        g_L = L;
         fd = apteryx_process (true);
+        g_L = NULL;
         pfd.fd = fd;
         pfd.events = POLLIN;
-        poll (&pfd, 1, 0);
-        if (running && read (fd, &dummy, 1) == 0)
+        poll (&pfd, 1, -1);
+        if (running && (!(pfd.revents & POLLIN) || read (fd, &dummy, 1) == 0))
         {
             luaL_error (L, "Poll/Read error: %s\n", strerror (errno));
         }
