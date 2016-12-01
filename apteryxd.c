@@ -1324,6 +1324,8 @@ apteryx__prune (Apteryx__Server_Service *service,
     result.result = 0;
     GList *paths = NULL, *iter;
     (void) service;
+    int validation_result = 0;
+    int validation_lock = 0;
 
     /* Check parameters */
     if (prune == NULL || prune->path == NULL)
@@ -1350,16 +1352,46 @@ apteryx__prune (Apteryx__Server_Service *service,
     paths = g_list_prepend(paths, g_strdup(prune->path));
     _search_paths (&paths, prune->path);
 
-    /* Prune from database */
-    db_delete (prune->path, UINT64_MAX);
+    /* Call validators for each pruned path to ensure the path can be set to NULL. */
+    for (iter = paths; iter; iter = g_list_next (iter))
+    {
+        const char *path = (const char *)iter->data;
+        validation_result = validate_set (path, NULL);
+        if (validation_result != 0)
+            validation_lock++;
+        if (validation_result < 0)
+        {
+            DEBUG ("PRUNE: %s refused by validate\n", path);
+            result.result = validation_result;
+            break;
+        }
+    }
+
+    /* Only do the prune if it is valid to do so. */
+    if (validation_result >= 0)
+    {
+        /* Prune from database */
+        db_delete (prune->path, UINT64_MAX);
+    }
 
     /* Return result */
     closure (&result, closure_data);
 
-    /* Call watchers for each pruned path */
-    for (iter = paths; iter; iter = g_list_next (iter))
+    if (validation_result >= 0)
     {
-        notify_watchers ((const char *)iter->data);
+        /* Call watchers for each pruned path */
+        for (iter = paths; iter; iter = g_list_next (iter))
+        {
+            notify_watchers ((const char *)iter->data);
+        }
+    }
+
+    /* Release validation lock - this is a sensitive value */
+    while (validation_lock)
+    {
+        DEBUG("PRUNE: unlocking mutex\n");
+        pthread_mutex_unlock (&validating);
+        validation_lock--;
     }
 
     g_list_free_full (paths, g_free);
