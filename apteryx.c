@@ -1533,7 +1533,7 @@ delete_callback (const char *type, const char *path, void *fn)
         cb = NULL;
     }
     pthread_mutex_unlock (&lock);
-    ASSERT (cb, return false, "CB[%"PRIu64"]: not found (%s)\n", ref, path);
+    ASSERT (cb, return false, "CB: not found (%s)\n", path);
     ref = cb->ref;
     free ((void *) cb->path);
     free (cb);
