@@ -1745,6 +1745,28 @@ test_validate()
 }
 
 void
+test_validate_prune()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/hostname";
+
+    CU_ASSERT (apteryx_validate (path, test_validate_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "testing"));
+    CU_ASSERT (apteryx_prune (path));
+
+    CU_ASSERT (apteryx_set_string (path, NULL, "testing"));
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    CU_ASSERT (!apteryx_prune (path));
+    CU_ASSERT (errno == -EPERM);
+
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_callback));
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
+    apteryx_set_string (path, NULL, NULL);
+
+}
+
+void
 test_validate_one_level()
 {
     _path = _value = NULL;
@@ -4561,6 +4583,7 @@ static CU_TestInfo tests_api_validate[] = {
     { "validate from many watches", test_validate_from_many_watches },
     { "validate set order", test_validate_ordering },
     { "validate tree order", test_validate_ordering_tree },
+    { "validate prune", test_validate_prune },
     CU_TEST_INFO_NULL,
 };
 
