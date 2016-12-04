@@ -1499,7 +1499,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     }
     pthread_mutex_unlock (&lock);
 
-    if (sprintf (_path, "%s/%zX-%zX-%zX",
+    if (sprintf (_path, "%s/%zX-%"PRIX64"-%zX",
             type, (size_t)pid, cb->ref, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
@@ -1538,7 +1538,7 @@ delete_callback (const char *type, const char *path, void *fn)
     free ((void *) cb->path);
     free (cb);
 
-    if (sprintf (_path, "%s/%zX-%zX-%zX",
+    if (sprintf (_path, "%s/%zX-%"PRIX64"-%zX",
             type, (size_t)getpid (), ref, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, NULL))
