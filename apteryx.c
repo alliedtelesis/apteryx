@@ -1500,7 +1500,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     pthread_mutex_unlock (&lock);
 
     if (sprintf (_path, "%s/%zX-%zX-%zX",
-            type, (size_t)pid, cb->ref, (size_t)g_str_hash (path)) <= 0)
+            type, (size_t)pid, (size_t)cb->ref, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
         return false;
@@ -1539,7 +1539,7 @@ delete_callback (const char *type, const char *path, void *fn)
     free (cb);
 
     if (sprintf (_path, "%s/%zX-%zX-%zX",
-            type, (size_t)getpid (), ref, (size_t)g_str_hash (path)) <= 0)
+            type, (size_t)getpid (), (size_t)ref, (size_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, NULL))
         return false;
