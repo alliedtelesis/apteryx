@@ -1326,6 +1326,8 @@ apteryx__prune (Apteryx__Server_Service *service,
     (void) service;
     int validation_result = 0;
     int validation_lock = 0;
+    char *value = NULL;
+    size_t vsize = 0;
 
     /* Check parameters */
     if (prune == NULL || prune->path == NULL)
@@ -1349,7 +1351,11 @@ apteryx__prune (Apteryx__Server_Service *service,
     }
 
     /* Collect the list of deleted paths for notification */
-    paths = g_list_prepend(paths, g_strdup(prune->path));
+    if (db_get (prune->path, (unsigned char**)&value, &vsize))
+    {
+        paths = g_list_prepend (paths, g_strdup (prune->path));
+        g_free (value);
+    }
     _search_paths (&paths, prune->path);
 
     /* Call validators for each pruned path to ensure the path can be set to NULL. */
