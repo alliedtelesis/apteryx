@@ -1253,7 +1253,6 @@ test_watch_one_level_path ()
     _watch_cleanup ();
 }
 
-
 void
 test_watch_one_level_path_prune ()
 {
@@ -1269,6 +1268,25 @@ test_watch_one_level_path_prune ()
 
     CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, "state", NULL));
+    _watch_cleanup ();
+}
+
+void
+test_watch_empty_path_prune ()
+{
+    _path = _value = NULL;
+    CU_ASSERT (apteryx_watch
+               (TEST_PATH"/entity/*", test_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones/private/state"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/*", test_watch_callback));
     _watch_cleanup ();
 }
 
@@ -4553,7 +4571,8 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch remove", test_watch_remove },
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
     { "watch one level path", test_watch_one_level_path },
-    { "watch_one_level_path_prune", test_watch_one_level_path_prune},
+    { "watch one level path prune", test_watch_one_level_path_prune },
+    { "watch empty path prune", test_watch_empty_path_prune },
     { "watch wildpath", test_watch_wildpath },
     { "watch wildcard", test_watch_wildcard },
     { "watch wildcard not last", test_watch_wildcard_not_last },
