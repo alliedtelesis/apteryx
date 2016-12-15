@@ -2,7 +2,7 @@
 #
 # Unit Tests (make test FILTER): e.g make test Performance
 # Requires GLib and CUnit for Unit Testing.
-# sudo apt-get install libglib2.0-dev libcunit1-dev libprotobuf-c0-dev protobuf-c-compiler liblua5.2-dev
+# sudo apt-get install libglib2.0-dev libcunit1-dev liblua5.2-dev
 #
 # TEST_WRAPPER="G_SLICE=always-malloc valgrind --leak-check=full" make test
 # TEST_WRAPPER="gdb" make test
@@ -17,13 +17,11 @@ PREFIX?=/usr/
 CC:=$(CROSS_COMPILE)gcc
 LD:=$(CROSS_COMPILE)ld
 PKG_CONFIG ?= pkg-config
-PROTOC_C ?= protoc-c
 
 CFLAGS := $(CFLAGS) -g -O2
 EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
-EXTRA_CFLAGS += -I. -I/usr/include/google $(shell $(PKG_CONFIG) --cflags glib-2.0)
+EXTRA_CFLAGS += -I. $(shell $(PKG_CONFIG) --cflags glib-2.0)
 EXTRA_LDFLAGS := $(shell $(PKG_CONFIG) --libs glib-2.0) -lpthread
-EXTRA_LDFLAGS += -lrt -lprotobuf-c -lgcc_s
 ifneq ($(HAVE_LUA),no)
 LUAVERSION := $(shell $(PKG_CONFIG) --exists lua && echo lua || ($(PKG_CONFIG) --exists lua5.2 && echo lua5.2 || echo none))
 ifneq ($(LUAVERSION),none)
@@ -39,7 +37,7 @@ endif
 
 all: libapteryx.so apteryx apteryxd
 
-libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
+libapteryx.so: rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Creating library "$@""
 	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 	@ln -s -f $@ apteryx.so
@@ -48,10 +46,7 @@ libapteryx.so: apteryx.pb-c.o rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Compiling "$<""
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
-%.pb-c.c : %.proto
-	$(Q)$(PROTOC_C) --c_out=. $<
-
-apteryxd: apteryxd.c apteryx.pb-c.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
+apteryxd: apteryxd.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
@@ -92,6 +87,6 @@ install: all
 
 clean:
 	@echo "Cleaning..."
-	@rm -f libapteryx.so apteryx.so apteryx apteryxd *.o *.pb-c.c *.pb-c.h
+	@rm -f libapteryx.so apteryx.so apteryx apteryxd *.o
 
 .PHONY: all clean

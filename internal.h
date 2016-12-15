@@ -26,13 +26,15 @@
 #include <inttypes.h>
 #include <ctype.h>
 #include <string.h>
+#include <assert.h>
+#include <errno.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <syslog.h>
 #include <glib.h>
-#include <protobuf-c/protobuf-c.h>
+#include "rpc_transport.h"
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
@@ -85,10 +87,13 @@ typedef enum
 {
     MODE_SET,
     MODE_GET,
+    MODE_SEARCH,
     MODE_FIND,
     MODE_TRAVERSE,
     MODE_WATCH,
     MODE_PROVIDE,
+    MODE_INDEX,
+    MODE_VALIDATE,
     MODE_PROXY,
     MODE_PRUNE,
     MODE_TIMESTAMP,
@@ -170,16 +175,39 @@ uint64_t db_timestamp (const char *path);
 #define RPC_TIMEOUT_US 1000000
 #define RPC_CLIENT_TIMEOUT_US 1000000
 typedef struct rpc_instance_s *rpc_instance;
+typedef struct rpc_client_t *rpc_client;
 #define RPC_TEST_DELAY_MASK 0x7FF
 extern bool rpc_test_random_watch_delay;
-rpc_instance rpc_init (ProtobufCService *service, const ProtobufCServiceDescriptor *descriptor, int timeout);
+typedef struct rpc_message_t
+{
+    /* Raw buffer */
+    uint8_t *buffer;
+    size_t size;
+    /* Data */
+    size_t offset;
+    size_t length;
+} rpc_message_t;
+typedef struct rpc_message_t *rpc_message;
+typedef bool (*rpc_msg_handler) (rpc_message msg);
+
+void rpc_msg_push (rpc_message msg, size_t len);
+void rpc_msg_encode_uint8 (rpc_message msg, uint8_t value);
+uint8_t rpc_msg_decode_uint8 (rpc_message msg);
+void rpc_msg_encode_uint64 (rpc_message msg, uint64_t value);
+uint64_t rpc_msg_decode_uint64 (rpc_message msg);
+void rpc_msg_encode_string (rpc_message msg, const char *value);
+char* rpc_msg_decode_string (rpc_message msg);
+bool rpc_msg_send (rpc_client client, rpc_message msg);
+void rpc_msg_reset (rpc_message msg);
+
+rpc_instance rpc_init (int timeout, rpc_msg_handler handler);
 void rpc_shutdown (rpc_instance rpc);
 bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
 bool rpc_server_release (rpc_instance rpc, const char *guid);
 int rpc_server_process (rpc_instance rpc, bool poll);
-ProtobufCService *rpc_client_existing (rpc_instance rpc, const char *url);
-ProtobufCService *rpc_client_connect (rpc_instance rpc, const char *url);
-void rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep);
+rpc_client rpc_client_existing (rpc_instance rpc, const char *url);
+rpc_client rpc_client_connect (rpc_instance rpc, const char *url);
+void rpc_client_release (rpc_instance rpc, rpc_client client, bool keep);
 
 /* Apteryx configuration */
 void config_init (void);

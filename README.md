@@ -97,7 +97,7 @@ int main (int argc, char *argv[])
 ```
 
 ```
-sudo apt-get install libglib2.0-dev libcunit1-dev libprotobuf-c0-dev protobuf-c-compiler
+sudo apt-get install libglib2.0-dev libcunit1-dev liblua5.2-dev
 gcc -o clockd clockd.c -I. -L. -lapteryx -std=c99 `pkg-config --cflags glib-2.0` `pkg-config --libs glib-2.0`
 LD_LIBRARY_PATH=. ./clockd &
 ```

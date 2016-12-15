@@ -163,7 +163,7 @@ handle_proxies_set (const char *path, const char *value)
         cb = cb_find (&proxy_list, guid);
         if (cb && cb->uri)
         {
-            ProtobufCService *rpc_client = rpc_client_existing (proxy_rpc, cb->uri);
+            rpc_client rpc_client = rpc_client_existing (proxy_rpc, cb->uri);
             if (rpc_client)
             {
                 rpc_client_release (proxy_rpc, rpc_client, false);
