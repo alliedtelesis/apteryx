@@ -37,7 +37,6 @@
 #include <CUnit/Basic.h>
 #include "apteryx.h"
 #include "internal.h"
-#include "apteryx.pb-c.h"
 
 #define TEST_PATH           "/test"
 #define TEST_ITERATIONS     1000
@@ -3843,48 +3842,24 @@ test_tcp_con_req_resp_disc_latency ()
     test_socket_latency (AF_INET, true, true, true);
 }
 
-static void
-apteryx__ping (Apteryx__Test_Service *service,
-              const Apteryx__Ping *ping,
-              Apteryx__Ping_Closure closure, void *closure_data)
+static bool
+test_handler (rpc_message msg)
 {
-    closure (ping, closure_data);
-    return;
-}
-
-static Apteryx__Test_Service test_service = APTERYX__TEST__INIT (apteryx__);
-
-typedef struct _ping_data_t
-{
-    char *value;
-    bool done;
-} ping_data_t;
-
-static void
-handle_ping_response (const Apteryx__Ping *result, void *closure_data)
-{
-    ping_data_t *data = (ping_data_t *)closure_data;
-    data->done = false;
-    if (result == NULL)
-    {
-        ERROR ("PING: Error processing request.\n");
-        errno = -ETIMEDOUT;
-    }
-    else
-    {
-        data->done = true;
-        if (result->value && result->value[0] != '\0')
-        {
-            data->value = strdup (result->value);
-        }
-    }
+    APTERYX_MODE mode = rpc_msg_decode_uint8 (msg);
+    CU_ASSERT (mode == MODE_TEST);
+    char *ping = rpc_msg_decode_string (msg);
+    char *pong = g_strdup (ping);
+    rpc_msg_reset (msg);
+    rpc_msg_encode_string (msg, pong);
+    g_free (pong);
+    return true;
 }
 
 void
 test_rpc_init ()
 {
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     rpc_shutdown (rpc);
 }
 
@@ -3893,7 +3868,7 @@ test_rpc_bind ()
 {
     char *url = APTERYX_SERVER".test";
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT (rpc_server_release (rpc, url));
     rpc_shutdown (rpc);
@@ -3903,10 +3878,10 @@ void
 test_rpc_connect ()
 {
     char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
+    rpc_client rpc_client;
     rpc_instance rpc;
 
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
     rpc_client_release (rpc, rpc_client, false);
@@ -3917,21 +3892,22 @@ test_rpc_connect ()
 void
 test_rpc_ping ()
 {
-    Apteryx__Ping ping = APTERYX__PING__INIT;
+    rpc_message_t msg = {};
     char *test_string = "testing123...";
     char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
+    rpc_client rpc_client;
     rpc_instance rpc;
-    ping_data_t data = {0};
+    char *value;
 
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
-    ping.value = test_string;
-    apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
-    CU_ASSERT (data.done);
-    CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
-    free (data.value);
+    rpc_msg_encode_uint8 (&msg, MODE_TEST);
+    rpc_msg_encode_string (&msg, test_string);
+    CU_ASSERT (rpc_msg_send (rpc_client, &msg));
+    value = rpc_msg_decode_string (&msg);
+    CU_ASSERT (value && strcmp (value, test_string) == 0);
+    rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, false);
     CU_ASSERT (rpc_server_release (rpc, url));
     rpc_shutdown (rpc);
@@ -3942,7 +3918,7 @@ test_rpc_double_bind ()
 {
     char *url = APTERYX_SERVER".test";
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT (!rpc_server_bind (rpc,  url, url));
     CU_ASSERT (rpc_server_release (rpc, url));
@@ -3952,28 +3928,29 @@ test_rpc_double_bind ()
 void
 test_rpc_perf ()
 {
-    Apteryx__Ping ping = APTERYX__PING__INIT;
+    rpc_message_t msg = {};
     char *test_string = "testing123...";
     char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
+    rpc_client rpc_client;
     rpc_instance rpc;
     uint64_t start;
+    char *value;
     int i;
 
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
 
     start = get_time_us ();
     for (i = 0; i < TEST_ITERATIONS; i++)
     {
-        ping_data_t data = {0};
-        ping.value = test_string;
-        apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
-        CU_ASSERT (data.done);
-        CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
-        free (data.value);
-        if (!data.done || !data.value)
+        rpc_msg_encode_uint8 (&msg, MODE_TEST);
+        rpc_msg_encode_string (&msg, test_string);
+        CU_ASSERT (rpc_msg_send (rpc_client, &msg));
+        value = rpc_msg_decode_string (&msg);
+        CU_ASSERT (value && strcmp (value, test_string) == 0);
+        rpc_msg_reset (&msg);
+        if (!value)
             goto exit;
     }
     printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);

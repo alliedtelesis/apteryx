@@ -25,7 +25,6 @@
 #include <ctype.h>
 #include "internal.h"
 #include "apteryx.h"
-#include "apteryx.pb-c.h"
 
 /* Debug enabled */
 bool apteryx_debug = false;
