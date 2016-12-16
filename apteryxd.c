@@ -1314,7 +1314,6 @@ help (void)
             "  -h   show this help\n"
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
-            "  -m   memory profiling\n"
             "  -p   use <pidfile> (background mode only)\n"
             "  -r   use <runfile>\n"
             "  -l   listen on URL <url> (defaults to "APTERYX_SERVER")\n");
@@ -1332,7 +1331,7 @@ main (int argc, char **argv)
     int i;
 
     /* Parse options */
-    while ((i = getopt (argc, argv, "hdmbp:r:l:")) != -1)
+    while ((i = getopt (argc, argv, "hdbp:r:l:")) != -1)
     {
         switch (i)
         {
@@ -1351,9 +1350,6 @@ main (int argc, char **argv)
             break;
         case 'l':
             url = optarg;
-            break;
-        case 'm':
-            g_mem_set_vtable (glib_mem_profiler_table);
             break;
         case '?':
         case 'h':
@@ -1464,9 +1460,6 @@ exit:
     /* Remove the run file */
     if (run_file)
         unlink (run_file);
-
-    /* Memory profiling */
-    g_mem_profile ();
 
     return 0;
 }
