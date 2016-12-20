@@ -1062,6 +1062,7 @@ test_bitmap ()
 
 static char *_path = NULL;
 static char *_value = NULL;
+static int _cb_count = 0;
 static bool
 test_watch_callback (const char *path, const char *value)
 {
@@ -1075,6 +1076,7 @@ test_watch_callback (const char *path, const char *value)
         _value = strdup (value);
     else
         _value = NULL;
+    _cb_count++;
     return true;
 }
 
@@ -1249,6 +1251,23 @@ test_watch_one_level_path ()
 
     CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
+    _watch_cleanup ();
+}
+
+void
+test_watch_prune ()
+{
+    _path = _value = NULL;
+    _cb_count = 0;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    CU_ASSERT (apteryx_set(path, "up"));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/*", test_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/*", test_watch_callback));
     _watch_cleanup ();
 }
 
@@ -1502,7 +1521,6 @@ test_watch_set_thread ()
     _watch_cleanup ();
 }
 
-static int _cb_count = 0;
 static bool
 test_watch_adds_watch_cb (const char *path, const char *value)
 {
@@ -1519,6 +1537,7 @@ void
 test_watch_adds_watch ()
 {
     _path = _value = NULL;
+    _cb_count = 0;
 
     apteryx_watch (TEST_PATH"/entity/zones/public/*", test_watch_adds_watch_cb);
     apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, "new_cb");
@@ -1526,7 +1545,7 @@ test_watch_adds_watch ()
     CU_ASSERT (_cb_count == 1);
     apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, "new_cb_two");
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (_cb_count == 2);
     CU_ASSERT (_path && strcmp (TEST_PATH"/entity/zones/public/state", _path) == 0);
     CU_ASSERT (_value && strcmp ("new_cb_two", _value) == 0);
     apteryx_unwatch (TEST_PATH"/entity/zones/public/state", test_watch_callback);
@@ -4564,6 +4583,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch remove", test_watch_remove },
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
     { "watch one level path", test_watch_one_level_path },
+    { "watch prune", test_watch_prune },
     { "watch one level path prune", test_watch_one_level_path_prune },
     { "watch empty path prune", test_watch_empty_path_prune },
     { "watch wildpath", test_watch_wildpath },

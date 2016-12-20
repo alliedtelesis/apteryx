@@ -1146,12 +1146,21 @@ static void
 _search_paths (GList **paths, const char *path)
 {
     GList *children, *iter;
+    char *value = NULL;
+    size_t vsize = 0;
+
     children = db_search (path);
     for (iter = children; iter; iter = g_list_next (iter))
     {
-        _search_paths (paths, (const char *) iter->data);
+        const char *_path = (const char *) iter->data;
+        if (db_get (_path, (unsigned char**)&value, &vsize))
+        {
+            *paths = g_list_prepend (*paths, g_strdup (_path));
+            g_free (value);
+        }
+        _search_paths (paths, _path);
     }
-    *paths = g_list_concat (children, *paths);
+    g_list_free_full (children, g_free);
 }
 
 static bool
