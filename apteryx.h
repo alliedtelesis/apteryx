@@ -280,7 +280,6 @@ uint64_t apteryx_timestamp (const char *path);
 
 /** Helper to extend the path with the specified key */
 bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts);
-
 /** Helper to store a simple int at an extended path */
 bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts);
 

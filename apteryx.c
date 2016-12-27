@@ -499,7 +499,7 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack)
+apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
 {
     char *url = NULL;
     rpc_client rpc_client;
@@ -559,18 +559,6 @@ apteryx_cas (const char *path, const char *value, uint64_t ts, bool ack)
 }
 
 bool
-apteryx_set (const char *path, const char *value)
-{
-    return apteryx_cas (path, value, UINT64_MAX, 0);
-}
-
-bool
-apteryx_set_with_ack (const char *path, const char *value)
-{
-    return apteryx_cas (path, value, UINT64_MAX, 1);
-}
-
-bool
 apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
 {
     char *full_path;
@@ -584,7 +572,7 @@ apteryx_cas_string (const char *path, const char *key, const char *value, uint64
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_cas (full_path, value, ts, 0);
+        res = apteryx_cas (full_path, value, ts);
         free (full_path);
     }
     return res;
@@ -615,7 +603,7 @@ apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
         len = asprintf ((char **) &v, "%d", value);
         if (len)
         {
-            res = apteryx_cas (full_path, v, ts, 0);
+            res = apteryx_cas (full_path, v, ts);
             free ((void *) v);
         }
         free (full_path);
@@ -974,12 +962,6 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
 
     /* Return result */
     return result == 0;
-}
-
-bool
-apteryx_set_tree (GNode* root)
-{
-    return apteryx_cas_tree (root, UINT64_MAX);
 }
 
 typedef struct _traverse_data_t
