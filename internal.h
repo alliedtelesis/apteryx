@@ -86,13 +86,11 @@ get_time_us (void)
 typedef enum
 {
     MODE_SET,
-    MODE_SET_WITH_ACK,
     MODE_GET,
     MODE_SEARCH,
     MODE_FIND,
     MODE_TRAVERSE,
     MODE_WATCH,
-    MODE_WATCH_WITH_ACK,
     MODE_PROVIDE,
     MODE_INDEX,
     MODE_VALIDATE,

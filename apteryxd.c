@@ -207,7 +207,7 @@ validate_set (const char *path, const char *value)
 }
 
 static void
-notify_watchers (const char *path, bool ack)
+notify_watchers (const char *path)
 {
     GList *watchers = NULL;
     GList *iter = NULL;
@@ -256,7 +256,7 @@ notify_watchers (const char *path, bool ack)
             INC_COUNTER (counters.watched_no_handler);
             continue;
         }
-        rpc_msg_encode_uint8 (&msg, ack ? MODE_WATCH_WITH_ACK : MODE_WATCH);
+        rpc_msg_encode_uint8 (&msg, MODE_WATCH);
         rpc_msg_encode_uint64 (&msg, watcher->ref);
         rpc_msg_encode_string (&msg, path);
         if (value)
@@ -638,7 +638,7 @@ proxy_timestamp (const char *path)
 }
 
 static bool
-handle_set (rpc_message msg, int ack)
+handle_set (rpc_message msg)
 {
     int result = 0;
     uint64_t ts = 0;
@@ -681,7 +681,7 @@ handle_set (rpc_message msg, int ack)
             /*  Result success */
             DEBUG ("SET: %s = %s proxied\n", path, value);
             /* Mark the set as processed */
-            notify_watchers (path, 0);
+            notify_watchers (path);
             ipath->data = NULL;
         }
         else if (proxy_result < 0)
@@ -751,7 +751,7 @@ exit:
         {
             path = (char *) ipath->data;
             if (path)
-                notify_watchers (path, ack);
+                notify_watchers (path);
         }
     }
 
@@ -1233,7 +1233,7 @@ handle_prune (rpc_message msg)
         /* Call watchers for each pruned path */
         for (iter = paths; iter; iter = g_list_next (iter))
         {
-            notify_watchers ((const char *)iter->data, 0);
+            notify_watchers ((const char *)iter->data);
         }
     }
 
@@ -1289,10 +1289,8 @@ msg_handler (rpc_message msg)
     APTERYX_MODE mode = rpc_msg_decode_uint8 (msg);
     switch (mode)
     {
-    case MODE_SET_WITH_ACK:
-        return handle_set (msg, 1);
     case MODE_SET:
-        return handle_set (msg, 0);
+        return handle_set (msg);
     case MODE_GET:
         return handle_get (msg);
     case MODE_SEARCH:

@@ -267,7 +267,6 @@ msg_handler (rpc_message msg)
     case MODE_INDEX:
         return handle_index (msg);
     case MODE_WATCH:
-    case MODE_WATCH_WITH_ACK:
         return handle_watch (msg);
     case MODE_VALIDATE:
         return handle_validate (msg);
@@ -499,7 +498,7 @@ apteryx_dump (const char *path, FILE *fp)
 }
 
 bool
-apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
+apteryx_cas (const char *path, const char *value, uint64_t ts)
 {
     char *url = NULL;
     rpc_client rpc_client;
@@ -529,7 +528,7 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
         free (url);
         return false;
     }
-    rpc_msg_encode_uint8 (&msg, ack ? MODE_SET_WITH_ACK : MODE_SET);
+    rpc_msg_encode_uint8 (&msg, MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
     rpc_msg_encode_string (&msg, path);
     if (value)
@@ -556,6 +555,12 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
 
     /* Success */
     return result == 0;
+}
+
+bool
+apteryx_set (const char *path, const char *value)
+{
+    return apteryx_cas (path, value, UINT64_MAX);
 }
 
 bool
@@ -893,7 +898,7 @@ _set_multi (GNode *node, gpointer data)
 }
 
 bool
-apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
+apteryx_cas_tree (GNode* root, uint64_t ts)
 {
     const char *path = NULL;
     char *old_root_name = NULL;
@@ -935,7 +940,7 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     root->data = (char*) path;
 
     /* Create the list of Paths/Value's */
-    rpc_msg_encode_uint8 (&msg, wait_for_completion ? MODE_SET_WITH_ACK : MODE_SET);
+    rpc_msg_encode_uint8 (&msg, MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &msg);
     if (!rpc_msg_send (rpc_client, &msg))
@@ -962,6 +967,12 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
 
     /* Return result */
     return result == 0;
+}
+
+bool
+apteryx_set_tree (GNode* root)
+{
+    return apteryx_cas_tree (root, UINT64_MAX);
 }
 
 typedef struct _traverse_data_t

@@ -97,32 +97,6 @@ test_set_get ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-
-static int test_wack_signal = 0;
-static bool
-test_watch_w_ack_callback (const char *path, const char *value)
-{
-    usleep(500000);
-    test_wack_signal = value ? 2 : 3;
-    return true;
-}
-
-void
-test_set_with_ack ()
-{
-    const char *path = TEST_PATH"/entity/zones/private/name";
-
-    CU_ASSERT (apteryx_watch(path, test_watch_w_ack_callback));
-    CU_ASSERT (test_wack_signal == 0);
-    CU_ASSERT (apteryx_set_wait (path, "private"));
-    CU_ASSERT (test_wack_signal == 2);
-    CU_ASSERT (apteryx_set_wait (path, NULL));
-    CU_ASSERT (test_wack_signal == 3);
-    test_wack_signal = 0;
-    CU_ASSERT (apteryx_unwatch(path, test_watch_w_ack_callback));
-    CU_ASSERT (assert_apteryx_empty ());
-}
-
 void
 test_set_get_raw ()
 {
@@ -4563,7 +4537,6 @@ static CU_TestInfo tests_api[] = {
     { "doc example", test_docs },
     { "initialisation", test_init },
     { "set and get", test_set_get },
-    { "set with ack", test_set_with_ack },
     { "raw byte streams", test_set_get_raw },
     { "long path", test_set_get_long_path },
     { "large value", test_set_get_large_value },
