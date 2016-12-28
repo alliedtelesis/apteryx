@@ -143,13 +143,47 @@ bool apteryx_prune (const char *path);
 bool apteryx_dump (const char *path, FILE *fp);
 
 /**
+ * Set a path/value in Apteryx with full options
+ * @param path path to the value to set
+ * @param value value to set at the specified path
+ * @param ts timestamp to be compared to the paths last change time
+ * @param wait_for_completion flag that indicates blocking / non-blocking
+ *                            watch callbacks from this set
+ * @return true on a successful set
+ * @return false if the path is invalid
+ */
+bool apteryx_set_full (const char *path, const char *value, uint64_t ts,
+                       bool wait_for_completion);
+
+/**
+ * Set a tree of multiple values in Apteryx, with full options
+ * @param root pointer to the N-ary tree of nodes.
+ * @param ts timestamp to be compared to the paths last change time
+ * @param wait_for_completion flag that indicates blocking / non-blocking
+ *                            watch callbacks from this tree set
+ * @return true on a successful set
+ * @return false if the path is invalid
+ */
+bool apteryx_set_tree_full (GNode *root, uint64_t ts, bool wait_for_completion);
+
+/**
  * Set a path/value in Apteryx
  * @param path path to the value to set
  * @param value value to set at the specified path
  * @return true on a successful set
  * @return false if the path is invalid
  */
-bool apteryx_set (const char *path, const char *value);
+#define apteryx_set(path,value) apteryx_set_full((path), (value), UINT64_MAX, 0)
+
+/**
+ * Set a path/value in Apteryx and wait for all watches to complete.
+ * @param path path to the value to set
+ * @param value value to set at the specified path
+ * @return true on a successful set after watches are complete
+ * @return false if the path is invalid
+ */
+#define apteryx_set_wait(path,value) apteryx_set_full((path), (value), UINT64_MAX, 1)
+
 /** Helper to extend the path with the specified key */
 bool apteryx_set_string (const char *path, const char *key, const char *value);
 /** Helper to store a simple int at an extended path */
@@ -220,7 +254,49 @@ uint64_t apteryx_timestamp (const char *path);
  * @return true on a successful set
  * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
  */
-bool apteryx_cas (const char *path, const char *value, uint64_t ts);
+#define apteryx_cas(path, value, ts) apteryx_set_full((path), (value), (ts), 0)
+
+/**
+ * Set a path/value in Apteryx, but only if the existing
+ * value has not changed since the specified timestamp and
+ * wait for watch execution to complete.
+ * Can be used for a Compare-And-Swap operation.
+ * Example: Safely reserve the next free row in a table
+    uint32_t index = 1;
+    while (index > 0) {
+        if (apteryx_cas_int (path, key, index, 0))
+            break;
+        index++;
+    }
+ * Example: Safely updating a 32-bit bitmap
+    while (1) {
+        uint64_t ts = apteryx_timestamp (path);
+        uint32_t bitmap = 0;
+        char *value = apteryx_get (path);
+        if (value)
+        {
+            sscanf (value, "%"PRIx32, &bitmap);
+            free (value);
+        }
+        bitmap = (bitmap & ~clear) | set;
+        if (asprintf (&value, "%"PRIx32, bitmap) > 0) {
+            bool success = apteryx_cas_wait (path, value, ts);
+            free (value);
+            if (success || errno != -EBUSY)
+            {
+                // If success is true here, watches have completed
+                return success;
+            }
+        }
+    }
+ * @param path path to the value to set
+ * @param value value to set at the specified path
+ * @param ts timestamp to be compared to the paths last change time
+ * @return true on a successful set after watches have completed
+ * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
+ */
+#define apteryx_cas_wait(path, value, ts) apteryx_set_full((path), (value), (ts), 1)
+
 /** Helper to extend the path with the specified key */
 bool apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts);
 /** Helper to store a simple int at an extended path */
@@ -269,16 +345,16 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
 })
 
 /** Free an N-ary tree of nodes when the data need freeing (e.g. from apteryx_get_tree) */
-void apteryx_free_tree (GNode* root);
+void apteryx_free_tree (GNode *root);
 /** Find the child of the node with the specified name */
 GNode *apteryx_find_child (GNode *parent, const char *name);
 /** Sort the children of a node using the supplied compare function */
 void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b));
 /** Get the full path of an Apteryx node in an N-ary tree */
-char* apteryx_node_path (GNode* node);
+char *apteryx_node_path (GNode *node);
 
 /**
- * Find a list of paths that match this tree below the root path given 
+ * Find a list of paths that match this tree below the root path given
  * @param root pointer to the N-ary tree of nodes with a wildcard root path
  * @return GList of paths where this tree can be found
  */
@@ -298,14 +374,22 @@ GList *apteryx_find (const char *path, const char *value);
  * @return true on a successful set.
  * @return false on failure.
  */
-bool apteryx_set_tree (GNode* root);
+#define apteryx_set_tree(root) apteryx_set_tree_full((root), UINT64_MAX, 0)
+
+/**
+ * Set a tree of multiple values in Apteryx and wait for watch execution
+ * @param root pointer to the N-ary tree of nodes.
+ * @return true on a successful set.
+ * @return false on failure.
+ */
+#define apteryx_set_tree_wait(root) apteryx_set_tree_full((root), UINT64_MAX, 1)
 
 /**
  * Get a tree of multiple values from Apteryx.
  * @param path path to the root of the tree to return.
  * @return N-ary tree of nodes.
  */
-GNode* apteryx_get_tree (const char *path);
+GNode *apteryx_get_tree (const char *path);
 
 /**
  * Set a tree of multiple values in Apteryx, but only if
@@ -315,7 +399,18 @@ GNode* apteryx_get_tree (const char *path);
  * @return true on a successful set.
  * @return false on failure.
  */
-bool apteryx_cas_tree (GNode* root, uint64_t ts);
+#define apteryx_cas_tree(root, ts) apteryx_set_tree_full((root), (ts), 0)
+
+/**
+ * Set a tree of multiple values in Apteryx, but only if
+ * the existing value has not changed since the specified timestamp.
+ * Wait for watches to be executed before returning.
+ * @param root pointer to the N-ary tree of nodes.
+ * @param ts timestamp to be compared to the paths last change time
+ * @return true on a successful set.
+ * @return false on failure.
+ */
+#define apteryx_cas_tree_wait(root, ts) apteryx_set_tree_full((root), (ts), 1)
 
 /**
  * Search for all children that start with the root path.
@@ -349,7 +444,7 @@ char *apteryx_search_simple (const char *root);
  * @param root root of the searched path
  * @return GList of full paths
  */
-typedef GList* (*apteryx_index_callback) (const char *path);
+typedef GList *(*apteryx_index_callback) (const char *path);
 
 /**
  * Provide search results for a root path
@@ -427,7 +522,7 @@ bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
  * @param path path to the requested value
  * @return the provided value on success, otherwise NULL
  */
-typedef char* (*apteryx_provide_callback) (const char *path);
+typedef char *(*apteryx_provide_callback) (const char *path);
 
 /**
  * Provide a value that can be read on demand
