@@ -886,7 +886,8 @@ _set_multi (GNode *node, gpointer data)
         char *path = apteryx_node_path (node);
         DEBUG ("SET_TREE: %s = %s\n", path, APTERYX_VALUE (node));
         rpc_msg_encode_string (msg, path);
-        rpc_msg_encode_string (msg, (char *) APTERYX_VALUE (node));
+        /* A set-to-null is the same as setting to an empty string. */
+        rpc_msg_encode_string (msg, APTERYX_VALUE (node) ? : "");
         free (path);
     }
     return FALSE;
