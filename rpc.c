@@ -598,7 +598,8 @@ rpc_msg_encode_uint64 (rpc_message msg, uint64_t value)
 {
     int len = sizeof (uint64_t);
     rpc_msg_push (msg, len);
-    *((uint64_t*)(msg->buffer + msg->offset)) = htobe64 (value);
+    value = htobe64 (value);
+    memcpy (((char*)msg->buffer) + msg->offset, &value, len);
     msg->length += len;
     msg->offset += len;
 }
@@ -609,7 +610,9 @@ rpc_msg_decode_uint64 (rpc_message msg)
     int len = sizeof (uint64_t);
     if (((msg->length + RPC_SOCKET_HDR_SIZE) - msg->offset) < len)
         return 0;
-    uint64_t value = be64toh (*((uint64_t*)(msg->buffer + msg->offset)));
+    uint64_t value;
+    memcpy (&value, ((char*)msg->buffer) + msg->offset, len);
+    value = be64toh (value);
     msg->offset += len;
     return value;
 }
