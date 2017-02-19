@@ -37,7 +37,6 @@
 #include <CUnit/Basic.h>
 #include "apteryx.h"
 #include "internal.h"
-#include "apteryx.pb-c.h"
 
 #define TEST_PATH           "/test"
 #define TEST_ITERATIONS     1000
@@ -98,6 +97,32 @@ test_set_get ()
     CU_ASSERT (value && strcmp (value, "private") == 0);
     free ((void *) value);
     CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+
+static int test_wack_signal = 0;
+static bool
+test_watch_w_ack_callback (const char *path, const char *value)
+{
+    usleep (TEST_SLEEP_TIMEOUT);
+    test_wack_signal = value ? 2 : 3;
+    return true;
+}
+
+void
+test_set_with_ack ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/name";
+
+    CU_ASSERT (apteryx_watch(path, test_watch_w_ack_callback));
+    CU_ASSERT (test_wack_signal == 0);
+    CU_ASSERT (apteryx_set_wait (path, "private"));
+    CU_ASSERT (test_wack_signal == 2);
+    CU_ASSERT (apteryx_set_wait (path, NULL));
+    CU_ASSERT (test_wack_signal == 3);
+    test_wack_signal = 0;
+    CU_ASSERT (apteryx_unwatch(path, test_watch_w_ack_callback));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -1069,6 +1094,7 @@ test_bitmap ()
 
 static char *_path = NULL;
 static char *_value = NULL;
+static int _cb_count = 0;
 static bool
 test_watch_callback (const char *path, const char *value)
 {
@@ -1082,6 +1108,7 @@ test_watch_callback (const char *path, const char *value)
         _value = strdup (value);
     else
         _value = NULL;
+    _cb_count++;
     return true;
 }
 
@@ -1259,6 +1286,22 @@ test_watch_one_level_path ()
     _watch_cleanup ();
 }
 
+void
+test_watch_prune ()
+{
+    _path = _value = NULL;
+    _cb_count = 0;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    CU_ASSERT (apteryx_set(path, "up"));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/*", test_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/*", test_watch_callback));
+    _watch_cleanup ();
+}
 
 void
 test_watch_one_level_path_prune ()
@@ -1275,6 +1318,25 @@ test_watch_one_level_path_prune ()
 
     CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/", test_watch_callback));
     CU_ASSERT (apteryx_set_string (path, "state", NULL));
+    _watch_cleanup ();
+}
+
+void
+test_watch_empty_path_prune ()
+{
+    _path = _value = NULL;
+    CU_ASSERT (apteryx_watch
+               (TEST_PATH"/entity/*", test_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones/private/state"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path == NULL);
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/*", test_watch_callback));
     _watch_cleanup ();
 }
 
@@ -1491,7 +1553,6 @@ test_watch_set_thread ()
     _watch_cleanup ();
 }
 
-static int _cb_count = 0;
 static bool
 test_watch_adds_watch_cb (const char *path, const char *value)
 {
@@ -1508,6 +1569,7 @@ void
 test_watch_adds_watch ()
 {
     _path = _value = NULL;
+    _cb_count = 0;
 
     apteryx_watch (TEST_PATH"/entity/zones/public/*", test_watch_adds_watch_cb);
     apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, "new_cb");
@@ -1515,7 +1577,7 @@ test_watch_adds_watch ()
     CU_ASSERT (_cb_count == 1);
     apteryx_set_string (TEST_PATH"/entity/zones/public/state", NULL, "new_cb_two");
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (_cb_count == 2);
     CU_ASSERT (_path && strcmp (TEST_PATH"/entity/zones/public/state", _path) == 0);
     CU_ASSERT (_value && strcmp ("new_cb_two", _value) == 0);
     apteryx_unwatch (TEST_PATH"/entity/zones/public/state", test_watch_callback);
@@ -1552,10 +1614,10 @@ test_watch_removes_all_watches ()
     apteryx_watch (TEST_PATH"/entity/zones/public/state", test_watch_removes_all_watchs_cb);
     apteryx_set (path, NULL);
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_cb_count == 3);
+    CU_ASSERT (_cb_count == 1);
     apteryx_set_string (path, NULL, "new_cb_two");
     usleep (TEST_SLEEP_TIMEOUT);
-    CU_ASSERT (_cb_count == 3);
+    CU_ASSERT (_cb_count == 1);
     apteryx_set_string (path, NULL, NULL);
     _watch_cleanup ();
 }
@@ -1748,6 +1810,28 @@ test_validate()
     CU_ASSERT (apteryx_unvalidate (path, test_validate_callback));
     CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
     apteryx_set_string (path, NULL, NULL);
+}
+
+void
+test_validate_prune()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/hostname";
+
+    CU_ASSERT (apteryx_validate (path, test_validate_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "testing"));
+    CU_ASSERT (apteryx_prune (path));
+
+    CU_ASSERT (apteryx_set_string (path, NULL, "testing"));
+    CU_ASSERT (apteryx_validate (path, test_validate_refuse_callback));
+    CU_ASSERT (!apteryx_prune (path));
+    CU_ASSERT (errno == -EPERM);
+
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_callback));
+    CU_ASSERT (apteryx_unvalidate (path, test_validate_refuse_callback));
+    apteryx_set_string (path, NULL, NULL);
+
 }
 
 void
@@ -3537,8 +3621,8 @@ test_deadlock2 ()
     {
         char *path = NULL;
         CU_ASSERT (asprintf (&path, TEST_PATH"/zones/private/state/%d", i) > 0);
-        CU_ASSERT (apteryx_unwatch (path, test_deadlock2_callback));
-        CU_ASSERT (apteryx_unwatch (path, test_deadlock_callback));
+        apteryx_unwatch (path, test_deadlock2_callback);
+        apteryx_unwatch (path, test_deadlock_callback);
         free (path);
     }
     CU_ASSERT (apteryx_prune (TEST_PATH));
@@ -3816,48 +3900,24 @@ test_tcp_con_req_resp_disc_latency ()
     test_socket_latency (AF_INET, true, true, true);
 }
 
-static void
-apteryx__ping (Apteryx__Test_Service *service,
-              const Apteryx__Ping *ping,
-              Apteryx__Ping_Closure closure, void *closure_data)
+static bool
+test_handler (rpc_message msg)
 {
-    closure (ping, closure_data);
-    return;
-}
-
-static Apteryx__Test_Service test_service = APTERYX__TEST__INIT (apteryx__);
-
-typedef struct _ping_data_t
-{
-    char *value;
-    bool done;
-} ping_data_t;
-
-static void
-handle_ping_response (const Apteryx__Ping *result, void *closure_data)
-{
-    ping_data_t *data = (ping_data_t *)closure_data;
-    data->done = false;
-    if (result == NULL)
-    {
-        ERROR ("PING: Error processing request.\n");
-        errno = -ETIMEDOUT;
-    }
-    else
-    {
-        data->done = true;
-        if (result->value && result->value[0] != '\0')
-        {
-            data->value = strdup (result->value);
-        }
-    }
+    APTERYX_MODE mode = rpc_msg_decode_uint8 (msg);
+    CU_ASSERT (mode == MODE_TEST);
+    char *ping = rpc_msg_decode_string (msg);
+    char *pong = g_strdup (ping);
+    rpc_msg_reset (msg);
+    rpc_msg_encode_string (msg, pong);
+    g_free (pong);
+    return true;
 }
 
 void
 test_rpc_init ()
 {
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     rpc_shutdown (rpc);
 }
 
@@ -3866,7 +3926,7 @@ test_rpc_bind ()
 {
     char *url = APTERYX_SERVER".test";
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT (rpc_server_release (rpc, url));
     rpc_shutdown (rpc);
@@ -3876,10 +3936,10 @@ void
 test_rpc_connect ()
 {
     char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
+    rpc_client rpc_client;
     rpc_instance rpc;
 
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
     rpc_client_release (rpc, rpc_client, false);
@@ -3890,21 +3950,22 @@ test_rpc_connect ()
 void
 test_rpc_ping ()
 {
-    Apteryx__Ping ping = APTERYX__PING__INIT;
+    rpc_message_t msg = {};
     char *test_string = "testing123...";
     char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
+    rpc_client rpc_client;
     rpc_instance rpc;
-    ping_data_t data = {0};
+    char *value;
 
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
-    ping.value = test_string;
-    apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
-    CU_ASSERT (data.done);
-    CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
-    free (data.value);
+    rpc_msg_encode_uint8 (&msg, MODE_TEST);
+    rpc_msg_encode_string (&msg, test_string);
+    CU_ASSERT (rpc_msg_send (rpc_client, &msg));
+    value = rpc_msg_decode_string (&msg);
+    CU_ASSERT (value && strcmp (value, test_string) == 0);
+    rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, false);
     CU_ASSERT (rpc_server_release (rpc, url));
     rpc_shutdown (rpc);
@@ -3915,7 +3976,7 @@ test_rpc_double_bind ()
 {
     char *url = APTERYX_SERVER".test";
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT (!rpc_server_bind (rpc,  url, url));
     CU_ASSERT (rpc_server_release (rpc, url));
@@ -3925,28 +3986,29 @@ test_rpc_double_bind ()
 void
 test_rpc_perf ()
 {
-    Apteryx__Ping ping = APTERYX__PING__INIT;
+    rpc_message_t msg = {};
     char *test_string = "testing123...";
     char *url = APTERYX_SERVER".test";
-    ProtobufCService *rpc_client;
+    rpc_client rpc_client;
     rpc_instance rpc;
     uint64_t start;
+    char *value;
     int i;
 
-    CU_ASSERT ((rpc = rpc_init ((ProtobufCService *)&test_service, &apteryx__test__descriptor, RPC_TIMEOUT_US)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
 
     start = get_time_us ();
     for (i = 0; i < TEST_ITERATIONS; i++)
     {
-        ping_data_t data = {0};
-        ping.value = test_string;
-        apteryx__test__ping (rpc_client, &ping, handle_ping_response, &data);
-        CU_ASSERT (data.done);
-        CU_ASSERT (data.value && strcmp (data.value, test_string) == 0);
-        free (data.value);
-        if (!data.done || !data.value)
+        rpc_msg_encode_uint8 (&msg, MODE_TEST);
+        rpc_msg_encode_string (&msg, test_string);
+        CU_ASSERT (rpc_msg_send (rpc_client, &msg));
+        value = rpc_msg_decode_string (&msg);
+        CU_ASSERT (value && strcmp (value, test_string) == 0);
+        rpc_msg_reset (&msg);
+        if (!value)
             goto exit;
     }
     printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
@@ -4124,45 +4186,6 @@ test_single_watch_myself ()
 }
 
 #ifdef HAVE_LUA
-#ifdef HAVE_LIBXML2
-static void
-_write_xml ()
-{
-    FILE *xml = fopen (TEST_SCHEMA_FILE, "w");
-    if (xml)
-    {
-        fprintf (xml,
-"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-"<MODULE xmlns=\"https://github.com/alliedtelesis/apteryx\"\n"
-"    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
-"    xsi:schemaLocation=\"https://github.com/alliedtelesis/apteryx\n"
-"    https://github.com/alliedtelesis/apteryx/releases/download/v2.10/apteryx.xsd\">\n"
-"    <NODE name=\"test\" help=\"this is a test node\">\n"
-"        <NODE name=\"debug\" mode=\"rw\" default=\"0\" help=\"Debug configuration\" pattern=\"^(0|1)$\">\n"
-"            <VALUE name=\"disable\" value=\"0\" help=\"Debugging is disabled\" />\n"
-"            <VALUE name=\"enable\" value=\"1\" help=\"Debugging is enabled\" />\n"
-"        </NODE>\n"
-"        <NODE name=\"list\" help=\"this is a list of stuff\">\n"
-"            <NODE name=\"*\" help=\"the list item\">\n"
-"                <NODE name=\"name\" mode=\"rw\" help=\"this is the list key\"/>\n"
-"                <NODE name=\"type\" mode=\"rw\" default=\"1\" help=\"this is the list type\">\n"
-"                    <VALUE name=\"big\" value=\"1\"/>\n"
-"                    <VALUE name=\"little\" value=\"2\"/>\n"
-"                </NODE>\n"
-"                <NODE name=\"sub-list\" help=\"this is a list of stuff attached to a list\">\n"
-"                    <NODE name=\"*\" help=\"the sublist item\">\n"
-"                        <NODE name=\"i-d\" mode=\"rw\" help=\"this is the sublist key\"/>\n"
-"                    </NODE>\n"
-"                </NODE>\n"
-"            </NODE>\n"
-"        </NODE>\n"
-"    </NODE>\n"
-"</MODULE>\n");
-        fclose (xml);
-    }
-}
-#endif
-
 static bool
 _run_lua (char *script)
 {
@@ -4184,6 +4207,7 @@ _run_lua (char *script)
         CU_ASSERT (res == 0);
         line = strtok (NULL,"\n");
     }
+    CU_ASSERT (lua_gettop (L) == 0);
     lua_close (L);
     free (buffer);
     return res == 0;
@@ -4216,7 +4240,7 @@ test_lua_basic_search (void)
         "apteryx = require('apteryx')                                 \n"
         "apteryx.set('"TEST_PATH"/list/eth0/name', 'eth0')            \n"
         "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
-        "assert(apteryx.search('"TEST_PATH"/list') == nil)            \n"
+        "assert(next(apteryx.search('"TEST_PATH"/list')) == nil)      \n"
         "paths = apteryx.search('"TEST_PATH"/list/')                  \n"
         "assert(#paths == 2)                                          \n"
         "apteryx.set('"TEST_PATH"/list/eth0/name')                    \n"
@@ -4234,8 +4258,172 @@ test_lua_basic_prune (void)
         "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
         "assert(apteryx.prune('"TEST_PATH"/list'))                    \n"
         "paths = apteryx.search('"TEST_PATH"/')                       \n"
-        "assert(paths == nil)                                         \n"
+        "assert(next(paths) == nil)                                   \n"
     ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_set_tree_get_tree (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "t={a='a', b={a='ba', b='bb'}, c = 'c'}                       \n"
+        "apteryx.set_tree('"TEST_PATH"/t', t);                        \n"
+        "t2 = apteryx.get_tree('"TEST_PATH"/t')                       \n"
+        "assert (t2 and t2.a and t2.b.a)                              \n"
+        "assert (#t2 == #t and #t2.b == #t.b)                         \n"
+        "assert (t.a == t2.a and t.b.a == t2.b.a and t.c == t2.c)     \n"
+        "apteryx.prune('"TEST_PATH"/t')                               \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_timestamp (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "assert(apteryx.timestamp ('/nonex') == 0)                    \n"
+        "apteryx.set('"TEST_PATH"/list/eth0/name', 'eth0')            \n"
+        "assert(apteryx.timestamp('"TEST_PATH"/list') ~= 0)           \n"
+        "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
+        "t1 = apteryx.timestamp('"TEST_PATH"/list/eth0')              \n"
+        "t2 = apteryx.timestamp('"TEST_PATH"/list/eth1')              \n"
+        "assert(t2 > t1)                                              \n"
+        "t1, t2 = nil, nil                                            \n"
+        "assert(apteryx.prune('"TEST_PATH"/list'))                    \n"
+        "assert(apteryx.timestamp ('/list') == 0)                     \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_watch (void)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "local v = nil                                                \n"
+            "function test_watch (path, value)                              "
+            "    assert (path == '"TEST_PATH"/watch')                       "
+            "    assert (value == 'me')                                     "
+            "    v = value                                                  "
+            "end                                                          \n"
+            "apteryx.watch('"TEST_PATH"/watch', test_watch)               \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch', 'me')                       \n"
+            "apteryx.process()                                            \n"
+            "assert(v == 'me')                                            \n"
+            "apteryx.unwatch('"TEST_PATH"/watch', test_watch)             \n"
+            "apteryx.set('"TEST_PATH"/watch')                             \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_lua_provide_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_provide (path)                                   "
+            "    assert (path == '"TEST_PATH"/provide')                     "
+            "    return 'me'                                                "
+            "end                                                          \n"
+            "apteryx.provide('"TEST_PATH"/provide', test_provide)         \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unprovide('"TEST_PATH"/provide', test_provide)       \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_basic_provide (void)
+{
+    pthread_t client;
+    char *value = NULL;
+
+    pthread_create (&client, NULL, (void *) &test_lua_provide_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/provide")) != NULL);
+    CU_ASSERT (value && strcmp (value, "me") == 0);
+    if (value)
+        free ((void *) value);
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_lua_index_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_index (path)                                   "
+            "    assert (path == '"TEST_PATH"/index/')                     "
+            "    return {'"TEST_PATH"/index/dog','"TEST_PATH"/index/cat'}  "
+            "end                                                          \n"
+            "apteryx.index('"TEST_PATH"/index/', test_index)              \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unindex('"TEST_PATH"/index/', test_index)            \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_basic_index (void)
+{
+    pthread_t client;
+    GList *paths = NULL;
+
+    pthread_create (&client, NULL, (void *) &test_lua_index_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/index/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/index/dog", (GCompareFunc) strcmp) != NULL);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/index/cat", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_lua_validate_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_validate (path, value)                           "
+            "    assert (path == '"TEST_PATH"/validate')                    "
+            "    return value == 'cat' and -22 or 0                          "
+            "end                                                          \n"
+            "apteryx.validate('"TEST_PATH"/validate', test_validate)      \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unvalidate('"TEST_PATH"/validate', test_validate)    \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_basic_validate (void)
+{
+    pthread_t client;
+
+    pthread_create (&client, NULL, (void *) &test_lua_validate_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (apteryx_set (TEST_PATH"/validate", "dog"));
+    CU_ASSERT (!apteryx_set (TEST_PATH"/validate", "cat") && errno == -EINVAL);
+    CU_ASSERT (apteryx_set (TEST_PATH"/validate", NULL));
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -4370,183 +4558,6 @@ exit:
     }
     CU_ASSERT (assert_apteryx_empty ());
 }
-
-#ifdef HAVE_LIBXML2
-void
-test_lua_api_set_get (void)
-{
-    _write_xml ();
-    CU_ASSERT (_run_lua (
-        "lib = require('apteryx')                                         \n"
-        "apteryx = lib.api('"TEST_SCHEMA_PATH"')                          \n"
-        "apteryx.test.debug = 'enable'                                    \n"
-        "assert(apteryx.test.debug == 'enable')                           \n"
-        "apteryx.test.debug = nil                                         \n"
-        "assert(apteryx.test.debug == 'disable')                          \n"
-        "apteryx.test.list('cat-nip').sub_list('dog').i_d = '1'            \n"
-        "assert(apteryx.test.list('cat-nip').sub_list('dog').i_d == '1')   \n"
-        "assert(lib.get('/test/list/cat-nip/sub-list/dog/i-d') == '1')     \n"
-        "apteryx.test.list('cat-nip').sub_list('dog').i_d = nil            \n"
-        "assert(apteryx.test.list('cat-nip').sub_list('dog').i_d == nil)   \n"
-    ));
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_api_search (void)
-{
-    _write_xml ();
-    CU_ASSERT (_run_lua (
-        "lib = require('apteryx')                                         \n"
-        "apteryx = lib.api('"TEST_SCHEMA_PATH"')                          \n"
-        "lib.set('/test/list/cat-nip/sub-list/dog/i-d', '1')              \n"
-        "lib.set('/test/list/cat-nip/sub-list/cat/i-d', '2')              \n"
-        "lib.set('/test/list/cat-nip/sub-list/mouse/i-d', '3')            \n"
-        "lib.set('/test/list/cat_nip/sub-list/bat/i-d', '4')              \n"
-        "lib.set('/test/list/cat_nip/sub-list/frog/i-d', '5')             \n"
-        "lib.set('/test/list/cat_nip/sub-list/horse/i-d', '6')            \n"
-        "cats1 = apteryx.test.list('cat-nip').sub_list()                  \n"
-        "assert(#cats1 == 3)                                              \n"
-        "cats2 = apteryx.test.list('cat_nip').sub_list()                  \n"
-        "assert(#cats2 == 3)                                              \n"
-        "lib.prune('/test/list/cat-nip')                                  \n"
-        "lib.prune('/test/list/cat_nip')                                  \n"
-    ));
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_load_api_memory (void)
-{
-    lua_State *L;
-    unsigned long before;
-    unsigned long after;
-    int res = -1;
-
-    _write_xml ();
-    before = _memory_usage ();
-    L = luaL_newstate ();
-    luaL_openlibs (L);
-    res = luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')");
-    if (res == 0)
-        res = lua_pcall (L, 0, 0, 0);
-    if (res != 0)
-        fprintf (stderr, "%s\n", lua_tostring(L, -1));
-    after = _memory_usage ();
-    lua_close (L);
-    printf ("%ldkb ... ", (after - before));
-    CU_ASSERT (res == 0);
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_load_api_performance (void)
-{
-    uint64_t start;
-    int i;
-
-    _write_xml ();
-    start = get_time_us ();
-    for (i = 0; i < 10; i++)
-    {
-        CU_ASSERT (_run_lua ("apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')"));
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 10);
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_api_perf_get ()
-{
-    lua_State *L;
-    uint64_t start;
-    int i;
-
-    _write_xml ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
-        apteryx_set (path, "private");
-        free (path);
-    }
-    L = luaL_newstate ();
-    luaL_openlibs (L);
-    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')") == 0);
-    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *cmd = NULL;
-        int res;
-        CU_ASSERT (asprintf(&cmd, "assert(apteryx.test.list('%d').name == 'private')", i) > 0);
-        res = luaL_loadstring (L, cmd);
-        if (res == 0)
-            res = lua_pcall (L, 0, 0, 0);
-        if (res != 0)
-            fprintf (stderr, "%s\n", lua_tostring(L, -1));
-        if (res != 0)
-            goto exit;
-        free (cmd);
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    lua_close (L);
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
-        CU_ASSERT (apteryx_set (path, NULL));
-        free (path);
-    }
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-
-void
-test_lua_api_perf_set ()
-{
-    lua_State *L;
-    uint64_t start;
-    int i;
-
-    _write_xml ();
-    L = luaL_newstate ();
-    luaL_openlibs (L);
-    CU_ASSERT (luaL_loadstring (L, "apteryx = require('apteryx').api('"TEST_SCHEMA_PATH"')") == 0);
-    CU_ASSERT(lua_pcall (L, 0, 0, 0) == 0);
-    start = get_time_us ();
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *cmd = NULL;
-        int res;
-        CU_ASSERT (asprintf(&cmd, "apteryx.test.list('%d').name = 'private'", i) > 0);
-        res = luaL_loadstring (L, cmd);
-        if (res == 0)
-            res = lua_pcall (L, 0, 0, 0);
-        if (res != 0)
-            fprintf (stderr, "%s\n", lua_tostring(L, -1));
-        if (res != 0)
-            goto exit;
-        free (cmd);
-    }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_ITERATIONS);
-exit:
-    lua_close (L);
-    for (i = 0; i < TEST_ITERATIONS; i++)
-    {
-        char *path = NULL;
-        CU_ASSERT (asprintf(&path, TEST_PATH"/list/%d/name", i) > 0);
-        CU_ASSERT (apteryx_set (path, NULL));
-        free (path);
-    }
-    CU_ASSERT (assert_apteryx_empty ());
-    unlink (TEST_SCHEMA_FILE);
-}
-#endif
 #endif
 
 static int
@@ -4565,6 +4576,7 @@ static CU_TestInfo tests_api[] = {
     { "doc example", test_docs },
     { "initialisation", test_init },
     { "set and get", test_set_get },
+    { "set with ack", test_set_with_ack },
     { "raw byte streams", test_set_get_raw },
     { "long path", test_set_get_long_path },
     { "large value", test_set_get_large_value },
@@ -4611,7 +4623,9 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch remove", test_watch_remove },
     { "watch unset wildcard path", test_watch_unset_wildcard_path },
     { "watch one level path", test_watch_one_level_path },
-    { "watch_one_level_path_prune", test_watch_one_level_path_prune},
+    { "watch prune", test_watch_prune },
+    { "watch one level path prune", test_watch_one_level_path_prune },
+    { "watch empty path prune", test_watch_empty_path_prune },
     { "watch wildpath", test_watch_wildpath },
     { "watch wildcard", test_watch_wildcard },
     { "watch wildcard not last", test_watch_wildcard_not_last },
@@ -4641,6 +4655,7 @@ static CU_TestInfo tests_api_validate[] = {
     { "validate from many watches", test_validate_from_many_watches },
     { "validate set order", test_validate_ordering },
     { "validate tree order", test_validate_ordering_tree },
+    { "validate prune", test_validate_prune },
     CU_TEST_INFO_NULL,
 };
 
@@ -4762,18 +4777,16 @@ CU_TestInfo tests_lua[] = {
     { "lua basic set get", test_lua_basic_set_get },
     { "lua basic search", test_lua_basic_search },
     { "lua basic prune", test_lua_basic_prune },
+    { "lua basic set_tree get_tree", test_lua_basic_set_tree_get_tree},
+    { "lua basic timestamp", test_lua_basic_timestamp },
+    { "lua basic watch", test_lua_basic_watch },
+    { "lua basic provide", test_lua_basic_provide },
+    { "lua basic index", test_lua_basic_index },
+    { "lua basic validate", test_lua_basic_validate },
     { "lua load memory usage", test_lua_load_memory },
     { "lua load performance", test_lua_load_performance },
     { "lua get performance", test_lua_perf_get },
     { "lua set performance", test_lua_perf_set },
-#ifdef HAVE_LIBXML2
-    { "lua api set get", test_lua_api_set_get },
-    { "lua api search", test_lua_api_search },
-    { "lua load api memory usage", test_lua_load_api_memory },
-    { "lua load api performance", test_lua_load_api_performance },
-    { "lua api get performance", test_lua_api_perf_get },
-    { "lua api set performance", test_lua_api_perf_set },
-#endif
     CU_TEST_INFO_NULL,
 };
 

@@ -42,7 +42,7 @@ static pthread_mutex_t tree_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
 cb_create (struct callback_node *tree_root, const char *guid, const char *path,
-           uint64_t id, uint64_t callback)
+        uint64_t id, uint64_t callback)
 {
     cb_info_t *cb = (cb_info_t *) g_malloc0 (sizeof (cb_info_t));
     cb->active = true;

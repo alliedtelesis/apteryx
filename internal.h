@@ -26,29 +26,76 @@
 #include <inttypes.h>
 #include <ctype.h>
 #include <string.h>
+#include <assert.h>
+#include <errno.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <syslog.h>
 #include <glib.h>
-#include <protobuf-c/protobuf-c.h>
-#include "common.h"
+#include "rpc_transport.h"
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER  "unix:///tmp/apteryx"
-/* Default PID file */
-#define APTERYX_PID     "/var/run/apteryxd.pid"
+
+/* Debug */
+extern bool apteryx_debug;
+
+static inline uint64_t
+get_time_us (void)
+{
+    struct timeval tv;
+    gettimeofday (&tv, NULL);
+    return (tv.tv_sec * (uint64_t) 1000000 + tv.tv_usec);
+}
+
+#define DEBUG(fmt, args...) \
+    if (apteryx_debug) \
+    { \
+        syslog (LOG_DEBUG, fmt, ## args); \
+        printf ("[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+        printf (fmt, ## args); \
+    }
+
+#define ERROR(fmt, args...) \
+    { \
+        syslog (LOG_ERR, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ERROR: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+    }
+
+#define ASSERT(assertion, rcode, fmt, args...) \
+    if (!(assertion)) \
+    { \
+        syslog (LOG_ERR, fmt, ## args); \
+        if (apteryx_debug) \
+        { \
+            fprintf (stderr, "[%"PRIu64":%d] ", get_time_us (), getpid ()); \
+            fprintf (stderr, "ASSERT: "); \
+            fprintf (stderr, fmt, ## args); \
+        } \
+        rcode; \
+    }
 
 /* Mode */
 typedef enum
 {
     MODE_SET,
+    MODE_SET_WITH_ACK,
     MODE_GET,
+    MODE_SEARCH,
     MODE_FIND,
     MODE_TRAVERSE,
     MODE_WATCH,
+    MODE_WATCH_WITH_ACK,
     MODE_PROVIDE,
+    MODE_INDEX,
+    MODE_VALIDATE,
     MODE_PROXY,
     MODE_PRUNE,
     MODE_TIMESTAMP,
@@ -65,7 +112,7 @@ typedef struct _cb_info_t
     const char *path;
     const char *uri;
     uint64_t id;
-    uint64_t cb;
+    uint64_t ref;
 
     struct callback_node *node;
     int refcnt;
@@ -133,16 +180,39 @@ uint64_t db_timestamp (const char *path);
 #define RPC_TIMEOUT_US 1000000
 #define RPC_CLIENT_TIMEOUT_US 1000000
 typedef struct rpc_instance_s *rpc_instance;
+typedef struct rpc_client_t *rpc_client;
 #define RPC_TEST_DELAY_MASK 0x7FF
 extern bool rpc_test_random_watch_delay;
-rpc_instance rpc_init (ProtobufCService *service,
-                       const ProtobufCServiceDescriptor *descriptor, int timeout);
+typedef struct rpc_message_t
+{
+    /* Raw buffer */
+    uint8_t *buffer;
+    size_t size;
+    /* Data */
+    size_t offset;
+    size_t length;
+} rpc_message_t;
+typedef struct rpc_message_t *rpc_message;
+typedef bool (*rpc_msg_handler) (rpc_message msg);
+
+void rpc_msg_push (rpc_message msg, size_t len);
+void rpc_msg_encode_uint8 (rpc_message msg, uint8_t value);
+uint8_t rpc_msg_decode_uint8 (rpc_message msg);
+void rpc_msg_encode_uint64 (rpc_message msg, uint64_t value);
+uint64_t rpc_msg_decode_uint64 (rpc_message msg);
+void rpc_msg_encode_string (rpc_message msg, const char *value);
+char* rpc_msg_decode_string (rpc_message msg);
+bool rpc_msg_send (rpc_client client, rpc_message msg);
+void rpc_msg_reset (rpc_message msg);
+
+rpc_instance rpc_init (int timeout, rpc_msg_handler handler);
 void rpc_shutdown (rpc_instance rpc);
 bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
 bool rpc_server_release (rpc_instance rpc, const char *guid);
 int rpc_server_process (rpc_instance rpc, bool poll);
-ProtobufCService *rpc_client_connect (rpc_instance rpc, const char *url);
-void rpc_client_release (rpc_instance rpc, ProtobufCService *service, bool keep);
+rpc_client rpc_client_existing (rpc_instance rpc, const char *url);
+rpc_client rpc_client_connect (rpc_instance rpc, const char *url);
+void rpc_client_release (rpc_instance rpc, rpc_client client, bool keep);
 
 /* Apteryx configuration */
 void config_init (void);
@@ -176,18 +246,9 @@ GList *cb_match (struct callback_node *list, const char *path);
 GList *cb_search (struct callback_node *node, const char *path);
 void cb_shutdown (struct callback_node *root);
 
-/* Schema */
-typedef void sch_instance;
-typedef void sch_node;
-sch_instance *sch_load (const char *path);
-void sch_free (sch_instance *schema);
-sch_node *sch_lookup (sch_instance *schema, const char *path);
-bool sch_is_leaf (sch_node *node);
-bool sch_is_readable (sch_node *node);
-bool sch_is_writable (sch_node *node);
-char *sch_name (sch_node *node);
-char *sch_translate_to (sch_node *node, char *value);
-char *sch_translate_from (sch_node *node, char *value);
+/* Callbacks to users */
+bool add_callback (const char *type, const char *path, void *fn, bool value, void *data);
+bool delete_callback (const char *type, const char *path, void *fn);
 
 /* Tests */
 void run_unit_tests (const char *filter);
