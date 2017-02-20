@@ -22,51 +22,158 @@
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
 #endif
+#include "hashtree.h"
 
-GList *watch_list = NULL;
-GList *validation_list = NULL;
-GList *provide_list = NULL;
-GList *index_list = NULL;
-GList *proxy_list = NULL;
-static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
+struct callback_node
+{
+    struct hashtree_node hashtree_node;
+    GList *exact;
+    GList *directory;
+    GList *following;
+};
+
+struct callback_node *watch_list = NULL;
+struct callback_node *validation_list = NULL;
+struct callback_node *provide_list = NULL;
+struct callback_node *index_list = NULL;
+struct callback_node *proxy_list = NULL;
+
+static pthread_mutex_t tree_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
-cb_create (GList **list, const char *guid, const char *path,
-        uint64_t id, uint64_t ref)
+cb_create (struct callback_node *tree_root, const char *guid, const char *path,
+        uint64_t id, uint64_t callback)
 {
     cb_info_t *cb = (cb_info_t *) g_malloc0 (sizeof (cb_info_t));
     cb->active = true;
     cb->guid = g_strdup (guid);
     cb->path = g_strdup (path);
     cb->id = id;
-    cb->uri = g_strdup_printf (APTERYX_SERVER".%"PRIu64, cb->id);
-    cb->ref = ref;
-    cb->list = list;
+    cb->uri = g_strdup_printf (APTERYX_SERVER ".%" PRIu64, cb->id);
+    cb->ref = callback;
     cb->refcnt = 1;
+
     cb->refcnt++;
-    pthread_mutex_lock (&list_lock);
-    *list = g_list_prepend (*list, cb);
-    pthread_mutex_unlock (&list_lock);
+    cb->type = cb->path[strlen (cb->path) - 1];
+
+    char *tmp = strdup (path);
+
+    pthread_mutex_lock (&tree_lock);
+    if (cb->type == '/')
+    {
+        tmp[strlen (tmp) - 1] = '\0';
+    }
+
+    struct callback_node *node =
+        (struct callback_node *) hashtree_path_to_node ((struct hashtree_node *) tree_root,
+                                                        tmp);
+    if (!node)
+    {
+        node =
+            (struct callback_node *) hashtree_node_add ((struct hashtree_node *) tree_root,
+                                                        sizeof (struct callback_node), tmp);
+    }
+    free (tmp);
+
+    switch (cb->type)
+    {
+    case '*':
+        /* ... and following match */
+        node->following = g_list_prepend (node->following, cb);
+        break;
+    case '/':
+        /* directory level match */
+        node->directory = g_list_prepend (node->directory, cb);
+        break;
+    default:
+        /* exact match */
+        node->exact = g_list_prepend (node->exact, cb);
+        break;
+    }
+
+    cb->node = node;
+    pthread_mutex_unlock (&tree_lock);
     return cb;
+}
+
+static void
+cb_node_remove (struct callback_node *node)
+{
+    if (!node)
+    {
+        return;
+    }
+    if (node->directory == NULL && node->following == NULL && node->exact == NULL)
+    {
+        struct callback_node *parent =
+            (struct callback_node *) hashtree_parent_get (&node->hashtree_node);
+
+        /* Remove this node from the tree, if it has no children */
+        if (parent && hashtree_empty (&node->hashtree_node))
+        {
+            hashtree_node_delete (&parent->hashtree_node, &node->hashtree_node);
+        }
+
+        cb_node_remove (parent);
+    }
+}
+
+static void
+cb_ref (cb_info_t *cb, void *unused)
+{
+    cb->refcnt++;
+    return;
+}
+
+void
+cb_take (cb_info_t *cb)
+{
+    cb_ref (cb, NULL);
 }
 
 static void
 cb_free (gpointer data, void *param)
 {
-    cb_info_t *cb = (cb_info_t*)data;
-    if (cb->list)
-        *cb->list = g_list_remove (*cb->list, cb);
+    cb_info_t *cb = (cb_info_t *) data;
+    DEBUG ("freeing callback for %s / %s\n", cb->path, cb->uri);
+    if (cb->node)
+    {
+        switch (cb->type)
+        {
+        case '/':
+            cb->node->directory = g_list_remove (cb->node->directory, cb);
+            break;
+        case '*':
+            cb->node->following = g_list_remove (cb->node->following, cb);
+            break;
+        default:
+            cb->node->exact = g_list_remove (cb->node->exact, cb);
+            break;
+        }
+
+        /* Node may need removing from the tree... */
+        cb_node_remove (cb->node);
+        cb->node = NULL;
+    }
+
+
     if (cb->guid)
+    {
         g_free ((void *) cb->guid);
+    }
     if (cb->path)
+    {
         g_free ((void *) cb->path);
+    }
     if (cb->uri)
+    {
         g_free ((void *) cb->uri);
+    }
     g_free (cb);
 }
 
 void
-cb_destroy (cb_info_t *cb)
+cb_disable (cb_info_t *cb)
 {
     cb->active = false;
 }
@@ -75,169 +182,254 @@ void
 cb_release (cb_info_t *cb)
 {
     if (!cb)
+    {
         return;
-    pthread_mutex_lock (&list_lock);
+    }
     cb->refcnt--;
-    if ((!cb->active && cb->refcnt == 1) || cb->refcnt <= 0)
+
+    if (cb->refcnt <= 0)
     {
         cb_free (cb, NULL);
     }
-    pthread_mutex_unlock (&list_lock);
 }
 
-cb_info_t *
-cb_find (GList **list, const char *guid)
-{
-    GList *iter = NULL;
-    cb_info_t *cb = NULL;
 
-    pthread_mutex_lock (&list_lock);
-    for (iter = *list; iter; iter = g_list_next (iter))
+static GList *
+cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const char *path)
+{
+    /* Terminating condition */
+    if (strlen (path) == 0 || strcmp (path, "/") == 0)
     {
-        cb = (cb_info_t *) iter->data;
-        if (cb->active && cb->guid && strcmp (cb->guid, guid) == 0)
+        GList *children = hashtree_children_get (&node->hashtree_node);
+        for (GList *iter = children; iter; iter = iter->next)
         {
-            cb->refcnt++;
-            break;
+            struct callback_node *child = iter->data;
+            if (g_list_length (child->exact) > 0 || !hashtree_empty (&child->hashtree_node))
+            {
+                callbacks_so_far =
+                    g_list_prepend (callbacks_so_far, g_strdup (child->hashtree_node.key));
+            }
         }
-        cb = NULL;
+        g_list_free (children);
+        return callbacks_so_far;
     }
-    pthread_mutex_unlock (&list_lock);
-    return cb;
+
+    char *tmp = strdup (path + 1);
+    if (strchr (tmp, '/'))
+    {
+        *strchr (tmp, '/') = '\0';
+    }
+
+    struct hashtree_node *next_stage = hashtree_path_to_node (&node->hashtree_node, "/*");
+    if (next_stage)
+    {
+        callbacks_so_far =
+            cb_gather_search ((struct callback_node *) next_stage, callbacks_so_far,
+                              path + strlen (tmp) + 1);
+    }
+
+    char *with_leading_slash = NULL;
+    if (asprintf (&with_leading_slash, "/%s", tmp) < 0)
+        return callbacks_so_far;
+
+    next_stage = hashtree_path_to_node (&node->hashtree_node, with_leading_slash);
+    if (next_stage)
+    {
+        callbacks_so_far =
+            cb_gather_search ((struct callback_node *) next_stage, callbacks_so_far,
+                              path + strlen (with_leading_slash));
+    }
+    free (with_leading_slash);
+
+    free (tmp);
+
+    return callbacks_so_far;
 }
 
 GList *
-cb_match (GList **list, const char *path, int criteria)
+cb_search (struct callback_node *node, const char *path)
 {
     GList *matches = NULL;
-    GList *iter = NULL;
+    GList *full = NULL;
 
-    pthread_mutex_lock (&list_lock);
-    for (iter = *list; iter; iter = g_list_next (iter))
+    pthread_mutex_lock (&tree_lock);
+    matches = cb_gather_search (node, matches, path);
+    pthread_mutex_unlock (&tree_lock);
+    for (GList *iter = matches; iter; iter = iter->next)
     {
-        cb_info_t *cb = iter->data;
-        bool match = false;
-        int len = strlen (cb->path);
-        const char *ptr = cb->path + len - 1;
-
-        /* Active */
-        if (!cb->active)
-            continue;
-
-        /* Part match on path */
-        if ((criteria & CB_MATCH_PART) &&
-            strncmp (cb->path, path, strlen (path)) == 0)
+        if (strcmp ((char *) iter->data, "*") != 0)
         {
-            match = true;
-        }
-        /* Part match on cb->path */
-        else if ((criteria & CB_PATH_MATCH_PART) &&
-            strncmp (cb->path, path, strlen (cb->path)) == 0)
-        {
-            match = true;
-        }
-        /* Exact match */
-        else if ((criteria & CB_MATCH_EXACT) &&
-            strcmp (cb->path, path) == 0)
-        {
-            match = true;
-        }
-        /* Wildcard root path */
-        else if ((criteria & CB_MATCH_WILD) &&
-                  *ptr == '*' && strncmp (path, cb->path, len - 1) == 0)
-        {
-            match = true;
-        }
-        /* Direct child */
-        else if ((criteria & CB_MATCH_CHILD) &&
-                  *ptr == '/' && strncmp (path, cb->path, len - 1) == 0 &&
-                  strlen(path) >= len && !strchr (path + len, '/'))
-        {
-            match = true;
-        }
-        /* Wildcard intermediate node */
-        else if ((criteria & CB_MATCH_WILD_PATH) &&
-                  (ptr = strchr(cb->path, '*')) != NULL)
-        {
-            /* Match up to the '*' */
-            if (strncmp(path, cb->path, ptr - cb->path) == 0)
-            {
-                const char *after_needle = ptr + 1;
-                const char *after_haystack = path + strlen(path) - strlen(after_needle);
-
-                /* Match after the star */
-                if (strcmp(after_needle, after_haystack) == 0)
-                {
-                    match = true;
-                }
-                else
-                {
-                    const char *pattern = cb->path;
-                    const char *p = path;
-
-                    while (*pattern && *p)
-                    {
-                        if (*pattern == '*')
-                        {
-                            /* skip to '/' */
-                            while (*p && *p != '/') p++;
-                            pattern++;
-                        }
-                        else if (*pattern == *p)
-                        {
-                            pattern++;
-                            p++;
-                        }
-                        else
-                        {
-                            break;
-                        }
-                    }
-
-                    if (*pattern == '\0' && *p && !strcmp (pattern - 1, "*"))
-                    {
-                        match = true;
-                    }
-                    else if (*pattern == '\0' && *p == '\0')
-                    {
-                        match = true;
-                    }
-                    else
-                    {
-                        match = false;
-                    }
-                }
-            }
-        }
-
-        /* Match */
-        if (match)
-        {
-            cb->refcnt++;
-            matches = g_list_append (matches, cb);
-            cb->count++;
+            full =
+                g_list_prepend (full, g_strdup_printf ("%s%s", path, (char *) iter->data));
         }
     }
-    pthread_mutex_unlock (&list_lock);
+    g_list_free_full (matches, g_free);
+    return full;
+}
 
+static GList *
+cb_gather (struct callback_node *node, GList *callbacks_so_far, const char *path)
+{
+    callbacks_so_far = g_list_concat (g_list_copy (node->following), callbacks_so_far);
+
+    /* Terminating condition */
+    if (strlen (path) == 0 || !strchr (path + 1, '/'))
+    {
+        callbacks_so_far = g_list_concat (g_list_copy (node->directory), callbacks_so_far);
+
+        struct hashtree_node *next_stage =
+            hashtree_path_to_node (&node->hashtree_node, "/*");
+        if (next_stage)
+        {
+            callbacks_so_far =
+                g_list_concat (g_list_copy
+                               (((struct callback_node *) next_stage)->following),
+                               callbacks_so_far);
+        }
+
+        node = (struct callback_node *) hashtree_path_to_node (&node->hashtree_node, path);
+        if (node)
+        {
+            callbacks_so_far = g_list_concat (g_list_copy (node->exact), callbacks_so_far);
+        }
+
+        return callbacks_so_far;
+    }
+
+    char *tmp = strdup (path + 1);
+    if (strchr (tmp, '/'))
+    {
+        *strchr (tmp, '/') = '\0';
+    }
+
+    struct hashtree_node *next_stage = hashtree_path_to_node (&node->hashtree_node, "/*");
+    if (next_stage)
+    {
+        callbacks_so_far = cb_gather ((struct callback_node *) next_stage,
+                                      callbacks_so_far, path + strlen (tmp) + 1);
+    }
+
+    if (strlen (tmp) > 0)
+    {
+        char *with_leading_slash = NULL;
+        if (asprintf (&with_leading_slash, "/%s", tmp) < 0)
+            return callbacks_so_far;
+
+        next_stage = hashtree_path_to_node (&node->hashtree_node, with_leading_slash);
+        if (next_stage)
+        {
+            callbacks_so_far = cb_gather ((struct callback_node *) next_stage,
+                                          callbacks_so_far,
+                                          path + strlen (with_leading_slash));
+        }
+        free (with_leading_slash);
+    }
+
+    free (tmp);
+
+    return callbacks_so_far;
+}
+
+GList *
+cb_match (struct callback_node *list, const char *path)
+{
+    GList *matches = NULL;
+    GList *next = NULL;
+    pthread_mutex_lock (&tree_lock);
+    matches = cb_gather (list, matches, path);
+
+    next = matches;
+
+    /* Remove inactive callbacks (without copying list) */
+    while (next)
+    {
+        GList *spot = next;
+        cb_info_t *cb = next->data;
+        next = g_list_next (next);
+        if (!cb)
+        {
+            break;
+        }
+
+        if (!cb->active)
+        {
+            if (spot->prev)
+            {
+                spot->prev->next = spot->next;
+            }
+            else
+            {
+                matches = spot->next;
+            }
+
+            if (spot->next)
+            {
+                spot->next->prev = spot->prev;
+            }
+
+            spot->next = NULL;
+
+            g_list_free (spot);
+        }
+
+    }
+
+    g_list_foreach (matches, (GFunc) cb_ref, NULL);
+    pthread_mutex_unlock (&tree_lock);
     return matches;
 }
 
-void
+struct callback_node *
 cb_init (void)
 {
-    return;
+    return (struct callback_node *) hashtree_init (sizeof (struct callback_node));
+}
+
+static void
+cb_detach (void *data, void *unused)
+{
+    cb_info_t *cb = data;
+    cb->node = NULL;
+}
+
+static void
+cb_tree_destroy (struct callback_node *node)
+{
+    if (!node)
+    {
+        return;
+    }
+
+    GList *list = hashtree_children_get (&node->hashtree_node);
+
+    g_list_foreach (node->directory, cb_detach, NULL);
+    g_list_foreach (node->exact, cb_detach, NULL);
+    g_list_foreach (node->following, cb_detach, NULL);
+
+    /* Calling cb_release will alter these lists (and free them) - so we need
+     * to pass a copy.
+     */
+    g_list_free_full (g_list_copy (node->directory), (GDestroyNotify) cb_release);
+    g_list_free_full (g_list_copy (node->exact), (GDestroyNotify) cb_release);
+    g_list_free_full (g_list_copy (node->following), (GDestroyNotify) cb_release);
+
+    /* This must be called before hashtree_node_delete */
+    g_list_free_full (list, (GDestroyNotify) cb_tree_destroy);
+
+    g_list_free (node->directory);
+    g_list_free (node->exact);
+    g_list_free (node->following);
+
+    hashtree_node_delete (NULL, &node->hashtree_node);
 }
 
 void
-cb_shutdown (void)
+cb_shutdown (struct callback_node *node)
 {
-    /* Cleanup lists */
-    g_list_foreach (watch_list, cb_free, NULL);
-    g_list_foreach (provide_list, cb_free, NULL);
-    g_list_foreach (validation_list, cb_free, NULL);
-    g_list_foreach (index_list, cb_free, NULL);
-    g_list_foreach (proxy_list, cb_free, NULL);
+    /* Cleanup callback sets */
+    pthread_mutex_lock (&tree_lock);
+    cb_tree_destroy (node);
+    pthread_mutex_unlock (&tree_lock);
     return;
 }
 
@@ -248,30 +440,121 @@ cb_shutdown (void)
 void
 test_cb_init ()
 {
-    cb_init ();
-    cb_shutdown ();
+    struct callback_node *root = cb_init ();
+    cb_shutdown (root);
+}
+
+void
+test_cb_match ()
+{
+    GList *matches = NULL;
+    cb_info_t *cb = NULL;
+    /* Wildcard in path */
+    struct callback_node *watch_list = cb_init ();
+    cb = cb_create (watch_list, "tester", "/firewall/rules/*/app", 1, 0);
+    cb_release (cb);
+    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    CU_ASSERT (matches != NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    matches = cb_match (watch_list, "/firewall/rules/10");
+    CU_ASSERT (matches == NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+    cb_shutdown (watch_list);
+
+    /* directory */
+    watch_list = cb_init ();
+    cb = cb_create (watch_list, "tester", "/firewall/rules/10/", 2, 0);
+    cb_release (cb);
+
+    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    CU_ASSERT (matches != NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    matches = cb_match (watch_list, "/firewall/rules/10");
+    CU_ASSERT (matches == NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+    cb_shutdown (watch_list);
+
+    watch_list = cb_init ();
+    cb = cb_create (watch_list, "tester", "/firewall/rules/10/app", 3, 0);
+    cb_release (cb);
+    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    CU_ASSERT (matches != NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    matches = cb_match (watch_list, "/firewall/rules/10");
+    CU_ASSERT (matches == NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+    cb_shutdown (watch_list);
+
+    watch_list = cb_init ();
+    cb = cb_create (watch_list, "tester", "/firewall/rules/10", 4, 0);
+    cb_release (cb);
+
+    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    CU_ASSERT (matches == NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+    matches = cb_match (watch_list, "/firewall/rules/10");
+    CU_ASSERT (matches != NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+    cb_shutdown (watch_list);
+
+    watch_list = cb_init ();
+    cb = cb_create (watch_list, "tester", "/firewall/rules/*", 5, 0);
+    cb_release (cb);
+
+    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    CU_ASSERT (matches != NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    matches = cb_match (watch_list, "/firewall/rules/10");
+    CU_ASSERT (matches != NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    matches = cb_match (watch_list, "/firewall/rules");
+    CU_ASSERT (matches == NULL);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    cb_shutdown (watch_list);
 }
 
 void
 test_cb_release ()
 {
     cb_info_t *cb;
-    cb = cb_create (&watch_list, "abc", "/test", 1, 0);
+    struct callback_node *watch_list = cb_init ();
+    cb = cb_create (watch_list, "abc", "/test", 1, 0);
     cb_release (cb);
     CU_ASSERT (cb->refcnt == 1);
     cb_release (cb);
-    CU_ASSERT (g_list_length (watch_list) == 0);
+    CU_ASSERT (hashtree_empty (&watch_list->hashtree_node));
+    cb_shutdown (watch_list);
 }
 
 void
-test_cb_destroy ()
+test_cb_disable ()
 {
     cb_info_t *cb;
-    cb = cb_create (&watch_list, "abc", "/test", 1, 0);
-    cb_destroy (cb);
-    CU_ASSERT (g_list_length (watch_list) == 1);
+    struct callback_node *watch_list = cb_init ();
+    cb = cb_create (watch_list, "abc", "/test", 1, 0);
+
+    cb_disable (cb);
+    CU_ASSERT (!hashtree_empty (&watch_list->hashtree_node));
     cb_release (cb);
-    CU_ASSERT (g_list_length (watch_list) == 0);
+    cb_release (cb);
+
+    CU_ASSERT (hashtree_empty (&watch_list->hashtree_node));
+    cb_shutdown (watch_list);
 }
 
 typedef enum
@@ -290,37 +573,33 @@ match_perf_test (PERF_TEST_INDEX index)
     uint64_t start;
     int i;
 
-    cb_init ();
+    struct callback_node *watch_list = cb_init ();
     for (i = 0; i < TEST_CB_MAX_ENTRIES; i++)
     {
         sprintf (path, "/database/test%d/test%d", i, i);
-        sprintf (guid, "%zX", (size_t)g_str_hash (path));
-        cb = cb_create (&watch_list, guid, path, 1, 0);
+        sprintf (guid, "%zX", (size_t) g_str_hash (path));
+        cb = cb_create (watch_list, guid, path, 1, 0);
         cb_release (cb);
     }
-    CU_ASSERT (g_list_length (watch_list) == TEST_CB_MAX_ENTRIES);
+    CU_ASSERT (!hashtree_empty (&watch_list->hashtree_node));
 
     start = get_time_us ();
     for (i = 0; i < TEST_CB_MAX_ITERATIONS; i++)
     {
         GList *matches;
         int test = index == INDEX_FIRST ? 0 :
-                (index == INDEX_LAST ? (TEST_CB_MAX_ENTRIES - 1) :
-                  random () % TEST_CB_MAX_ENTRIES);
+            (index == INDEX_LAST ? (TEST_CB_MAX_ENTRIES - 1) :
+             random () % TEST_CB_MAX_ENTRIES);
         sprintf (path, "/database/test%d/test%d", test, test);
-        matches = cb_match (&watch_list, path,
-                CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+        matches = cb_match (watch_list, path);
         if (g_list_length (matches) != 1)
             goto exit;
         g_list_free_full (matches, (GDestroyNotify) cb_release);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / TEST_CB_MAX_ITERATIONS);
+    printf ("%" PRIu64 "us ... ", (get_time_us () - start) / TEST_CB_MAX_ITERATIONS);
     ret = true;
-exit:
-    g_list_foreach (watch_list, cb_free, NULL);
-    CU_ASSERT (g_list_length (watch_list) == 0);
-    watch_list = NULL;
-    cb_shutdown ();
+  exit:
+    cb_shutdown (watch_list);
     return ret;
 }
 
@@ -344,8 +623,9 @@ test_cb_match_perf_random ()
 
 CU_TestInfo tests_callbacks[] = {
     { "init", test_cb_init },
+    { "match", test_cb_match },
     { "release", test_cb_release },
-    { "destroy", test_cb_destroy },
+    { "disable", test_cb_disable },
     { "match performance random", test_cb_match_perf_random },
     { "match performance first", test_cb_match_perf_first },
     { "match performance last", test_cb_match_perf_last },
