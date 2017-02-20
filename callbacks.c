@@ -50,7 +50,7 @@ cb_create (struct callback_node *tree_root, const char *guid, const char *path,
     cb->path = g_strdup (path);
     cb->id = id;
     cb->uri = g_strdup_printf (APTERYX_SERVER ".%" PRIu64, cb->id);
-    cb->cb = callback;
+    cb->ref = callback;
     cb->refcnt = 1;
 
     cb->refcnt++;

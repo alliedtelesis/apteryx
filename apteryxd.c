@@ -330,7 +330,7 @@ provide_get (const char *path)
             /* Throw away the no good validator */
             ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                    provider->path, provider->id, provider->ref);
-            cb_destroy (provider);
+            cb_disable (provider);
             INC_COUNTER (counters.provided_no_handler);
             continue;
         }
@@ -850,7 +850,6 @@ static GList *
 search_path (const char *path)
 {
     GList *results = NULL;
-    GList *iter = NULL;
 
     /* Proxy first */
     results = proxy_search (path);
@@ -1130,6 +1129,9 @@ static void
 _search_paths (GList **paths, const char *path)
 {
     GList *children, *iter;
+    char *value;
+    size_t vsize;
+
     children = db_search (path);
     for (iter = children; iter; iter = g_list_next (iter))
     {

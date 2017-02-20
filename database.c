@@ -25,7 +25,6 @@
 #include <glib.h>
 #include <inttypes.h>
 #include "internal.h"
-#define TEST 1
 #ifdef TEST
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>

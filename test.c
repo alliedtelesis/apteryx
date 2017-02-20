@@ -3155,7 +3155,7 @@ test_get_tree_indexed_provided ()
     CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/bytes", test_provide_callback_1000));
     CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/pkts", test_provide_callback_1000));
     CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/tx/bytes", test_provide_callback_100));
-    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters", test_index_cb));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters/", test_index_cb));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -4794,7 +4794,6 @@ extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
 
 static CU_SuiteInfo suites[] = {
-//    { "Hashtree", suite_init, suite_clean, tests_hashtree },
     { "Database", suite_init, suite_clean, tests_database },
     { "Callbacks", suite_init, suite_clean, tests_callbacks },
     { "RPC", suite_init, suite_clean, tests_rpc },
