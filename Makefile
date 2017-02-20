@@ -46,11 +46,11 @@ libapteryx.so: rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Compiling "$<""
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
-apteryxd: apteryxd.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
+apteryxd: apteryxd.c hashtree.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
-apteryx: apteryxc.c database.c callbacks.c libapteryx.so $(EXTRA_CSRC)
+apteryx: apteryxc.c hashtree.c database.c callbacks.c libapteryx.so $(EXTRA_CSRC)
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
