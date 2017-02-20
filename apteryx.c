@@ -35,13 +35,13 @@
 #include <glib.h>
 
 /* Configuration */
-bool apteryx_debug = false;                      /* Debug enabled */
-static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
-static int ref_count = 0;               /* Library reference count */
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
-static rpc_instance rpc = NULL;         /* RPC Service */
-static bool bound = false;              /* Do we have a listen socket open */
-static bool have_callbacks = false;     /* Have we ever registered any callbacks */
+bool apteryx_debug = false;                                 /* Debug enabled */
+static const char *default_url = APTERYX_SERVER;            /* Default path to Apteryx database */
+static int ref_count = 0;                                   /* Library reference count */
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;    /* Protect globals */
+static rpc_instance rpc = NULL;                             /* RPC Service */
+static bool bound = false;                                  /* Do we have a listen socket open */
+static bool have_callbacks = false;                         /* Have we ever registered any callbacks */
 
 static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
@@ -105,16 +105,20 @@ validate_path (const char *path, char **url)
     {
         /* Use the default URL */
         if (url)
-            *url = strdup(default_url);
+        {
+            *url = strdup (default_url);
+        }
         return path;
     }
     /* Check for a full URL */
     else if (path &&
-      (strncmp (path, "unix://", 7) == 0 ||
-       strncmp (path, "tcp://", 6) == 0))
+             (strncmp (path, "unix://", 7) == 0 ||
+              strncmp (path, "tcp://", 6) == 0))
     {
         if (url)
+        {
             *url = strdup (path);
+        }
         char *tmp = strstr (path + 6, ":/");
         if (!tmp)
         {
@@ -223,7 +227,9 @@ handle_validate (rpc_message msg)
         pthread_mutex_unlock (&pending_watches_lock);
     }
     else
+    {
         pthread_mutex_unlock (&pending_watches_lock);
+    }
 
     /* Process callback */
     result = (uint32_t) (size_t) call_callback (ref, path, value);
@@ -323,7 +329,9 @@ apteryx_init (bool debug_enabled)
 
     /* Ready to go */
     if (ref_count == 1)
+    {
         DEBUG ("Init: Initialised\n");
+    }
     return true;
 }
 
@@ -379,11 +387,12 @@ apteryx_bind (const char *url)
 
     DEBUG ("BIND: %s\n", url);
 
-    if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
-            (size_t)g_str_hash (url)) <= 0)
+    if (sprintf (path, APTERYX_SOCKETS_PATH "/%zX", (size_t) g_str_hash (url)) <= 0)
+    {
         return false;
+    }
     result = apteryx_set (path, url);
-    usleep (1000); /* Sockets need time to bind/unbind */
+    usleep (1000);  /* Sockets need time to bind/unbind */
     return result;
 }
 
@@ -397,9 +406,10 @@ apteryx_unbind (const char *url)
 
     DEBUG ("UNBIND: %s\n", url);
 
-    if (sprintf (path, APTERYX_SOCKETS_PATH"/%zX",
-            (size_t)g_str_hash (url)) <= 0)
+    if (sprintf (path, APTERYX_SOCKETS_PATH "/%zX", (size_t) g_str_hash (url)) <= 0)
+    {
         return false;
+    }
     return apteryx_set (path, NULL);
 }
 
@@ -472,7 +482,7 @@ apteryx_dump (const char *path, FILE *fp)
     if (ref_count <= 0)
     {
         ERROR ("DUMP: not initialised!\n");
-        assert(ref_count > 0);
+        assert (ref_count > 0);
         return false;
     }
 
@@ -513,7 +523,7 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
 
     /* Check path */
     path = validate_path (path, &url);
-    if (!path || path[strlen(path) - 1] == '/')
+    if (!path || path[strlen (path) - 1] == '/')
     {
         ERROR ("SET: invalid path (%s)!\n", path);
         free (url);
@@ -567,9 +577,13 @@ apteryx_cas_string (const char *path, const char *key, const char *value, uint64
 
     /* Create full path */
     if (key)
+    {
         len = asprintf (&full_path, "%s/%s", path, key);
+    }
     else
+    {
         len = asprintf (&full_path, "%s", path);
+    }
     if (len)
     {
         res = apteryx_cas (full_path, value, ts);
@@ -594,9 +608,13 @@ apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
 
     /* Create full path */
     if (key)
+    {
         len = asprintf (&full_path, "%s/%s", path, key);
+    }
     else
+    {
         len = asprintf (&full_path, "%s", path);
+    }
     if (len)
     {
         /* Store as a string at the moment */
@@ -632,7 +650,7 @@ apteryx_get (const char *path)
 
     /* Check path */
     path = validate_path (path, &url);
-    if (!path || path[strlen(path)-1] == '/')
+    if (!path || path[strlen (path) - 1] == '/')
     {
         ERROR ("GET: invalid path (%s)!\n", path);
         free (url);
@@ -679,9 +697,13 @@ apteryx_get_string (const char *path, const char *key)
 
     /* Create full path */
     if (key)
+    {
         len = asprintf (&full_path, "%s/%s", path, key);
+    }
     else
+    {
         len = asprintf (&full_path, "%s", path);
+    }
     if (len)
     {
         if ((value = apteryx_get ((const char *) full_path)))
@@ -704,9 +726,13 @@ apteryx_get_int (const char *path, const char *key)
 
     /* Create full path */
     if (key)
+    {
         len = asprintf (&full_path, "%s/%s", path, key);
+    }
     else
+    {
         len = asprintf (&full_path, "%s", path);
+    }
     if (len)
     {
         if (apteryx_debug)
@@ -777,7 +803,7 @@ _node_free (GNode *node, gpointer data)
 }
 
 void
-apteryx_free_tree (GNode* root)
+apteryx_free_tree (GNode *root)
 {
     if (root)
     {
@@ -790,9 +816,13 @@ static GNode *
 merge (GNode *left, GNode *right, int (*cmp) (const char *a, const char *b))
 {
     if (!left)
+    {
         return right;
+    }
     if (!right)
+    {
         return left;
+    }
     if (cmp (left->data, right->data) < 0)
     {
         left->next = merge (left->next, right, cmp);
@@ -802,7 +832,7 @@ merge (GNode *left, GNode *right, int (*cmp) (const char *a, const char *b))
     }
     else
     {
-        right->next = merge (left, right->next, cmp );
+        right->next = merge (left, right->next, cmp);
         right->next->prev = right;
         right->prev = NULL;
         return right;
@@ -829,7 +859,9 @@ merge_sort (GNode *head, int (*cmp) (const char *a, const char *b))
 {
     GNode *left, *right;
     if (!head || !head->next)
+    {
         return head;
+    }
     left = head;
     right = split (left);
     left = merge_sort (left, cmp);
@@ -841,7 +873,9 @@ void
 apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b))
 {
     if (parent)
+    {
         parent->children = merge_sort (parent->children, cmp);
+    }
 }
 
 static char *
@@ -856,12 +890,13 @@ _node_to_path (GNode *node, char **buf)
     }
 
     if (node && node->parent)
+    {
         _node_to_path (node->parent, buf);
+    }
 
     char *tmp = NULL;
     if (asprintf (&tmp, "%s%s%s", *buf ? : "",
-            node ? (char*)node->data : "/",
-            end ? "" : "/") > 0)
+                  node ? (char *) node->data : "/", end ? "" : "/") > 0)
     {
         free (*buf);
         *buf = tmp;
@@ -870,7 +905,7 @@ _node_to_path (GNode *node, char **buf)
 }
 
 char *
-apteryx_node_path (GNode* node)
+apteryx_node_path (GNode *node)
 {
     char *path = NULL;
     _node_to_path (node, &path);
@@ -914,7 +949,8 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     {
         path = "";
     }
-    if (!path || (strlen (path) > 0 && path[strlen(path) - 1] == '/'))
+
+    if (!path || (strlen (path) > 0 && path[strlen (path) - 1] == '/'))
     {
         ERROR ("SET_TREE: invalid path (%s)!\n", path);
         assert (!apteryx_debug || path);
@@ -926,14 +962,15 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SET_TREE: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
+        ERROR ("SET_TREE: Path(%s) Failed to connect to server: %s\n", path,
+               strerror (errno));
         free (url);
         return false;
     }
 
     /* Save sanitized root path (less URL) to root node */
     old_root_name = APTERYX_NAME (root);
-    root->data = (char*) path;
+    root->data = (char *) path;
 
     /* Create the list of Paths/Value's */
     rpc_msg_encode_uint8 (&msg, wait_for_completion ? MODE_SET_WITH_ACK : MODE_SET);
@@ -967,12 +1004,12 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
 
 typedef struct _traverse_data_t
 {
-    GNode* root;
+    GNode *root;
     bool done;
 } traverse_data_t;
 
 static void
-path_to_node (GNode* root, const char *path, const char *value)
+path_to_node (GNode *root, const char *path, const char *value)
 {
     const char *next;
     GNode *node;
@@ -988,8 +1025,8 @@ path_to_node (GNode* root, const char *path, const char *value)
         else
         {
             char *name = strndup (path, next - path);
-            for (node = g_node_first_child (root); node;
-                    node = g_node_next_sibling (node))
+            for (node = g_node_first_child (root);
+                 node; node = g_node_next_sibling (node))
             {
                 if (strcmp (APTERYX_NAME (node), name) == 0)
                 {
@@ -1026,7 +1063,7 @@ apteryx_get_tree (const char *path)
 
     /* Check path */
     path = validate_path (path, &url);
-    if (!path || path[strlen(path) - 1] == '/')
+    if (!path || path[strlen (path) - 1] == '/')
     {
         ERROR ("GET_TREE: invalid path (%s)!\n", path);
         assert (!apteryx_debug || path);
@@ -1119,9 +1156,9 @@ apteryx_search (const char *path)
     {
         free (url);
         ERROR ("SEARCH: invalid root (%s)!\n", path);
-        assert(!apteryx_debug || path[0] == '/');
-        assert(!apteryx_debug || path[strlen (path) - 1] == '/');
-        assert(!apteryx_debug || strstr (path, "//") == NULL);
+        assert (!apteryx_debug || path[0] == '/');
+        assert (!apteryx_debug || path[strlen (path) - 1] == '/');
+        assert (!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
 
@@ -1129,7 +1166,8 @@ apteryx_search (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("SEARCH: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
+        ERROR ("SEARCH: Path(%s) Failed to connect to server: %s\n", path,
+               strerror (errno));
         free (url);
         return NULL;
     }
@@ -1180,7 +1218,9 @@ apteryx_search_simple (const char *path)
                     tmp = NULL, "SEARCH: Memory allocation failure\n");
         }
         if (result)
+        {
             free (result);
+        }
         result = tmp;
         tmp = NULL;
     }
@@ -1188,6 +1228,7 @@ apteryx_search_simple (const char *path)
 
     return result;
 }
+
 
 GList *
 apteryx_find (const char *path, const char *value)
@@ -1223,13 +1264,12 @@ apteryx_find (const char *path, const char *value)
     {
         path = "";
     }
-    else if (path[0] != '/' ||
-             strstr (path, "//") != NULL)
+    else if (path[0] != '/' || strstr (path, "//") != NULL)
     {
         free (url);
         ERROR ("FIND: invalid root (%s)!\n", path);
-        assert(!apteryx_debug || path[0] == '/');
-        assert(!apteryx_debug || strstr (path, "//") == NULL);
+        assert (!apteryx_debug || path[0] == '/');
+        assert (!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
 
@@ -1300,13 +1340,12 @@ apteryx_find_tree (GNode *root)
     {
         path = "";
     }
-    else if (path[0] != '/' ||
-             strstr (path, "//") != NULL)
+    else if (path[0] != '/' || strstr (path, "//") != NULL)
     {
         free (url);
         ERROR ("FIND_TREE: invalid root (%s)!\n", path);
-        assert(!apteryx_debug || path[0] == '/');
-        assert(!apteryx_debug || strstr (path, "//") == NULL);
+        assert (!apteryx_debug || path[0] == '/');
+        assert (!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
 
@@ -1365,10 +1404,10 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     cb_list = g_list_prepend (cb_list, (void *) cb);
     if (!bound)
     {
-        char * uri = NULL;
+        char *uri = NULL;
 
         /* Bind to the default uri for this client */
-        if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+        if (asprintf ((char **) &uri, APTERYX_SERVER ".%" PRIu64, (uint64_t) getpid ()) <= 0
                 || !rpc_server_bind (rpc, uri, uri))
         {
             ERROR ("Failed to bind uri %s\n", uri);
@@ -1384,9 +1423,13 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
 
     if (sprintf (_path, "%s/%zX-%"PRIX64"-%zX",
             type, (size_t)pid, cb->ref, (size_t)g_str_hash (path)) <= 0)
+    {
         return false;
+    }
     if (!apteryx_set (_path, path))
+    {
         return false;
+    }
     have_callbacks = true;
     return true;
 }
@@ -1484,7 +1527,9 @@ apteryx_proxy (const char *path, const char *url)
     char *value = NULL;
 
     if (asprintf (&value, "%s:%s", url, path) <= 0)
+    {
         return false;
+    }
     res = add_callback (APTERYX_PROXIES_PATH, value,
             (void *)(size_t)g_str_hash (url), false, NULL);
     free (value);
@@ -1521,8 +1566,7 @@ apteryx_timestamp (const char *path)
     /* Check path */
     path = validate_path (path, &url);
     /* if path is empty, or path ends in '/' but is not the root db path (ie "/") */
-    if (!path ||
-        ((path[strlen(path)-1] == '/') && strlen(path) > 1))
+    if (!path || ((path[strlen (path) - 1] == '/') && strlen (path) > 1))
     {
         ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
         free (url);
@@ -1534,7 +1578,8 @@ apteryx_timestamp (const char *path)
     rpc_client = rpc_client_connect (rpc, url);
     if (!rpc_client)
     {
-        ERROR ("TIMESTAMP: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
+        ERROR ("TIMESTAMP: Path(%s) Failed to connect to server: %s\n", path,
+               strerror (errno));
         free (url);
         return 0;
     }
@@ -1553,6 +1598,6 @@ apteryx_timestamp (const char *path)
     rpc_client_release (rpc, rpc_client, true);
     free (url);
 
-    DEBUG ("    = %"PRIu64"\n", value);
+    DEBUG ("    = %" PRIu64 "\n", value);
     return value;
 }

@@ -30,17 +30,17 @@
 #include <CUnit/Basic.h>
 #endif
 
+#include "hashtree.h"
+
 struct database_node
 {
-    char *key;
-    unsigned char *value;
-    size_t length;
-    struct database_node *parent;
-    GHashTable *children;
-    unsigned int removing;
+    struct hashtree_node hashtree_node;
     uint64_t timestamp;
+    size_t length;
+    unsigned char *value;
 };
-struct database_node *root = NULL;  /* The database root */
+
+struct hashtree_node *root = NULL;  /* The database root */
 
 pthread_rwlock_t db_lock = PTHREAD_RWLOCK_INITIALIZER;
 
@@ -49,204 +49,23 @@ db_calculate_timestamp (void)
 {
     struct timespec tms;
     uint64_t micros = 0;
-    if (clock_gettime(CLOCK_REALTIME, &tms)) {
+    if (clock_gettime (CLOCK_REALTIME, &tms))
+    {
         return 0;
     }
 
-    micros = ((uint64_t)tms.tv_sec) * 1000000;
-    micros += tms.tv_nsec/1000;
+    micros = ((uint64_t) tms.tv_sec) * 1000000;
+    micros += tms.tv_nsec / 1000;
     return micros;
 }
 
-static struct database_node *
-db_path_to_node (const char *path, uint64_t timestamp)
-{
-    char *key = g_strdup (path);
-    char *start = key;
-    int path_length;
-    struct database_node *node = NULL;
-    struct database_node *current = root;
-
-    /* Trim trailing '/' */
-    if (strlen (key) && key[strlen (key) - 1] == '/')
-        key[strlen (key) - 1] = '\0';
-    path_length = strlen (key);
-
-    if (strchr (key, '/'))
-        *strchr (key, '/') = '\0';
-
-    while (current)
-    {
-        if (key + strlen (key) == start + path_length)
-        {
-            if (strcmp (key, current->key) == 0)
-            {
-                node = current;
-                break;
-            }
-        }
-
-        /* look down a level */
-        if (current->children == NULL)
-        {
-            node = NULL;
-            break;
-        }
-
-        key += strlen (key) + 1;
-        if (strchr (key, '/'))
-            *strchr (key, '/') = '\0';
-
-        /* This node is in a path that is being updated */
-        if (timestamp)
-            current->timestamp = timestamp;
-
-        if ((current = g_hash_table_lookup (current->children, key)) == NULL)
-            break;
-    }
-
-    /* This node is in a path that is being updated */
-    if (node && timestamp)
-        node->timestamp = timestamp;
-
-    g_free (start);
-    return node;
-}
-
-static void
-db_node_delete (struct database_node *node)
-{
-    if (!node)
-        return;
-
-    node->removing++;
-
-    if (node->removing <= 1 && node->parent && node->parent->children)
-    {
-        g_hash_table_remove (node->parent->children, node->key);
-        if (g_hash_table_size (node->parent->children) == 0 && node->parent->length == 0)
-        {
-            db_node_delete (node->parent);
-        }
-    }
-
-    if (node->removing == 1)
-    {
-        if (node->children)
-        {
-            GList *children = g_hash_table_get_values (node->children);
-            GList *iter;
-            for (iter = children; iter; iter = g_list_next (iter))
-            {
-                struct database_node *child = iter->data;
-                db_node_delete (child);
-            }
-            g_hash_table_destroy (node->children);
-            node->children = NULL;
-            g_list_free (children);
-        }
-        g_free (node->value);
-        node->value = NULL;
-        g_free (node->key);
-        node->key = NULL;
-        if (node == root)
-            root = NULL;
-        g_free (node);
-    }
-    else
-    {
-        node->removing--;
-    }
-
-}
-
-static struct database_node *
-db_node_add (struct database_node *parent, const char *key)
-{
-    struct database_node *new_node = g_malloc0 (sizeof (struct database_node));
-    new_node->key = g_strdup (key);
-    new_node->parent = parent;
-    if (parent)
-    {
-        if (!parent->children)
-        {
-            parent->children = g_hash_table_new (g_str_hash, g_str_equal);
-        }
-        g_hash_table_insert (parent->children, new_node->key, new_node);
-    }
-    else if (strcmp(key, "") == 0) /* This is a candidate "root" node */
-    {
-        if (root)
-        {
-            db_node_delete(new_node);
-            new_node = root;
-        }
-        else
-        {
-            root = new_node;
-        }
-    }
-    return new_node;
-}
-
-void
-db_init (void)
-{
-    pthread_rwlock_wrlock (&db_lock);
-    if (!root)
-        root = db_node_add (NULL, "");
-    pthread_rwlock_unlock (&db_lock);
-}
-
-void
-db_shutdown (void)
-{
-    GList *paths = db_search ("");
-    if (paths)
-    {
-        GList *iter;
-        for (iter = paths; iter; iter = g_list_next (iter))
-            printf ("DB ERROR: path still set %s\n", (char*)iter->data);
-        g_list_free_full (paths, g_free);
-    }
-
-    pthread_rwlock_wrlock (&db_lock);
-    if (root)
-        db_node_delete (root);
-    pthread_rwlock_unlock (&db_lock);
-    root = NULL;
-}
-
-static struct database_node *
-db_parent_get (const char *path)
-{
-    struct database_node *node = NULL;
-    char *parent = g_strdup (path);
-
-    if (strlen (parent) == 0)
-    {
-        /* found the root node */
-        root = db_node_add (NULL, "");
-        g_free (parent);
-        return NULL;
-    }
-    if (strchr (parent, '/') != NULL)
-        *strrchr (parent, '/') = '\0';
-
-    if ((node = db_path_to_node (parent, 0)) == NULL)
-    {
-        db_add_no_lock (parent, NULL, 0, UINT64_MAX);
-        node = db_path_to_node (parent, 0);
-    }
-    g_free (parent);
-    return node;
-}
 
 static uint64_t
 db_timestamp_no_lock (const char *path)
 {
     uint64_t timestamp = 0;
-    struct database_node *new_value = db_path_to_node (path, 0);
+    struct database_node *new_value =
+        (struct database_node *) hashtree_path_to_node (root, path);
     if (new_value)
     {
         timestamp = new_value->timestamp;
@@ -267,32 +86,38 @@ db_timestamp (const char *path)
 bool
 db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
 {
-    uint64_t timestamp = db_calculate_timestamp();
+    uint64_t timestamp = db_calculate_timestamp ();
 
     if (ts != UINT64_MAX && ts < db_timestamp_no_lock (path))
+    {
         return false;
+    }
 
-    struct database_node *new_value = db_path_to_node (path, timestamp);
+    struct database_node *new_value =
+        (struct database_node *) hashtree_path_to_node (root, path);
     if (!new_value)
     {
-        struct database_node *parent = db_parent_get (path);
-        const char *key = NULL;
-
-        if (strchr (path, '/') != NULL)
-            key = strrchr (path, '/') + 1;
-        else
-            key = path;
-        new_value = db_node_add (parent, key);
-        new_value->timestamp = timestamp;
+        new_value =
+            (struct database_node *) hashtree_node_add (root, sizeof (*new_value), path);
     }
     g_free (new_value->value);
     new_value->value = NULL;
+
     if (length > 0)
     {
         new_value->value = g_malloc (length);
         memcpy (new_value->value, value, length);
     }
     new_value->length = length;
+
+    /* This node is in a path that is being updated */
+    do
+    {
+        new_value->timestamp = timestamp;
+    }
+    while ((new_value =
+            (struct database_node *) hashtree_parent_get ((struct hashtree_node *)
+                                                          new_value)) != NULL);
 
     return true;
 }
@@ -307,17 +132,51 @@ db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts
     return ret;
 }
 
+
 bool
 db_delete_no_lock (const char *path, uint64_t ts)
 {
     bool ret = false;
+
     if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
     {
-        struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
-        if (node)
-            db_node_delete (node);
+
+        struct hashtree_node *node = hashtree_path_to_node (root, path);
+        if (node && node != root)
+        {
+            uint64_t now = db_calculate_timestamp ();
+            struct hashtree_node *iter = node;
+            struct hashtree_node *parent = hashtree_parent_get (node);
+            while ((iter = hashtree_parent_get (iter)) != NULL)
+            {
+                ((struct database_node *) iter)->timestamp = now;
+            }
+
+            if (((struct database_node *) node)->value != NULL)
+            {
+                g_free (((struct database_node *) node)->value);
+            }
+
+            hashtree_node_delete (root, node);
+            if (parent)
+            {
+                /* This is now a hanging node, remove it */
+                if (hashtree_empty (parent) &&
+                    ((struct database_node *) parent)->length == 0)
+                {
+                    char *parent_path = strdup (path);
+                    if (strchr (parent_path, '/'))
+                    {
+                        *strrchr (parent_path, '/') = '\0';
+                    }
+                    db_delete_no_lock (parent_path, UINT64_MAX);
+                    free (parent_path);
+                }
+            }
+        }
         ret = true;
     }
+
     return ret;
 }
 
@@ -335,7 +194,8 @@ bool
 db_get (const char *path, unsigned char **value, size_t *length)
 {
     pthread_rwlock_rdlock (&db_lock);
-    struct database_node *node = db_path_to_node (path, 0);
+    struct database_node *node =
+        (struct database_node *) hashtree_path_to_node (root, path);
     if (!node || !node->value)
     {
         pthread_rwlock_unlock (&db_lock);
@@ -351,26 +211,99 @@ db_get (const char *path, unsigned char **value, size_t *length)
 GList *
 db_search (const char *path)
 {
-    bool end_with_slash = strlen (path) > 0 ? path[strlen (path)-1] == '/' : false;
+    bool end_with_slash = strlen (path) > 0 ? path[strlen (path) - 1] == '/' : false;
 
     pthread_rwlock_rdlock (&db_lock);
-    GList *children, *iter, *values = NULL;
-    struct database_node *node = db_path_to_node (path, 0);
-    if (node == NULL || node->children == NULL)
+    GList *children, *iter, *paths = NULL;
+    struct hashtree_node *node = hashtree_path_to_node (root, path);
+
+    if (node == NULL)
     {
         pthread_rwlock_unlock (&db_lock);
         return NULL;
     }
-    children = g_hash_table_get_values (node->children);
+
+    children = hashtree_children_get (node);
+    if (children == NULL)
+    {
+        pthread_rwlock_unlock (&db_lock);
+        return NULL;
+    }
+
     for (iter = children; iter; iter = g_list_next (iter))
     {
-        values = g_list_prepend (values,
-                                 g_strdup_printf("%s%s%s", path, end_with_slash ? "" : "/",
-                                                 ((struct database_node*)iter->data)->key));
+        char *child_path = NULL;
+        struct hashtree_node *node = iter->data;
+        if (asprintf (&child_path, "%s%s%s", path, end_with_slash ? "" : "/", node->key) >
+            0)
+        {
+            paths = g_list_prepend (paths, child_path);
+        }
     }
     g_list_free (children);
+
     pthread_rwlock_unlock (&db_lock);
-    return values;
+    return paths;
+}
+
+void
+db_init ()
+{
+    pthread_rwlock_wrlock (&db_lock);
+    if (!root)
+    {
+        root = hashtree_init (sizeof (struct database_node));
+    }
+    pthread_rwlock_unlock (&db_lock);
+}
+
+static void
+db_purge (struct database_node *node)
+{
+    GList *children = hashtree_children_get (&node->hashtree_node);
+    for (GList * iter = children; iter; iter = iter->next)
+    {
+        db_purge ((struct database_node *) iter->data);
+    }
+    g_list_free (children);
+
+    if (node->value)
+    {
+        g_free (node->value);
+    }
+    node->value = NULL;
+}
+
+void
+db_prune (const char *path)
+{
+    struct database_node *node =
+        (struct database_node *) hashtree_path_to_node (root, path);
+    if (node)
+    {
+        db_purge (node);
+    }
+    db_delete (path, UINT64_MAX);
+}
+
+void
+db_shutdown ()
+{
+    GList *paths = db_search ("");
+    if (paths)
+    {
+        GList *iter;
+        for (iter = paths; iter; iter = g_list_next (iter))
+            printf ("DB ERROR: path still set %s\n", (char *) iter->data);
+        g_list_free_full (paths, g_free);
+    }
+    pthread_rwlock_wrlock (&db_lock);
+
+    db_purge ((struct database_node *) root);
+
+    hashtree_shutdown (root);
+    root = NULL;
+    pthread_rwlock_unlock (&db_lock);
 }
 
 #ifdef TEST
@@ -378,67 +311,12 @@ db_search (const char *path)
 #define TEST_DB_MAX_ITERATIONS 1000
 
 void
-test_db_internal_init ()
-{
-    db_init ();
-    CU_ASSERT (root != NULL);
-    db_shutdown ();
-}
-
-void
-test_db_internal_delete ()
-{
-    struct database_node *node = db_node_add (NULL, "test_node");
-    db_node_delete (node);
-}
-
-
-void
-test_db_path_to_node ()
-{
-    db_init ();
-    pthread_rwlock_wrlock (&db_lock);
-    struct database_node *one = db_node_add (root, "one");
-    struct database_node *two = db_node_add (one, "two");
-    struct database_node *rua = db_node_add (one, "rua");
-    struct database_node *three = db_node_add (two, "three");
-    struct database_node *dos = db_node_add (two, "dos");
-    struct database_node *toru = db_node_add (two, "toru");
-
-    CU_ASSERT (db_path_to_node ("", 0) == root);
-    CU_ASSERT (db_path_to_node ("/", 0) == root);
-    CU_ASSERT (db_path_to_node ("/one", 0) == one);
-    CU_ASSERT (db_path_to_node ("/one/two", 0) == two);
-    CU_ASSERT (db_path_to_node ("/one/rua", 0) == rua);
-    CU_ASSERT (db_path_to_node ("/one/two/three", 0) == three);
-    CU_ASSERT (db_path_to_node ("/one/two/dos", 0) == dos);
-    CU_ASSERT (db_path_to_node ("/one/two/toru", 0) == toru);
-    CU_ASSERT (db_path_to_node ("/uno", 0) == NULL);
-    CU_ASSERT (db_path_to_node ("/uno/two", 0) == NULL);
-    CU_ASSERT (db_path_to_node ("/one/", 0) == one);
-
-    // nodes not in this list get destroyed as their children are deleted
-    db_node_delete (three);
-    db_node_delete (dos);
-    db_node_delete (toru);
-    db_node_delete (rua);
-
-    pthread_rwlock_unlock (&db_lock);
-}
-
-void
-test_db_init_shutdown ()
-{
-    db_init ();
-    db_shutdown ();
-}
-
-void
 test_db_add_delete ()
 {
     const char *path = "/database/test";
     db_init ();
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+    CU_ASSERT (db_add
+               (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
     CU_ASSERT (db_delete (path, UINT64_MAX));
     db_shutdown ();
 }
@@ -455,19 +333,21 @@ test_db_add_delete_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+        CU_ASSERT (db_add
+                   (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         g_free (path);
     }
 
     start = get_time_us ();
     path = g_strdup_printf ("/database/test%d/test%d",
-            TEST_DB_MAX_ENTRIES - 1, TEST_DB_MAX_ENTRIES - 1);
+                            TEST_DB_MAX_ENTRIES - 1, TEST_DB_MAX_ENTRIES - 1);
     for (i = 0; i < TEST_DB_MAX_ITERATIONS; i++)
     {
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+        CU_ASSERT (db_add
+                   (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         CU_ASSERT (db_delete (path, UINT64_MAX));
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%" PRIu64 "us ... ", (get_time_us () - start) / 1000);
 
     g_free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
@@ -488,7 +368,7 @@ test_db_long_path ()
     int i;
 
     path = g_strdup_printf ("%s", "/database/test");
-    for (i=0; i<1024; i++)
+    for (i = 0; i < 1024; i++)
     {
         char *old = path;
         path = g_strdup_printf ("%s/%08x", old, rand ());
@@ -496,7 +376,8 @@ test_db_long_path ()
     }
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+    CU_ASSERT (db_add
+               (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test") + 1));
@@ -516,7 +397,7 @@ _path_perf (int path_length, bool full)
     int i;
 
     path = g_strdup_printf ("%s", "/database");
-    for (i=0; i<(path_length - 1); i++)
+    for (i = 0; i < (path_length - 1); i++)
     {
         char *old = path;
         path = g_strdup_printf ("%s/%08x", old, rand ());
@@ -525,16 +406,18 @@ _path_perf (int path_length, bool full)
     db_init ();
     if (!full)
     {
-        db_add (path, (const unsigned char *) "placeholder", strlen ("placeholder") + 1, UINT64_MAX);
+        db_add (path, (const unsigned char *) "placeholder", strlen ("placeholder") + 1,
+                UINT64_MAX);
         path[strlen (path) - 1]++;
     }
     start = get_time_us ();
     for (i = 0; i < count; i++)
     {
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+        CU_ASSERT (db_add
+                   (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         CU_ASSERT (db_delete (path, UINT64_MAX));
     }
-    printf ("%d=%"PRIu64"us ", path_length, (get_time_us () - start) / count);
+    printf ("%d=%" PRIu64 "us ", path_length, (get_time_us () - start) / count);
     if (!full)
     {
         path[strlen (path) - 1]--;
@@ -544,7 +427,8 @@ _path_perf (int path_length, bool full)
     db_shutdown ();
 }
 
-void test_db_path_perf ()
+void
+test_db_path_perf ()
 {
     _path_perf (5, true);
     _path_perf (10, true);
@@ -553,7 +437,8 @@ void test_db_path_perf ()
     printf ("... ");
 }
 
-void test_db_path_exists_perf ()
+void
+test_db_path_exists_perf ()
 {
     _path_perf (5, false);
     _path_perf (10, false);
@@ -567,12 +452,12 @@ test_db_large_value ()
 {
     const char *path = "/database/test";
     char *large;
-    int len = 1024*1024;
+    int len = 1024 * 1024;
     char *value = NULL;
     size_t length;
 
     large = g_malloc0 (len);
-    memset (large, 'a', len-1);
+    memset (large, 'a', len - 1);
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
     CU_ASSERT (db_add (path, (const unsigned char *) large, len, UINT64_MAX));
@@ -594,7 +479,8 @@ test_db_get ()
     size_t length;
     db_init ();
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) != true);
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+    CU_ASSERT (db_add
+               (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
     CU_ASSERT (value != NULL);
     CU_ASSERT (length == (strlen ("test") + 1));
@@ -618,22 +504,25 @@ test_db_get_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+        CU_ASSERT (db_add
+                   (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         g_free (path);
     }
 
     start = get_time_us ();
     path = g_strdup_printf ("/database/test%d/test%d",
-            TEST_DB_MAX_ENTRIES - 1, TEST_DB_MAX_ENTRIES - 1);
+                            TEST_DB_MAX_ENTRIES - 1, TEST_DB_MAX_ENTRIES - 1);
     for (i = 0; i < TEST_DB_MAX_ITERATIONS; i++)
     {
         CU_ASSERT ((res = db_get (path, (unsigned char **) &value, &length)) == true);
         CU_ASSERT (value != NULL);
         if (!res || !value)
+        {
             goto exit;
+        }
         g_free ((void *) value);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%" PRIu64 "us ... ", (get_time_us () - start) / 1000);
   exit:
     g_free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
@@ -653,11 +542,12 @@ test_db_replace ()
     size_t length;
     int i;
     db_init ();
-    for (i=0; i<10; i++)
+    for (i = 0; i < 10; i++)
     {
         char value[64];
         sprintf (value, "test%d", i);
-        CU_ASSERT (db_add (path, (const unsigned char *) value, strlen (value) + 1, UINT64_MAX));
+        CU_ASSERT (db_add
+                   (path, (const unsigned char *) value, strlen (value) + 1, UINT64_MAX));
     }
     CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
     CU_ASSERT (value != NULL);
@@ -674,7 +564,8 @@ test_db_search ()
     const char *path = "/database/test";
     GList *paths = NULL;
     db_init ();
-    CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+    CU_ASSERT (db_add
+               (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
     CU_ASSERT ((paths = db_search ("/database/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 1);
     CU_ASSERT (g_list_find_custom (paths, "/database/test", (GCompareFunc) strcmp) != NULL);
@@ -701,7 +592,8 @@ test_db_search_perf ()
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
-        CU_ASSERT (db_add (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
+        CU_ASSERT (db_add
+                   (path, (const unsigned char *) "test", strlen ("test") + 1, UINT64_MAX));
         g_free (path);
     }
 
@@ -712,12 +604,14 @@ test_db_search_perf ()
         CU_ASSERT ((paths = db_search (path)) != NULL);
         CU_ASSERT (g_list_length (paths) == 1);
         if (g_list_length (paths) != 1)
+        {
             goto exit;
+        }
         g_list_free_full (paths, g_free);
     }
-    printf ("%"PRIu64"us ... ", (get_time_us () - start) / 1000);
+    printf ("%" PRIu64 "us ... ", (get_time_us () - start) / 1000);
   exit:
-  g_free (path);
+    g_free (path);
     for (i = 0; i < TEST_DB_MAX_ENTRIES; i++)
     {
         path = g_strdup_printf ("/database/test%d/test%d", i, i);
@@ -757,15 +651,8 @@ test_db_timestamping ()
     db_shutdown ();
 }
 
-CU_TestInfo tests_database_internal[] = {
-    { "delete", test_db_internal_delete },
-    { "path_to_node", test_db_path_to_node },
-    { "init", test_db_internal_init },
-    CU_TEST_INFO_NULL,
-};
 
 CU_TestInfo tests_database[] = {
-    { "init/shutdown", test_db_init_shutdown },
     { "add/delete", test_db_add_delete },
     { "add/delete performance", test_db_add_delete_perf },
     { "large value", test_db_large_value },

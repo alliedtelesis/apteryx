@@ -103,17 +103,18 @@ typedef enum
 } APTERYX_MODE;
 
 /* Callback */
+struct callback_node;
 typedef struct _cb_info_t
 {
     bool active;
-
+    char type;
     const char *guid;
     const char *path;
     const char *uri;
     uint64_t id;
     uint64_t ref;
 
-    GList **list;
+    struct callback_node *node;
     int refcnt;
     uint32_t count;
 } cb_info_t;
@@ -166,8 +167,10 @@ extern pthread_rwlock_t db_lock;
 void db_init (void);
 void db_shutdown (void);
 bool db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts);
-bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+bool db_add_no_lock (const char *path, const unsigned char *value, size_t length,
+                     uint64_t ts);
 bool db_delete (const char *path, uint64_t ts);
+void db_prune (const char *path);
 bool db_delete_no_lock (const char *path, uint64_t ts);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
@@ -213,27 +216,35 @@ void rpc_client_release (rpc_instance rpc, rpc_client client, bool keep);
 
 /* Apteryx configuration */
 void config_init (void);
+void config_shutdown (void);
+/* Returns a list of paths */
+GList *config_search_providers (const char *path);
+
+/* Returns a list of cb_info_t* */
+GList *config_get_indexers (const char *path);
+GList *config_get_providers (const char *path);
+GList *config_get_proxies (const char *path);
+GList *config_get_watchers (const char *path);
+GList *config_get_validators (const char *path);
 
 /* Callbacks to clients */
-extern GList *watch_list;
-extern GList *validation_list;
-extern GList *provide_list;
-extern GList *index_list;
-extern GList *proxy_list;
-extern rpc_instance proxy_rpc;
-void cb_init (void);
-cb_info_t * cb_create (GList **list, const char *guid, const char *path, uint64_t id, uint64_t ref);
+struct callback_node *cb_init (void);
+cb_info_t *cb_create (struct callback_node *list, const char *guid, const char *path,
+                      uint64_t id, uint64_t callback);
+void cb_disable (cb_info_t *cb);
 void cb_destroy (cb_info_t *cb);
+void cb_take (cb_info_t *cb);
 void cb_release (cb_info_t *cb);
-cb_info_t * cb_find (GList **list, const char *guid);
 #define CB_MATCH_PART       (1<<0)
 #define CB_MATCH_EXACT      (1<<1)
 #define CB_MATCH_WILD       (1<<2)
 #define CB_MATCH_CHILD      (1<<3)
 #define CB_MATCH_WILD_PATH  (1<<4)
 #define CB_PATH_MATCH_PART  (1<<5)
-GList *cb_match (GList **list, const char *path, int critera);
-void cb_shutdown (void);
+GList *cb_match (struct callback_node *list, const char *path);
+/* Returns a list of paths */
+GList *cb_search (struct callback_node *node, const char *path);
+void cb_shutdown (struct callback_node *root);
 
 /* Callbacks to users */
 bool add_callback (const char *type, const char *path, void *fn, bool value, void *data);

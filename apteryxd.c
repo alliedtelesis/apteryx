@@ -39,7 +39,7 @@ rpc_instance rpc = NULL;
 rpc_instance proxy_rpc = NULL;
 
 /* Statistics and debug */
-counters_t counters = {};
+counters_t counters = { };
 
 /* Synchronise validation */
 static pthread_mutex_t validating;
@@ -53,8 +53,7 @@ index_get (const char *path, GList **result)
     GList *iter = NULL;
 
     /* Retrieve a list of providers for this path */
-    indexers = cb_match (&index_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    indexers = config_get_indexers (path);
     if (!indexers)
     {
         *result = NULL;
@@ -88,7 +87,7 @@ index_get (const char *path, GList **result)
             /* Throw away the no good validator */
             ERROR ("Invalid INDEX CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                     indexer->path, indexer->id, indexer->ref);
-            cb_destroy (indexer);
+            cb_disable (indexer);
             INC_COUNTER (counters.indexed_no_handler);
             continue;
         }
@@ -112,6 +111,7 @@ index_get (const char *path, GList **result)
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, true);
 
+        /* Result */
         INC_COUNTER (counters.indexed);
         INC_COUNTER (indexer->count);
 
@@ -132,10 +132,11 @@ validate_set (const char *path, const char *value)
     int32_t result = 0;
 
     /* Retrieve a list of validators for this path */
-    validators = cb_match (&validation_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
+    validators = config_get_validators (path);
     if (!validators)
+    {
         return 0;
+    }
 
     /* Protect sensitive values with this lock - released in apteryx_set */
     pthread_mutex_lock (&validating);
@@ -167,7 +168,7 @@ validate_set (const char *path, const char *value)
             /* Throw away the no good validator */
             ERROR ("Invalid VALIDATE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                     validator->path, validator->id, validator->ref);
-            cb_destroy (validator);
+            cb_disable (validator);
             INC_COUNTER (counters.validated_no_handler);
             continue;
         }
@@ -215,15 +216,16 @@ notify_watchers (const char *path, bool ack)
     size_t vsize;
 
     /* Retrieve a list of watchers for this path */
-    watchers = cb_match (&watch_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
+    watchers = config_get_watchers (path);
     if (!watchers)
+    {
         return;
+    }
 
     /* Find the new value for this path */
     value = NULL;
     vsize = 0;
-    db_get (path, (unsigned char**)&value, &vsize);
+    db_get (path, (unsigned char **) &value, &vsize);
 
     /* Call each watcher */
     for (iter = watchers; iter; iter = g_list_next (iter))
@@ -252,7 +254,7 @@ notify_watchers (const char *path, bool ack)
             /* Throw away the no good validator */
             ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                    watcher->path, watcher->id, watcher->ref);
-            cb_destroy (watcher);
+            cb_disable (watcher);
             INC_COUNTER (counters.watched_no_handler);
             continue;
         }
@@ -266,7 +268,7 @@ notify_watchers (const char *path, bool ack)
         if (!rpc_msg_send (rpc_client, &msg))
         {
             INC_COUNTER (counters.watched_timeout);
-            ERROR ("Failed to notify watcher for path \"%s\"\n", (char *)path);
+            ERROR ("Failed to notify watcher for path \"%s\"\n", (char *) path);
             rpc_client_release (rpc, rpc_client, false);
         }
         else
@@ -282,7 +284,9 @@ notify_watchers (const char *path, bool ack)
 
     /* Free memory if allocated */
     if (value)
+    {
         g_free (value);
+    }
 }
 
 static char *
@@ -293,10 +297,11 @@ provide_get (const char *path)
     GList *iter = NULL;
 
     /* Retrieve a list of providers for this path */
-    providers = cb_match (&provide_list, path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD|CB_MATCH_WILD_PATH);
+    providers = config_get_providers (path);
     if (!providers)
-        return 0;
+    {
+        return NULL;
+    }
 
     /* Find the first good provider */
     for (iter = providers; iter; iter = g_list_next (iter))
@@ -325,7 +330,7 @@ provide_get (const char *path)
             /* Throw away the no good validator */
             ERROR ("Invalid PROVIDE CB %s (0x%"PRIx64",0x%"PRIx64")\n",
                    provider->path, provider->id, provider->ref);
-            cb_destroy (provider);
+            cb_disable (provider);
             INC_COUNTER (counters.provided_no_handler);
             continue;
         }
@@ -337,7 +342,7 @@ provide_get (const char *path)
         if (!rpc_msg_send (rpc_client, &msg))
         {
             INC_COUNTER (counters.provided_timeout);
-            ERROR ("No response from provider for path \"%s\"\n", (char *)path);
+            ERROR ("No response from provider for path \"%s\"\n", (char *) path);
             rpc_client_release (rpc, rpc_client, false);
         }
         else
@@ -369,10 +374,11 @@ find_proxy (const char **path, cb_info_t **proxy_pt)
     *proxy_pt = NULL;
 
     /* Retrieve a list of proxies for this path */
-    proxies = cb_match (&proxy_list, *path,
-            CB_MATCH_EXACT|CB_MATCH_WILD|CB_MATCH_CHILD);
+    proxies = config_get_proxies (*path);
     if (!proxies)
+    {
         return NULL;
+    }
 
     /* Find the first good proxy */
     for (iter = proxies; iter; iter = g_list_next (iter))
@@ -385,7 +391,7 @@ find_proxy (const char **path, cb_info_t **proxy_pt)
         if (!rpc_client)
         {
             ERROR ("Invalid PROXY CB %s (%s)\n", proxy->path, proxy->uri);
-            cb_destroy (proxy);
+            cb_disable (proxy);
             INC_COUNTER (counters.proxied_no_handler);
             continue;
         }
@@ -393,15 +399,20 @@ find_proxy (const char **path, cb_info_t **proxy_pt)
         INC_COUNTER (proxy->count);
 
         /* Strip proxied path */
-        if (proxy->path[len-1] == '*')
+        if (proxy->path[len - 1] == '*')
+        {
             len -= 1;
-        if (proxy->path[len-1] == '/')
+        }
+        if (proxy->path[len - 1] == '/')
+        {
             len -= 1;
-        *path = *path  + len;
+        }
+        *path = *path + len;
         DEBUG ("PROXY CB \"%s\" to \"%s\"\n", *path, proxy->uri);
         *proxy_pt = proxy;
         break;
     }
+
     g_list_free_full (proxies, (GDestroyNotify) cb_release);
     return rpc_client;
 }
@@ -461,7 +472,9 @@ proxy_get (const char *path)
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return NULL;
+    }
 
     /* Do remote get */
     rpc_msg_encode_uint8 (&msg, MODE_GET);
@@ -496,7 +509,9 @@ proxy_search (const char *path)
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return NULL;
+    }
 
     /* Do remote search */
     rpc_msg_encode_uint8 (&msg, MODE_SEARCH);
@@ -586,7 +601,9 @@ proxy_prune (const char *path)
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return 1;
+    }
 
     /* Do remote prune */
     rpc_msg_encode_uint8 (&msg, MODE_PRUNE);
@@ -619,7 +636,9 @@ proxy_timestamp (const char *path)
     /* Find and connect to a proxied instance */
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
+    {
         return 0;
+    }
 
     /* Do remote timestamp */
     rpc_msg_encode_uint8 (&msg, MODE_TIMESTAMP);
@@ -627,7 +646,7 @@ proxy_timestamp (const char *path)
     if (!rpc_msg_send (rpc_client, &msg))
     {
         INC_COUNTER (counters.proxied_timeout);
-        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *) path);
         rpc_client_release (rpc, rpc_client, false);
         return value;
     }
@@ -781,7 +800,7 @@ get_value (const char *path)
     if ((value = proxy_get (path)) == NULL)
     {
         /* Database second */
-        if (!db_get (path, (unsigned char**)&value, &vsize))
+        if (!db_get (path, (unsigned char **) &value, &vsize))
         {
             /* Provide third */
             if ((value = provide_get (path)) == NULL)
@@ -831,7 +850,6 @@ static GList *
 search_path (const char *path)
 {
     GList *results = NULL;
-    GList *iter = NULL;
 
     /* Proxy first */
     results = proxy_search (path);
@@ -846,30 +864,12 @@ search_path (const char *path)
         {
             /* Search database next */
             results = db_search (path);
-
+            DEBUG (" got %d entries from database...\n", g_list_length (results));
             /* Append any provided paths */
             GList *providers = NULL;
-            providers = cb_match (&provide_list, path, CB_MATCH_PART);
-            for (iter = providers; iter; iter = g_list_next (iter))
-            {
-                cb_info_t *provider = iter->data;
-                int len = strlen (path);
-                /* If there is a provider for a single node below here it may
-                 * show as a "*" entry in this list, which is not desirable */
-                if (strlen (provider->path) > strlen (path) &&
-                    provider->path[strlen (path)] == '*')
-                {
-                    continue;
-                }
-                char *ptr, *provider_path = g_strdup (provider->path);
-                if ((ptr = strchr (&provider_path[len ? len : len+1], '/')) != 0)
-                    *ptr = '\0';
-                if (!g_list_find_custom (results, provider_path, (GCompareFunc) strcmp))
-                    results = g_list_prepend (results, provider_path);
-                else
-                    g_free (provider_path);
-            }
-            g_list_free_full (providers, (GDestroyNotify) cb_release);
+            providers = config_search_providers (path);
+            DEBUG (" got %d entries from providers...\n", g_list_length (providers));
+            results = g_list_concat (results, providers);
         }
     }
     return results;
@@ -1065,25 +1065,8 @@ _traverse_paths (GList **paths, GList **values, const char *path)
 
         /* Append any provided paths */
         GList *providers = NULL;
-        providers = cb_match (&provide_list, path_s, CB_MATCH_PART);
-        for (iter = providers; iter; iter = g_list_next (iter))
-        {
-            cb_info_t *provider = iter->data;
-            char *ptr, *ppath;
-            int len = strlen (path_s);
-
-            if (strcmp (provider->path, path_s) == 0)
-                continue;
-
-            ppath = g_strdup (provider->path);
-            if ((ptr = strchr (&ppath[len+1], '/')) != 0)
-                   *ptr = '\0';
-            if (!g_list_find_custom (children, ppath, (GCompareFunc) strcmp))
-                children = g_list_prepend (children, ppath);
-            else
-                g_free (ppath);
-        }
-        g_list_free_full (providers, (GDestroyNotify) cb_release);
+        providers = config_search_providers (path_s);
+        children = g_list_concat (children, providers);
     }
     for (iter = children; iter; iter = g_list_next (iter))
     {
@@ -1146,8 +1129,8 @@ static void
 _search_paths (GList **paths, const char *path)
 {
     GList *children, *iter;
-    char *value = NULL;
-    size_t vsize = 0;
+    char *value;
+    size_t vsize;
 
     children = db_search (path);
     for (iter = children; iter; iter = g_list_next (iter))
@@ -1452,7 +1435,7 @@ exit:
     DEBUG ("Exiting\n");
 
     /* Cleanup callbacks */
-    cb_shutdown ();
+    config_shutdown ();
     db_shutdown ();
     if (proxy_rpc)
     {
