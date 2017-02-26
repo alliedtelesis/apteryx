@@ -137,7 +137,7 @@ handle_indexers_set (const char *path, const char *value)
 
     DEBUG ("CFG-Index: %s = %s\n", guid, value);
 
-    cb = update_callback (&index_list, guid, value);
+    cb = update_callback (index_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -150,7 +150,7 @@ handle_watchers_set (const char *path, const char *value)
 
     DEBUG ("CFG-Watch: %s = %s\n", guid, value);
 
-    cb = update_callback (&watch_list, guid, value);
+    cb = update_callback (watch_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -163,7 +163,7 @@ handle_providers_set (const char *path, const char *value)
 
     DEBUG ("CFG-Provide: %s = %s\n", guid, value);
 
-    cb = update_callback (&provide_list, guid, value);
+    cb = update_callback (provide_list, guid, value);
     cb_release (cb);
     return true;
 }
@@ -176,7 +176,7 @@ handle_validators_set (const char *path, const char *value)
 
     DEBUG ("CFG-Validate: %s = %s\n", guid, value);
 
-    cb = update_callback (&validation_list, guid, value);
+    cb = update_callback (validation_list, guid, value);
     cb_release (cb);
     return true;
 }
