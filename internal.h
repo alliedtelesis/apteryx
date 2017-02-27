@@ -169,6 +169,8 @@ bool db_add (const char *path, const unsigned char *value, size_t length, uint64
 bool db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts);
 bool db_delete (const char *path, uint64_t ts);
 bool db_delete_no_lock (const char *path, uint64_t ts);
+bool db_empty (const char *path, uint64_t ts);
+bool db_empty_no_lock (const char *path, uint64_t ts);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);

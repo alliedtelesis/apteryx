@@ -332,6 +332,39 @@ db_delete (const char *path, uint64_t ts)
 }
 
 bool
+db_empty_no_lock (const char *path, uint64_t ts)
+{
+    bool ret = false;
+    if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
+    {
+        struct database_node *node = db_path_to_node (path, db_calculate_timestamp ());
+        if (node)
+        {
+            node->timestamp = ts;
+            g_free (node->value);
+            node->value = NULL;
+            node->length = 0;
+            if (node->children == NULL || g_hash_table_size (node->children) == 0)
+            {
+                db_node_delete (node);
+            }
+        }
+        ret = true;
+    }
+    return ret;
+}
+
+bool
+db_empty (const char *path, uint64_t ts)
+{
+    bool ret = false;
+    pthread_rwlock_wrlock (&db_lock);
+    ret = db_empty_no_lock (path, ts);
+    pthread_rwlock_unlock (&db_lock);
+    return ret;
+}
+
+bool
 db_get (const char *path, unsigned char **value, size_t *length)
 {
     pthread_rwlock_rdlock (&db_lock);
@@ -669,6 +702,54 @@ test_db_replace ()
 }
 
 void
+test_db_empty ()
+{
+    const char *path = "/database/test";
+    int i;
+    db_init ();
+    /* Check that adding then empty is deletes the node */
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", 5, UINT64_MAX));
+    CU_ASSERT (db_empty (path, UINT64_MAX));
+    CU_ASSERT (db_path_to_node (path, 0) == NULL);
+
+    /* Create and add some children to the node */
+    CU_ASSERT (db_add (path, (const unsigned char *) "test", 5, UINT64_MAX));
+    for (i=0; i<10; i++)
+    {
+        char value[64];
+        char tpath[128];
+        sprintf (value, "test%d", i);
+        sprintf (tpath, "%s/test%d", path, i);
+        CU_ASSERT (db_add (tpath, (const unsigned char *) value, strlen (value) + 1, UINT64_MAX));
+    }
+    CU_ASSERT (db_empty (path, UINT64_MAX));
+    /* Check that the children are not deleted */
+    CU_ASSERT (db_path_to_node (path, 0) != NULL);
+    for (i=0; i<10; i++)
+    {
+        char value[64];
+        char tpath[128];
+        char *rvalue = NULL;
+        size_t rlength;
+        sprintf (value, "test%d", i);
+        sprintf (tpath, "%s/test%d", path, i);
+        CU_ASSERT (db_get (tpath, (unsigned char **) &rvalue, &rlength));
+        CU_ASSERT (rvalue && strcmp (rvalue, value) == 0);
+        g_free ((void *) rvalue);
+    }
+    /* Now empty the node and check that removing the children removes it */
+    CU_ASSERT (db_empty (path, UINT64_MAX));
+    for (i=0; i<10; i++)
+    {
+        char tpath[128];
+        sprintf (tpath, "%s/test%d", path, i);
+        CU_ASSERT (db_delete (tpath, UINT64_MAX));
+    }
+    CU_ASSERT (db_path_to_node (path, 0) == NULL);
+    db_shutdown ();
+}
+
+void
 test_db_search ()
 {
     const char *path = "/database/test";
@@ -775,6 +856,7 @@ CU_TestInfo tests_database[] = {
     { "get", test_db_get },
     { "get performance", test_db_get_perf },
     { "replace", test_db_replace },
+    { "empty", test_db_empty },
     { "search", test_db_search },
     { "search performance", test_db_search_perf },
     { "timestamping", test_db_timestamping },
