@@ -726,7 +726,7 @@ handle_set (rpc_message msg, bool ack)
         if (value)
             db_result = db_add_no_lock (path, (unsigned char*)value, strlen (value) + 1, ts);
         else
-            db_result = db_delete_no_lock (path, ts);
+            db_result = db_empty_no_lock (path, ts);
         if (!db_result)
         {
             DEBUG ("SET: %s = %s refused by DB\n", path, value);
