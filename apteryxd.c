@@ -1164,6 +1164,132 @@ _search_paths (GList **paths, const char *path)
 }
 
 static bool
+handle_query (rpc_message msg)
+{
+    char *path;
+    char *value;
+    GList *paths = NULL;
+    GList *ipath;
+    GList *ivalue;
+    GList *value_matches = NULL;
+    GList *possible_matches = NULL;
+    GList *matches = NULL;
+    GList *iter = NULL;
+    GList *iter2 = NULL;
+    char *tmp = NULL;
+    char *ptr = NULL;
+    char *chunk;
+    bool traverse = false;
+    bool one_level = false;
+
+    INC_COUNTER (counters.query);
+
+    while ((path = rpc_msg_decode_string (msg)) != NULL)
+    {
+        paths = g_list_prepend (paths, path);
+        DEBUG ("QUERY: %s\n", path);
+    }
+    paths = g_list_reverse (paths);
+    for (iter2 = g_list_first (paths); iter2; iter2 = g_list_next (iter2))
+    {
+        if (strchr (iter2->data, '*') == NULL)
+        {
+            value = get_value ((char *) iter2->data);
+            if (value)
+            {
+                matches = g_list_prepend (matches, g_strdup ((char *) iter2->data));
+                value_matches = g_list_prepend (value_matches, g_strdup (value));
+            }
+            g_free (value);
+        }
+        else
+        {
+            /* Path contains a "*".
+             * Grab first level (from root) */
+            tmp = g_strdup (iter2->data);
+            if (tmp[strlen (tmp) - 1] == '*')
+            {
+                traverse = true;
+            }
+            else if (tmp[strlen (tmp) - 1] == '/')
+            {
+                one_level = true;
+            }
+            *strrchr (tmp, '*') = '\0';
+            chunk = strtok_r (tmp, "*", &ptr);
+            if (chunk)
+            {
+                possible_matches = search_path (chunk);
+            }
+            /* For each * do a search + add keys, then re-search */
+            while ((chunk = strtok_r (NULL, "*", &ptr)) != NULL)
+            {
+                GList *last_round = possible_matches;
+                possible_matches = NULL;
+                for (iter = g_list_first (last_round); iter; iter = g_list_next (iter))
+                {
+                    char *next_level = NULL;
+
+                    next_level = g_strdup_printf ("%s%s", (char *) iter->data, chunk);
+                    possible_matches =
+                        g_list_concat (search_path (next_level), possible_matches);
+                    g_free (next_level);
+                }
+                g_list_free_full (last_round, g_free);
+            }
+            if (traverse)
+            {
+                for (iter = g_list_first (possible_matches); iter;
+                     iter = g_list_next (iter))
+                {
+                    _traverse_paths (&matches, &value_matches, (char *) iter->data);
+                }
+            }
+            else
+            {
+                /* Go through each path match and see if all keys match */
+                for (iter = g_list_first (possible_matches); iter;
+                     iter = g_list_next (iter))
+                {
+                    char *key = NULL;
+
+                    key = g_strdup_printf ("%s%s", (char *) iter->data,
+                                           strrchr (iter2->data, '*') + 1);
+                    if (one_level)
+                    {
+                        /* Remove the slash off the end of the string */
+                        key[strlen (key) - 1] = '\0';
+                    }
+                    value = get_value (key);
+                    if (value)
+                    {
+                        matches = g_list_prepend (matches, g_strdup (key));
+                        value_matches = g_list_prepend (value_matches, g_strdup (value));
+                    }
+                    g_free (value);
+                    g_free (key);
+                }
+            }
+            g_free (tmp);
+            g_list_free_full (possible_matches, g_free);
+        }
+    }
+    /* Send result */
+    rpc_msg_reset (msg);
+    for (ipath = g_list_first (matches), ivalue = g_list_first (value_matches);
+         ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+    {
+        rpc_msg_encode_string (msg, (char *) ipath->data);
+        rpc_msg_encode_string (msg, (char *) ivalue->data);
+    }
+    g_list_free_full (matches, g_free);
+    g_list_free_full (value_matches, g_free);
+    g_list_free (paths);
+
+    return true;
+}
+
+static bool
 handle_prune (rpc_message msg)
 {
     int32_t result = 0;
@@ -1295,6 +1421,8 @@ msg_handler (rpc_message msg)
         return handle_set (msg, false);
     case MODE_GET:
         return handle_get (msg);
+    case MODE_QUERY:
+        return handle_query (msg);
     case MODE_SEARCH:
         return handle_search (msg);
     case MODE_FIND:
