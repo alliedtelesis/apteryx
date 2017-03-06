@@ -88,6 +88,7 @@ typedef enum
     MODE_SET,
     MODE_SET_WITH_ACK,
     MODE_GET,
+    MODE_QUERY,
     MODE_SEARCH,
     MODE_FIND,
     MODE_TRAVERSE,
@@ -123,6 +124,7 @@ typedef struct _cb_info_t
     X(uint32_t, set) \
     X(uint32_t, set_invalid) \
     X(uint32_t, get) \
+    X(uint32_t, query) \
     X(uint32_t, get_invalid) \
     X(uint32_t, search) \
     X(uint32_t, search_invalid) \

@@ -971,11 +971,12 @@ typedef struct _traverse_data_t
     bool done;
 } traverse_data_t;
 
-void
+GNode*
 apteryx_path_to_node (GNode* root, const char *path, const char *value)
 {
     const char *next;
-    GNode *node;
+    GNode *node = NULL;
+    GNode *rnode = NULL;
 
     if (path && path[0] == '/')
     {
@@ -983,7 +984,14 @@ apteryx_path_to_node (GNode* root, const char *path, const char *value)
         next = strchr (path, '/');
         if (!next)
         {
-            APTERYX_LEAF (root, strdup (path), strdup (value));
+            if (value)
+            {
+                rnode = APTERYX_LEAF (root, strdup (path), strdup (value));
+            }
+            else
+            {
+                rnode = APTERYX_NODE (root, strdup (path));
+            }
         }
         else
         {
@@ -1002,10 +1010,10 @@ apteryx_path_to_node (GNode* root, const char *path, const char *value)
             {
                 root = APTERYX_NODE (root, name);
             }
-            apteryx_path_to_node (root, next, value);
+            rnode = apteryx_path_to_node (root, next, value);
         }
     }
-    return;
+    return rnode;
 }
 
 GNode*
@@ -1079,6 +1087,105 @@ apteryx_get_tree (const char *path)
     rpc_client_release (rpc, rpc_client, true);
     free (url);
     return root;
+}
+
+static gboolean
+_get_multi (GNode *node, gpointer data)
+{
+    rpc_message msg = (rpc_message) data;
+    char *path = apteryx_node_path (node);
+    DEBUG ("QUERY: %s\n", path);
+    rpc_msg_encode_string (msg, path);
+    free (path);
+    return FALSE;
+}
+
+GNode *
+apteryx_query (GNode *root)
+{
+    char *url = NULL;
+    rpc_client rpc_client;
+    rpc_message_t msg = { };
+    const char *path = NULL;
+    char *old_root_name = NULL;
+    char *value = NULL;
+    GNode *rroot = NULL;
+
+    ASSERT ((ref_count > 0), return NULL, "QUERY: Not initialised\n");
+    ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
+
+    DEBUG ("QUERY\n");
+
+    /* Check path */
+    path = validate_path (APTERYX_NAME (root), &url);
+    if (path && strcmp (path, "/") == 0)
+    {
+        path = "";
+    }
+    else if (!path ||
+             ((strlen (path) > 0) &&
+              ((path[strlen (path) - 1] == '/') || path[0] != '/' ||
+               strstr (path, "//") != NULL)))
+    {
+        free (url);
+        ERROR ("QUERY: invalid root (%s)!\n", path);
+        assert (!apteryx_debug || path[0] == '/');
+        assert (!apteryx_debug || strstr (path, "//") == NULL);
+        return NULL;
+    }
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
+    {
+        ERROR ("QUERY: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
+        free (url);
+        return NULL;
+    }
+    /* Save sanitized root path (less URL) to root node */
+    old_root_name = APTERYX_NAME (root);
+    root->data = (char *) path;
+
+    rpc_msg_encode_uint8 (&msg, MODE_QUERY);
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_LEAVES, -1, _get_multi, &msg);
+    if (!rpc_msg_send (rpc_client, &msg))
+    {
+        ERROR ("QUERY: No response\n");
+        rpc_msg_reset (&msg);
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
+        return NULL;
+    }
+    path = rpc_msg_decode_string (&msg);
+    if (path && strcmp (path, old_root_name) == 0)
+    {
+        rroot = g_node_new (strdup (old_root_name));
+        value = rpc_msg_decode_string (&msg);
+        DEBUG ("   = %s\n", value);
+        g_node_append_data (rroot, (gpointer) strdup (value));
+    }
+    else if (path)
+    {
+        rroot = g_node_new (strdup (old_root_name));
+        while (path)
+        {
+            value = rpc_msg_decode_string (&msg);
+            DEBUG ("  %s = %s\n", path, value);
+            apteryx_path_to_node (rroot, path, value);
+            path = rpc_msg_decode_string (&msg);
+        }
+    }
+    else
+    {
+        DEBUG ("  = (null)\n");
+    }
+    /* Reinstate original root name */
+    root->data = old_root_name;
+
+    rpc_msg_reset (&msg);
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+    return rroot;
 }
 
 GList *

@@ -358,10 +358,12 @@ char *apteryx_node_path (GNode *node);
  * @param root Pointer to the existing N-ary tree of nodes
  * @param path Path to convert into the tree
  * @param value Value which the leaf node is set to
+ * @return GNode of the last leaf which was added to the tree
  * Example: Create a tree with the ifname set to "eth1"
+     GNode *root = g_node_new ("/");
      apteryx_path_to_node (root, "/routing/ipv4/rib/1/ifname", "eth1");
  */
-void apteryx_path_to_node (GNode *root, const char *path, const char *value);
+GNode *apteryx_path_to_node (GNode *root, const char *path, const char *value);
 
 /**
  * Find a list of paths that match this tree below the root path given
@@ -400,6 +402,17 @@ GList *apteryx_find (const char *path, const char *value);
  * @return N-ary tree of nodes.
  */
 GNode *apteryx_get_tree (const char *path);
+
+/**
+ * Get a tree of multiple values from Apteryx that match this tree below the root path given.
+ * @param root pointer to the N-ary tree of nodes.
+ * @return N-ary tree of nodes.
+ * Example: Create a tree and get the n-ary tree with the values for the given nodes
+     GNode *root = g_node_new ("/");
+     apteryx_path_to_node (root, "/routing/ipv4/rib/1/ifname", NULL);
+     GNode *rroot = apteryx_query (root);
+ */
+GNode *apteryx_query (GNode *root);
 
 /**
  * Set a tree of multiple values in Apteryx, but only if
