@@ -327,6 +327,20 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
  */
 #define APTERYX_NODE(p,n) \
     (p ? (g_node_prepend_data (p, (gpointer)n)) : (g_node_new (n)))
+#define APTERYX_PATH_TO_NODE(r,n) ({ \
+    GNode *__p = NULL; \
+    bool __b = false; \
+    char *__ptr = NULL; \
+    if (strcmp(&n[strlen(n)-1], "/") == 0) { __b=true; } \
+    char *__c = strtok_r (n, "/", &__ptr); \
+    if (!r) { r = APTERYX_NODE (NULL,"/"); } \
+    __p = r; \
+    __p = APTERYX_NODE (__p,__c); \
+    while ((__c = strtok_r (NULL, "/", &__ptr)) != NULL) { \
+        __p = APTERYX_NODE (__p,__c); } \
+    if (__b) { __p = APTERYX_NODE (__p,""); } \
+    __p; \
+})
 #define APTERYX_LEAF(p,n,v) \
     (g_node_prepend_data (g_node_prepend_data (p, (gpointer)n), (gpointer)v))
 #define APTERYX_NUM_NODES(p) \
@@ -353,6 +367,7 @@ void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char
 /** Get the full path of an Apteryx node in an N-ary tree */
 char *apteryx_node_path (GNode *node);
 
+void path_to_node (GNode *root, const char *path, const char *value);
 /**
  * Find a list of paths that match this tree below the root path given
  * @param root pointer to the N-ary tree of nodes with a wildcard root path
@@ -390,6 +405,13 @@ GList *apteryx_find (const char *path, const char *value);
  * @return N-ary tree of nodes.
  */
 GNode *apteryx_get_tree (const char *path);
+
+/**
+ * Get a tree of multiple values from Apteryx that match this tree below the root path given.
+ * @param root pointer to the N-ary tree of nodes.
+ * @return N-ary tree of nodes.
+ */
+GNode *apteryx_get_full (GNode *root);
 
 /**
  * Set a tree of multiple values in Apteryx, but only if
