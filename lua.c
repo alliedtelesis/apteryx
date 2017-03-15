@@ -49,6 +49,32 @@
 
 static lua_State *g_L = NULL;
 
+static void
+lua_apteryx_error (lua_State *ls, int res)
+{
+    switch (res)
+    {
+    case LUA_ERRRUN:
+        ERROR ("LUA: %s\n", lua_tostring (ls, -1));
+        break;
+    case LUA_ERRSYNTAX:
+        ERROR ("LUA: %s\n", lua_tostring (ls, -1));
+        break;
+    case LUA_ERRMEM:
+        ERROR ("LUA: Memory allocation error\n");
+        break;
+    case LUA_ERRERR:
+        ERROR ("LUA: Error handler error\n");
+        break;
+    case LUA_ERRFILE:
+        ERROR ("LUA: Couldn't open file\n");
+        break;
+    default:
+        ERROR ("LUA: Unknown error\n");
+        break;
+    }
+}
+
 static const char *
 lua_apteryx_tostring (lua_State *L, int i)
 {
@@ -170,6 +196,17 @@ lua_apteryx_dict2tree (lua_State *L)
     return root;
 }
 
+static int
+lua_apteryx_debug (lua_State *L)
+{
+    if (lua_gettop (L) < 1 || !lua_isboolean (L, 1))
+    {
+        luaL_error (L, "Invalid arguments: requires boolean");
+        return 0;
+    }
+    apteryx_debug = lua_toboolean (L, 1);
+    return 0;
+}
 
 static int
 lua_apteryx_set (lua_State *L)
@@ -360,13 +397,16 @@ push_callback (lua_State* L, size_t ref)
 static GList*
 lua_do_index (const char *path, size_t ref)
 {
+    int res = 0;
     lua_State* L = g_L;
     int ssize = lua_gettop (L);
     GList *paths = NULL;
     if (!push_callback (L, ref))
         return false;
     lua_pushstring (L, path);
-    lua_pcall (L, 1, 1, 0);
+    res = lua_pcall (L, 1, 1, 0);
+    if (res != 0)
+        lua_apteryx_error (L, res);
     if (lua_gettop (L))
     {
         if (lua_istable (L, -1))
@@ -429,13 +469,16 @@ lua_apteryx_unindex (lua_State *L)
 static bool
 lua_do_watch (const char *path, const char *value, size_t ref)
 {
+    int res = 0;
     lua_State* L = g_L;
     int ssize = lua_gettop (L);
     if (!push_callback (L, ref))
         return false;
     lua_pushstring (L, path);
     lua_pushstring (L, value);
-    lua_pcall (L, 2, 0, 0);
+    res = lua_pcall (L, 2, 0, 0);
+    if (res != 0)
+        lua_apteryx_error (L, res);
     lua_pop (L, 1); /* pop fn */
     ASSERT (lua_gettop (L) == ssize, return true, "Watch: Stack changed\n");
     return true;
@@ -480,6 +523,7 @@ lua_apteryx_unwatch (lua_State *L)
 static int
 lua_do_validate (const char *path, const char *value, size_t ref)
 {
+    int res = 0;
     lua_State* L = g_L;
     int ssize = lua_gettop (L);
     int rc = 0;
@@ -487,7 +531,9 @@ lua_do_validate (const char *path, const char *value, size_t ref)
         return false;
     lua_pushstring (L, path);
     lua_pushstring (L, value);
-    lua_pcall (L, 2, 1, 0);
+    res = lua_pcall (L, 2, 1, 0);
+    if (res != 0)
+        lua_apteryx_error (L, res);
     if (lua_gettop (L))
     {
         rc = lua_tonumber (L, -1);
@@ -537,13 +583,16 @@ lua_apteryx_unvalidate (lua_State *L)
 static char*
 lua_do_provide (const char *path, size_t ref)
 {
+    int res = 0;
     lua_State* L = g_L;
     int ssize = lua_gettop (L);
     char *value = NULL;
     if (!push_callback (L, ref))
         return NULL;
     lua_pushstring (L, path);
-    lua_pcall (L, 1, 1, 0);
+    res = lua_pcall (L, 1, 1, 0);
+    if (res != 0)
+        lua_apteryx_error (L, res);
     if (lua_gettop (L))
     {
         value = strdup (lua_apteryx_tostring (L, -1));
@@ -672,6 +721,7 @@ luaopen_libapteryx (lua_State *L)
 {
     /* Standard functions */
     static const luaL_Reg _apteryx_fns[] = {
+        { "debug", lua_apteryx_debug },
         { "set", lua_apteryx_set },
         { "get", lua_apteryx_get },
         { "search", lua_apteryx_search },
