@@ -354,6 +354,18 @@ void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char
 char *apteryx_node_path (GNode *node);
 
 /**
+ * Convert a path into a full N-ary tree. Each node is separated by a slash.
+ * @param root Pointer to the existing N-ary tree of nodes
+ * @param path Path to convert into the tree
+ * @param value Value which the leaf node is set to
+ * @return GNode of the last leaf which was added to the tree
+ * Example: Create a tree with the ifname set to "eth1"
+     GNode *root = g_node_new ("/");
+     apteryx_path_to_node (root, "/routing/ipv4/rib/1/ifname", "eth1");
+ */
+void apteryx_path_to_node (GNode *root, const char *path, const char *value);
+
+/**
  * Find a list of paths that match this tree below the root path given
  * @param root pointer to the N-ary tree of nodes with a wildcard root path
  * @return GList of paths where this tree can be found

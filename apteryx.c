@@ -971,8 +971,8 @@ typedef struct _traverse_data_t
     bool done;
 } traverse_data_t;
 
-static void
-path_to_node (GNode* root, const char *path, const char *value)
+void
+apteryx_path_to_node (GNode* root, const char *path, const char *value)
 {
     const char *next;
     GNode *node;
@@ -1002,7 +1002,7 @@ path_to_node (GNode* root, const char *path, const char *value)
             {
                 root = APTERYX_NODE (root, name);
             }
-            path_to_node (root, next, value);
+            apteryx_path_to_node (root, next, value);
         }
     }
     return;
@@ -1067,7 +1067,7 @@ apteryx_get_tree (const char *path)
         {
             value = rpc_msg_decode_string (&msg);
             DEBUG ("  %s = %s\n", path + slen, value);
-            path_to_node (root, path + slen, value);
+            apteryx_path_to_node (root, path + slen, value);
             path = rpc_msg_decode_string (&msg);
         }
     }
