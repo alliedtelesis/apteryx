@@ -969,6 +969,32 @@ test_prune ()
 }
 
 void
+test_empty_not_prune ()
+{
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0/state", NULL, "up"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/public", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/private", NULL, "-"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/interfaces", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/entities", NULL));
+
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entities/zones/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entities"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_cas ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/ifindex";
@@ -1027,7 +1053,7 @@ test_cas_int ()
     CU_ASSERT (errno == -EBUSY);
     CU_ASSERT (apteryx_get_int (path, "ifindex") == 3);
 
-    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3672,7 +3698,7 @@ test_proxy_tree_get ()
 
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/local"));
     CU_ASSERT (assert_apteryx_empty ());
 
     apteryx_debug = false;
@@ -4888,6 +4914,7 @@ static CU_TestInfo tests_api[] = {
     { "multi threads writing to same table", test_thread_multi_write },
     { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
+    { "empty set is not prune", test_empty_not_prune },
     { "cas", test_cas },
     { "cas string", test_cas_string },
     { "cas int", test_cas_int },
