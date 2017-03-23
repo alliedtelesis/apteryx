@@ -143,7 +143,7 @@ lua_apteryx_tree2dict (lua_State *L, GNode *this)
 }
 
 static bool
-_lua_apteryx_dict2tree (lua_State *L, GNode *n)
+_lua_apteryx_dict2tree (lua_State *L, GNode *n, bool leaves)
 {
     bool ret = false;
     GNode *c = NULL;
@@ -157,13 +157,13 @@ _lua_apteryx_dict2tree (lua_State *L, GNode *n)
             lua_pushvalue (L, -2);
             c = APTERYX_NODE (n, strdup ((char *) lua_tostring (L, -1)));
             lua_pop (L, 1);
-            if (_lua_apteryx_dict2tree (L, c))
+            if ((_lua_apteryx_dict2tree (L, c, leaves)) || !leaves)
             {
                 ret = true;
             }
             else
             { /* destroy leafless sub-trees */
-                g_node_destroy (c);
+                apteryx_free_tree (c);
             }
         }
         else
@@ -182,15 +182,26 @@ _lua_apteryx_dict2tree (lua_State *L, GNode *n)
     return ret;
 }
 
-
 static inline GNode *
 lua_apteryx_dict2tree (lua_State *L)
 {
     GNode *root = NULL;
     root = APTERYX_NODE (NULL, (char *) strdup (lua_tostring (L, 1)));
-    if (!_lua_apteryx_dict2tree (L, root))
+    if (!_lua_apteryx_dict2tree (L, root, true))
     {
-        g_node_destroy (root);
+        apteryx_free_tree (root);
+        root = NULL;
+    }
+    return root;
+}
+
+static inline GNode *
+lua_apteryx_dict2tree_paths (lua_State *L)
+{
+    GNode *root = g_node_new (strdup ("/"));
+    if (!_lua_apteryx_dict2tree (L, root, false))
+    {
+        apteryx_free_tree (root);
         root = NULL;
     }
     return root;
@@ -319,6 +330,34 @@ lua_apteryx_get_tree (lua_State *L)
     tree = apteryx_get_tree (lua_tostring (L, 1));
     lua_apteryx_tree2dict (L, tree);
     apteryx_free_tree (tree);
+    return 1;
+}
+
+static int
+lua_apteryx_query (lua_State *L)
+{
+    GNode *root = NULL;
+    GNode *out_root = NULL;
+
+    if (lua_gettop (L) != 1 || !lua_istable (L, 1))
+    {
+        luaL_error (L, "Invalid arguments: requires table");
+        return 0;
+    }
+
+    root = lua_apteryx_dict2tree_paths (L);
+    if (root)
+    {
+        out_root = apteryx_query (root);
+        lua_apteryx_tree2dict (L, out_root);
+        apteryx_free_tree (root);
+        apteryx_free_tree (out_root);
+    }
+    else
+    {
+        luaL_error (L, "Invalid arguments: no query paths specified");
+        return 0;
+    }
     return 1;
 }
 
@@ -728,6 +767,7 @@ luaopen_libapteryx (lua_State *L)
         { "prune", lua_apteryx_prune },
         { "get_tree", lua_apteryx_get_tree },
         { "set_tree", lua_apteryx_set_tree },
+        { "query", lua_apteryx_query },
         { "timestamp", lua_apteryx_timestamp },
         { "index", lua_apteryx_index },
         { "unindex", lua_apteryx_unindex },
