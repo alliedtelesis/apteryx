@@ -861,7 +861,7 @@ _node_to_path (GNode *node, char **buf)
     char *tmp = NULL;
     if (asprintf (&tmp, "%s%s%s", *buf ? : "",
             node ? (char*)node->data : "/",
-            end ? "" : "/") > 0)
+            end ? "" : "/") >= 0)
     {
         free (*buf);
         *buf = tmp;
