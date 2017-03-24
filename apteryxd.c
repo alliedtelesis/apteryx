@@ -1311,7 +1311,7 @@ handle_prune (rpc_message msg)
     if (validation_result >= 0)
     {
         /* Prune from database */
-        db_delete (path, UINT64_MAX);
+        db_prune (path);
     }
 
     if (validation_result >= 0)
