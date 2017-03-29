@@ -2300,11 +2300,19 @@ test_provide_search ()
     GList *paths = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
+    CU_ASSERT (apteryx_set (TEST_PATH"/interfaces/eth0/size", "huge"));
     CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/")) != NULL);
-    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_length (paths) == 2);
     CU_ASSERT (g_list_find_custom (paths, path, (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
+
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/interfaces/eth0", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+
     apteryx_unprovide (path, test_provide_callback_up);
+    CU_ASSERT (apteryx_set (TEST_PATH"/interfaces/eth0/size",NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
