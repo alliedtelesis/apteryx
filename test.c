@@ -969,6 +969,32 @@ test_prune ()
 }
 
 void
+test_empty_not_prune ()
+{
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0/state", NULL, "up"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/public", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/private", NULL, "-"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/interfaces", NULL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/entities", NULL));
+
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    g_list_free_full (paths, free);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entities/zones/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    g_list_free_full (paths, free);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entities"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_cas ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/ifindex";
@@ -1027,7 +1053,7 @@ test_cas_int ()
     CU_ASSERT (errno == -EBUSY);
     CU_ASSERT (apteryx_get_int (path, "ifindex") == 3);
 
-    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3680,7 +3706,7 @@ test_proxy_tree_get ()
 
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/local"));
     CU_ASSERT (assert_apteryx_empty ());
 
     apteryx_debug = false;
@@ -4915,6 +4941,7 @@ static CU_TestInfo tests_api[] = {
     { "multi threads writing to same table", test_thread_multi_write },
     { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
+    { "empty set is not prune", test_empty_not_prune },
     { "cas", test_cas },
     { "cas string", test_cas_string },
     { "cas int", test_cas_int },
@@ -5133,16 +5160,16 @@ static CU_SuiteInfo suites[] = {
 #ifdef HAVE_LUA
     { "LUA", suite_init, suite_clean, tests_lua },
 #endif
-    { "Apteryx API", suite_init, suite_clean, tests_api },
-    { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
-    { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },
-    { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
-    { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
-    { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
-    { "Apteryx API Proxy", suite_init, suite_clean, tests_api_proxy },
-    { "Apteryx API Find", suite_init, suite_clean, tests_find },
-    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
-    { "Apteryx Performance", suite_init, suite_clean, tests_performance },
+    { "Apteryx API", suite_init, suite_clean, NULL, NULL, tests_api },
+    { "Apteryx API Index", suite_init, suite_clean, NULL, NULL, tests_api_index },
+    { "Apteryx API Tree", suite_init, suite_clean, NULL, NULL, tests_api_tree },
+    { "Apteryx API Watch", suite_init, suite_clean, NULL, NULL, tests_api_watch },
+    { "Apteryx API Validate", suite_init, suite_clean, NULL, NULL, tests_api_validate },
+    { "Apteryx API Provide", suite_init, suite_clean, NULL, NULL, tests_api_provide },
+    { "Apteryx API Proxy", suite_init, suite_clean, NULL, NULL, tests_api_proxy },
+    { "Apteryx API Find", suite_init, suite_clean, NULL, NULL, tests_find },
+    { "Apteryx API Single Threaded", suite_init, suite_clean, NULL, NULL, tests_single_threaded },
+    { "Apteryx Performance", suite_init, suite_clean, NULL, NULL, tests_performance },
     CU_SUITE_INFO_NULL,
 };
 
