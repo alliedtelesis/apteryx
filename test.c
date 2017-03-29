@@ -1027,7 +1027,7 @@ test_cas_int ()
     CU_ASSERT (errno == -EBUSY);
     CU_ASSERT (apteryx_get_int (path, "ifindex") == 3);
 
-    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_set_string (path, "ifindex", NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3680,7 +3680,7 @@ test_proxy_tree_get ()
 
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/local"));
     CU_ASSERT (assert_apteryx_empty ());
 
     apteryx_debug = false;
@@ -3700,8 +3700,7 @@ test_proxy_set ()
         free ((void *) value);
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3712,7 +3711,7 @@ test_proxy_not_listening ()
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_get (TEST_PATH"/remote/test/local") == NULL);
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3731,8 +3730,7 @@ test_proxy_before_db_get ()
         free ((void *) value);
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3744,9 +3742,7 @@ test_proxy_before_db_set ()
     CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", "test"));
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_get (TEST_PATH"/remote/test/local") == NULL);
-    CU_ASSERT (apteryx_set (TEST_PATH"/remote/test/local", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3761,7 +3757,7 @@ test_proxy_set_validated ()
     CU_ASSERT (apteryx_unvalidate (TEST_PATH"/local", test_validate_refuse_callback));
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3783,8 +3779,7 @@ test_proxy_search ()
     g_list_free_full (paths, free);
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/cat", NULL));
-    CU_ASSERT (apteryx_set (TEST_PATH"/local/dog", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
