@@ -149,9 +149,15 @@ db_delete_no_lock (const char *path, uint64_t ts)
             if (((struct database_node *) node)->value != NULL)
             {
                 g_free (((struct database_node *) node)->value);
+                ((struct database_node *) node)->value = NULL;
+                ((struct database_node *) node)->length = 0;
             }
 
-            hashtree_node_delete (root, node);
+            if (hashtree_empty (node))
+            {
+                hashtree_node_delete (root, node);
+            }
+
             if (parent)
             {
                 /* This is now a hanging node, remove it */
@@ -264,6 +270,19 @@ db_purge (struct database_node *node)
         g_free (node->value);
     }
     node->value = NULL;
+    node->length = 0;
+}
+
+static void
+db_evaporate (struct database_node *node)
+{
+    struct database_node *parent =
+      (struct database_node *) hashtree_parent_get (&node->hashtree_node);
+
+    hashtree_node_delete (&parent->hashtree_node, &node->hashtree_node);
+    if ((void*)parent != (void*)root && parent
+        && hashtree_empty (&parent->hashtree_node) && parent->length == 0)
+        db_evaporate (parent);
 }
 
 void
@@ -271,11 +290,12 @@ db_prune (const char *path)
 {
     struct database_node *node =
         (struct database_node *) hashtree_path_to_node (root, path);
+
     if (node)
     {
         db_purge (node);
+        db_evaporate (node);
     }
-    db_delete (path, UINT64_MAX);
 }
 
 void
