@@ -827,6 +827,7 @@ static GList *
 search_path (const char *path)
 {
     GList *results = NULL;
+    GList *iter;
 
     /* Proxy first */
     results = proxy_search (path);
@@ -846,7 +847,13 @@ search_path (const char *path)
             GList *providers = NULL;
             providers = config_search_providers (path);
             DEBUG (" got %d entries from providers...\n", g_list_length (providers));
-            results = g_list_concat (results, providers);
+            for (iter = providers; iter; iter = iter->next)
+            {
+                char *p = (char*)iter->data;
+                if (!g_list_find_custom(results, p, (GCompareFunc)strcmp))
+                    results = g_list_prepend (results, strdup(p));
+            }
+            g_list_free_full(providers, free);
         }
     }
     return results;
