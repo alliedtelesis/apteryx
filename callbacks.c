@@ -51,9 +51,9 @@ cb_create (struct callback_node *tree_root, const char *guid, const char *path,
     cb->id = id;
     cb->uri = g_strdup_printf (APTERYX_SERVER ".%" PRIu64, cb->id);
     cb->ref = callback;
-    cb->refcnt = 1;
+    g_atomic_int_set (&cb->refcnt, 1);
 
-    cb->refcnt++;
+    g_atomic_int_inc (&cb->refcnt);
     cb->type = cb->path[strlen (cb->path) - 1];
 
     char *tmp = strdup (path);
@@ -121,7 +121,7 @@ cb_node_remove (struct callback_node *node)
 static void
 cb_ref (cb_info_t *cb, void *unused)
 {
-    cb->refcnt++;
+    g_atomic_int_inc (&cb->refcnt);
     return;
 }
 
@@ -179,18 +179,26 @@ cb_disable (cb_info_t *cb)
 }
 
 void
-cb_release (cb_info_t *cb)
+cb_release_no_lock (cb_info_t *cb)
 {
     if (!cb)
     {
         return;
     }
-    cb->refcnt--;
 
-    if (cb->refcnt <= 0)
+    if (g_atomic_int_dec_and_test (&cb->refcnt))
     {
         cb_free (cb, NULL);
     }
+}
+
+
+void
+cb_release (cb_info_t *cb)
+{
+    pthread_mutex_lock (&tree_lock);
+    cb_release_no_lock (cb);
+    pthread_mutex_unlock (&tree_lock);
 }
 
 
@@ -409,9 +417,9 @@ cb_tree_destroy (struct callback_node *node)
     /* Calling cb_release will alter these lists (and free them) - so we need
      * to pass a copy.
      */
-    g_list_free_full (g_list_copy (node->directory), (GDestroyNotify) cb_release);
-    g_list_free_full (g_list_copy (node->exact), (GDestroyNotify) cb_release);
-    g_list_free_full (g_list_copy (node->following), (GDestroyNotify) cb_release);
+    g_list_free_full (g_list_copy (node->directory), (GDestroyNotify) cb_release_no_lock);
+    g_list_free_full (g_list_copy (node->exact), (GDestroyNotify) cb_release_no_lock);
+    g_list_free_full (g_list_copy (node->following), (GDestroyNotify) cb_release_no_lock);
 
     /* This must be called before hashtree_node_delete */
     g_list_free_full (list, (GDestroyNotify) cb_tree_destroy);
@@ -535,7 +543,7 @@ test_cb_release ()
     struct callback_node *watch_list = cb_init ();
     cb = cb_create (watch_list, "abc", "/test", 1, 0);
     cb_release (cb);
-    CU_ASSERT (cb->refcnt == 1);
+    CU_ASSERT (g_atomic_int_get (&cb->refcnt) == 1);
     cb_release (cb);
     CU_ASSERT (hashtree_empty (&watch_list->hashtree_node));
     cb_shutdown (watch_list);
