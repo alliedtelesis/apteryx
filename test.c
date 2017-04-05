@@ -969,6 +969,27 @@ test_prune ()
 }
 
 void
+test_prune_root ()
+{
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces/eth0/state", NULL, "up"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/public", NULL, "-"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entities/zones/private", NULL, "-"));
+    CU_ASSERT (apteryx_prune ("/"));
+
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) == NULL);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/entities/zones/")) == NULL);
+
+    g_list_free_full (paths, free);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_cas ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/ifindex";
@@ -4910,6 +4931,7 @@ static CU_TestInfo tests_api[] = {
     { "multi threads writing to same table", test_thread_multi_write },
     { "multi processes writing to same table", test_process_multi_write },
     { "prune", test_prune },
+    { "prune root", test_prune_root },
     { "cas", test_cas },
     { "cas string", test_cas_string },
     { "cas int", test_cas_int },

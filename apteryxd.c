@@ -1317,8 +1317,25 @@ handle_prune (rpc_message msg)
     /* Only do the prune if it is valid to do so. */
     if (validation_result >= 0)
     {
-        /* Prune from database */
-        db_prune (path);
+        /* Prune from database - but protect /apteryx */
+        if (strcmp (path, "/") == 0)
+        {
+            GList *nodes = db_search (path);
+            GList *iter = NULL;
+            for (iter = nodes; iter; iter = iter->next)
+            {
+                const char *child_path = (const char*)iter->data;
+                if (strcmp(child_path, "/apteryx"))
+                {
+                    db_prune (child_path);
+                }
+            }
+            g_list_free_full (nodes, free);
+        }
+        else
+        {
+            db_prune (path);
+        }
     }
 
     if (validation_result >= 0)
