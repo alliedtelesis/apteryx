@@ -329,6 +329,16 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
     (p ? (g_node_prepend_data (p, (gpointer)n)) : (g_node_new (n)))
 #define APTERYX_LEAF(p,n,v) \
     (g_node_prepend_data (g_node_prepend_data (p, (gpointer)n), (gpointer)v))
+#define APTERYX_LEAF_INT(ROOT,KEY,VALUE) \
+  do { \
+    char *value = NULL; \
+    if (asprintf (&value, "%i", (VALUE)) >= 0) \
+      { \
+        APTERYX_LEAF ((ROOT), strdup ((KEY)), value); \
+      } \
+  } while (0)
+#define APTERYX_LEAF_STRING(ROOT,KEY,VALUE) \
+  APTERYX_LEAF ((ROOT), strdup ((KEY)), (VALUE) ? strdup ((VALUE)) : NULL)
 #define APTERYX_NUM_NODES(p) \
     (g_node_n_nodes (p, G_TRAVERSE_NON_LEAVES))
 #define APTERYX_NAME(n) \
