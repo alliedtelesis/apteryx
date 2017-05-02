@@ -2656,6 +2656,7 @@ test_set_tree ()
     APTERYX_LEAF (root, "state", "up");
     APTERYX_LEAF (root, "speed", "1000");
     APTERYX_LEAF (root, "duplex", "full");
+    APTERYX_LEAF (root, "null_value", NULL);
     CU_ASSERT (apteryx_set_tree (root));
     CU_ASSERT ((value = apteryx_get (TEST_PATH"/interfaces/eth0/speed")) != NULL);
     CU_ASSERT (value && strcmp (value, "1000") == 0);
