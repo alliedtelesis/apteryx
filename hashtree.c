@@ -9,13 +9,20 @@ struct hashtree_node *
 hashtree_path_to_node (struct hashtree_node *root, const char *path)
 {
     char *ptr = NULL;
-    char *key = NULL;
+    const char *key = NULL;
     struct hashtree_node *next = root;
     struct hashtree_node *ret = root;
+    char *p = NULL;
 
-    char *p = g_strdup (path);
-
-    key = strtok_r (p, "/", &ptr);
+    if (strchr (path + 1, '/'))
+    {
+        p = g_strdup (path);
+        key = strtok_r (p, "/", &ptr);
+    }
+    else
+    {
+        key = path + 1;
+    }
 
     while (key)
     {
@@ -36,8 +43,10 @@ hashtree_path_to_node (struct hashtree_node *root, const char *path)
             ret = NULL;
             break;
         }
-
-        key = strtok_r (NULL, "/", &ptr);
+        if (p)
+            key = strtok_r (NULL, "/", &ptr);
+        else  /* We took a shortcut and never alloced p - this is the end */
+            break;
     }
 
     g_free (p);
