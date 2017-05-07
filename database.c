@@ -288,6 +288,8 @@ db_evaporate (struct database_node *node)
 void
 db_prune (const char *path)
 {
+    pthread_rwlock_wrlock (&db_lock);
+
     struct database_node *node =
         (struct database_node *) hashtree_path_to_node (root, path);
 
@@ -296,6 +298,8 @@ db_prune (const char *path)
         db_purge (node);
         db_evaporate (node);
     }
+
+    pthread_rwlock_unlock (&db_lock);
 }
 
 void
