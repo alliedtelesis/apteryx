@@ -3192,6 +3192,84 @@ test_tree_atomic ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static int
+_set_prune_thread (void *data)
+{
+    while (atomic_tree_running)
+    {
+        CU_ASSERT (apteryx_set_string (TEST_PATH"/platform/pluggables", "port1.1.1", "11"));
+        CU_ASSERT (apteryx_prune (TEST_PATH"/platform/pluggables/port1.1.1"));
+    }
+
+    return 0;
+}
+
+static int
+_search_thread (void *data)
+{
+    int i;
+    int iterations = * (int *) data;
+    GList *paths;
+
+    for (i=0; i<iterations; i++)
+    {
+        paths = apteryx_search(TEST_PATH"/platform/pluggables/");
+        g_list_free_full (paths, free);
+    }
+
+    return 0;
+}
+
+void
+test_thread_safe_prune ()
+{
+    char *name, *value;
+    int num_boards = 8;
+    int num_ports = 12;
+    int board, port, i;
+    int num_search_threads = 10;
+    int num_search_iterations = 100;
+    pthread_t set_prune_thread;
+    pthread_t search_threads[num_search_threads];
+
+    /* Generate test tree */
+    CU_ASSERT ((name = strdup (TEST_PATH"/platform/pluggables")) != NULL);
+    CU_ASSERT ((atomic_tree_root = APTERYX_NODE (NULL, name)) != NULL);
+    for (board=1; board<=num_boards; board++)
+    {
+        for (port=1; port<=num_ports; port++)
+        {
+            name = value = NULL;
+            CU_ASSERT (asprintf (&name, "port1.%d.%d", board, port));
+            CU_ASSERT (asprintf (&value, "%d%d", board, port));
+            APTERYX_LEAF (atomic_tree_root, name, value);
+        }
+    }
+    CU_ASSERT (apteryx_set_tree (atomic_tree_root));
+
+    /* Start set_prune and search threads */
+    atomic_tree_running = true;
+    pthread_create (&set_prune_thread, NULL, (void *) &_set_prune_thread, NULL);
+    for (i=0; i<num_search_threads; i++)
+    {
+        pthread_create (&search_threads[i], NULL, (void *) &_search_thread, (void *) &num_search_iterations);
+    }
+
+    /* Collect set_prune and search threads */
+    for (i=0; i<num_search_threads; i++)
+    {
+        pthread_join (search_threads[i], NULL);
+    }
+    atomic_tree_running = false;
+    pthread_join (set_prune_thread, NULL);
+
+    /* Clean up */
+    usleep (TEST_SLEEP_TIMEOUT);
+    apteryx_prune (TEST_PATH"/platform/pluggables");
+    apteryx_free_tree (atomic_tree_root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_find_one_star ()
 {
@@ -5055,6 +5133,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query two branches", test_query_two_branches},
     { "cas tree", test_cas_tree},
     { "tree atomic", test_tree_atomic},
+    { "thread-safe prune", test_thread_safe_prune},
     CU_TEST_INFO_NULL,
 };
 
