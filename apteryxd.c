@@ -24,6 +24,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <sys/poll.h>
+#include <sys/wait.h>
 #include <arpa/inet.h>
 #include "apteryx.h"
 #include "internal.h"
@@ -1487,25 +1488,73 @@ main (int argc, char **argv)
     signal (SIGINT, (__sighandler_t) termination_handler);
     signal (SIGPIPE, SIG_IGN);
 
-    /* Daemonize */
-    if (background && fork () != 0)
-    {
-        /* Parent */
-        return 0;
-    }
+    int child_ready[2] = { 0 };
 
-    /* Create pid file */
-    if (background && pid_file)
+    if (background)
     {
-        fp = fopen (pid_file, "w");
-        if (!fp)
+        int rc = pipe (child_ready);
+        if (rc)
         {
-            ERROR ("Failed to create PID file %s\n", pid_file);
+            perror("pipe:");
+            return 0;
+        }
+
+        int child_pid = fork ();
+        if (child_pid > 0)
+        {
+            /* Parent */
+            close (child_ready[1]);
+
+            struct pollfd fd;
+            fd.fd = child_ready[0];
+
+            fd.events = POLLIN;
+             /* Give the child 30 seconds to start */
+            int ret = poll(&fd, 1, 30000);
+
+            char buf[2];
+            ssize_t rz = 0;
+            if (ret > 0)
+            {
+                rz = read (child_ready[0], buf, 2);
+            }
+            close (child_ready[0]);
+
+            if (ret <= 0 || rz != 2)
+            {
+                /* Oh no :( */
+                ERROR ("Child not ready ...");
+                kill (child_pid, SIGTERM);
+                waitpid (child_pid, NULL, 0);
+                return -1;
+            }
+
+            return 0;
+        }
+        else if (child_pid == 0)
+        {
+            close (child_ready[0]);
+        }
+        else
+        {
+            ERROR ("Forking failed");
             goto exit;
         }
-        fprintf (fp, "%d\n", getpid ());
-        fclose (fp);
+
+        /* Create pid file */
+        if (pid_file)
+        {
+            fp = fopen (pid_file, "w");
+            if (!fp)
+            {
+                ERROR ("Failed to create PID file %s\n", pid_file);
+                goto exit;
+            }
+            fprintf (fp, "%d\n", getpid ());
+            fclose (fp);
+        }
     }
+
 
     /* Initialise the database */
     db_init ();
@@ -1554,6 +1603,16 @@ main (int argc, char **argv)
         fclose (fp);
     }
 
+    if (background)
+    {
+        /* Tell our parent we are ready */
+        ssize_t sz = write (child_ready[1], "1\n", 2);
+        if (sz < 2)
+        {
+            ERROR ("Failed to notify parent, we are going to die\n");
+        }
+    }
+
     /* Loop while running */
     while (running)
     {
@@ -1562,6 +1621,12 @@ main (int argc, char **argv)
 
 exit:
     DEBUG ("Exiting\n");
+
+    if (background)
+    {
+        close (child_ready[0]);
+        close (child_ready[1]);
+    }
 
     /* Cleanup callbacks */
     config_shutdown ();
