@@ -47,7 +47,7 @@ parse_url (const char *url)
                 host, INET6_ADDRSTRLEN), port);
     }
     /* IPv6 TCP path = "tcp:[<IPv6>]:<port>[:<apteryx-path>]" */
-    else if (sscanf (url, "tcp://[%48[^]]]:%d", host, &port) == 2)
+    else if (sscanf (url, "tcp://[%45[^]]]:%d", host, &port) == 2)
     {
         if (inet_pton (AF_INET6, host, &sock->address.addr_in6.sin6_addr) != 1)
         {
