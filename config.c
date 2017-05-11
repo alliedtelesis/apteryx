@@ -31,6 +31,7 @@ static struct callback_node *provide_list;
 static struct callback_node *index_list;
 static struct callback_node *proxy_list;
 static GHashTable *guid_to_callback = NULL;
+pthread_rwlock_t guid_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static bool
 handle_debug_set (const char *path, const char *value)
@@ -62,11 +63,15 @@ handle_sockets_set (const char *path, const char *value)
 static cb_info_t *
 find_callback (const char *guid)
 {
-    cb_info_t *found = g_hash_table_lookup (guid_to_callback, guid);
+    cb_info_t *found;
+
+    pthread_rwlock_rdlock (&guid_lock);
+    found = g_hash_table_lookup (guid_to_callback, guid);
     if (found)
     {
         cb_take (found);
     }
+    pthread_rwlock_unlock (&guid_lock);
     return found;
 }
 
@@ -93,9 +98,11 @@ update_callback (struct callback_node *list, const char *guid, const char *value
     else if (cb && value)
     {
         DEBUG ("Callback GUID(%s) already exists - releasing old version\n", guid);
+        pthread_rwlock_wrlock (&guid_lock);
         g_hash_table_remove (guid_to_callback, (char *) cb->guid);
         cb_disable (cb);
         cb_release (cb);
+        pthread_rwlock_unlock (&guid_lock);
     }
 
     /* Create or destroy */
@@ -111,7 +118,9 @@ update_callback (struct callback_node *list, const char *guid, const char *value
         cb = cb_create (list, guid, value, pid, callback);
 
         /* This will either replace the entry removed above, or add a new one. */
+        pthread_rwlock_wrlock (&guid_lock);
         g_hash_table_replace (guid_to_callback, (char *) cb->guid, cb);
+        pthread_rwlock_unlock (&guid_lock);
     }
     else
     {
@@ -119,9 +128,11 @@ update_callback (struct callback_node *list, const char *guid, const char *value
         DEBUG ("Callback GUID(%s) released\n", guid);
         if (cb)
         {
+            pthread_rwlock_wrlock (&guid_lock);
             g_hash_table_remove (guid_to_callback, (char *) cb->guid);
             cb_disable (cb);
             cb_release (cb);
+            pthread_rwlock_unlock (&guid_lock);
         }
     }
 
