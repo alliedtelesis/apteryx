@@ -31,7 +31,7 @@ static struct callback_node *provide_list;
 static struct callback_node *index_list;
 static struct callback_node *proxy_list;
 static GHashTable *guid_to_callback = NULL;
-pthread_rwlock_t guid_lock = PTHREAD_RWLOCK_INITIALIZER;
+static pthread_rwlock_t guid_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static bool
 handle_debug_set (const char *path, const char *value)
