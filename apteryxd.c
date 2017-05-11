@@ -1509,8 +1509,6 @@ main (int argc, char **argv)
 
     /* Initialise the database */
     db_init ();
-    /* Initialise callbacks to clients */
-    cb_init ();
     /* Configuration Set/Get */
     config_init ();
 
