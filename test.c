@@ -5226,22 +5226,22 @@ extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
 
 static CU_SuiteInfo suites[] = {
-    { "Database", suite_init, suite_clean, tests_database },
-    { "Callbacks", suite_init, suite_clean, tests_callbacks },
-    { "RPC", suite_init, suite_clean, tests_rpc },
+    { "Database", suite_init, suite_clean, NULL, NULL, tests_database },
+    { "Callbacks", suite_init, suite_clean, NULL, NULL, tests_callbacks },
+    { "RPC", suite_init, suite_clean, NULL, NULL, tests_rpc },
 #ifdef HAVE_LUA
-    { "LUA", suite_init, suite_clean, tests_lua },
+    { "LUA", suite_init, suite_clean, NULL, NULL, tests_lua },
 #endif
-    { "Apteryx API", suite_init, suite_clean, tests_api },
-    { "Apteryx API Index", suite_init, suite_clean, tests_api_index },
-    { "Apteryx API Tree", suite_init, suite_clean, tests_api_tree },
-    { "Apteryx API Watch", suite_init, suite_clean, tests_api_watch },
-    { "Apteryx API Validate", suite_init, suite_clean, tests_api_validate },
-    { "Apteryx API Provide", suite_init, suite_clean, tests_api_provide },
-    { "Apteryx API Proxy", suite_init, suite_clean, tests_api_proxy },
-    { "Apteryx API Find", suite_init, suite_clean, tests_find },
-    { "Apteryx API Single Threaded", suite_init, suite_clean, tests_single_threaded },
-    { "Apteryx Performance", suite_init, suite_clean, tests_performance },
+    { "Apteryx API", suite_init, suite_clean, NULL, NULL, tests_api },
+    { "Apteryx API Index", suite_init, suite_clean, NULL, NULL, tests_api_index },
+    { "Apteryx API Tree", suite_init, suite_clean, NULL, NULL, tests_api_tree },
+    { "Apteryx API Watch", suite_init, suite_clean, NULL, NULL, tests_api_watch },
+    { "Apteryx API Validate", suite_init, suite_clean, NULL, NULL, tests_api_validate },
+    { "Apteryx API Provide", suite_init, suite_clean, NULL, NULL, tests_api_provide },
+    { "Apteryx API Proxy", suite_init, suite_clean, NULL, NULL, tests_api_proxy },
+    { "Apteryx API Find", suite_init, suite_clean, NULL, NULL, tests_find },
+    { "Apteryx API Single Threaded", suite_init, suite_clean, NULL, NULL, tests_single_threaded },
+    { "Apteryx Performance", suite_init, suite_clean, NULL, NULL, tests_performance },
     CU_SUITE_INFO_NULL,
 };
 
