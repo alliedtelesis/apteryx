@@ -5242,22 +5242,92 @@ extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
 
 static CU_SuiteInfo suites[] = {
-    { "Database", suite_init, suite_clean, NULL, NULL, tests_database },
-    { "Callbacks", suite_init, suite_clean, NULL, NULL, tests_callbacks },
-    { "RPC", suite_init, suite_clean, NULL, NULL, tests_rpc },
-#ifdef HAVE_LUA
-    { "LUA", suite_init, suite_clean, NULL, NULL, tests_lua },
-#endif
-    { "Apteryx API", suite_init, suite_clean, NULL, NULL, tests_api },
-    { "Apteryx API Index", suite_init, suite_clean, NULL, NULL, tests_api_index },
-    { "Apteryx API Tree", suite_init, suite_clean, NULL, NULL, tests_api_tree },
-    { "Apteryx API Watch", suite_init, suite_clean, NULL, NULL, tests_api_watch },
-    { "Apteryx API Validate", suite_init, suite_clean, NULL, NULL, tests_api_validate },
-    { "Apteryx API Provide", suite_init, suite_clean, NULL, NULL, tests_api_provide },
-    { "Apteryx API Proxy", suite_init, suite_clean, NULL, NULL, tests_api_proxy },
-    { "Apteryx API Find", suite_init, suite_clean, NULL, NULL, tests_find },
-    { "Apteryx API Single Threaded", suite_init, suite_clean, NULL, NULL, tests_single_threaded },
-    { "Apteryx Performance", suite_init, suite_clean, NULL, NULL, tests_performance },
+    {
+        .pName = "Database",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_database
+    },
+    {
+        .pName = "Callbacks",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_callbacks
+    },
+    {
+        .pName = "RPC",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_rpc
+    },
+    #ifdef HAVE_LUA
+    {
+        .pName = "LUA",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_lua
+    },
+    #endif
+    {
+        .pName = "Apteryx API",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api
+    },
+    {
+        .pName = "Apteryx API Index",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_index
+    },
+    {
+        .pName = "Apteryx API Tree",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_tree
+    },
+    {
+        .pName = "Apteryx API Watch",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_watch
+    },
+    {
+        .pName = "Apteryx API Validate",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_validate
+    },
+    {
+        .pName = "Apteryx API Provide",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_provide
+    },
+    {
+        .pName = "Apteryx API Proxy",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_proxy
+    },
+    {
+        .pName = "Apteryx API Find",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_find
+    },
+    {
+        .pName = "Apteryx API Single Threaded",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_single_threaded
+    },
+    {
+        .pName = "Apteryx Performance",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_performance
+    },
     CU_SUITE_INFO_NULL,
 };
 
