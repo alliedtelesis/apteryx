@@ -3954,6 +3954,21 @@ test_proxy_cas ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_timestamp ()
+{
+    const char *path = TEST_PATH"/timestamp";
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_set_int (path, "value", 10));
+    CU_ASSERT (apteryx_set_int (path, "value2", 11));
+    ts = apteryx_timestamp (path);
+    CU_ASSERT (ts != 0);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/timestamp/value"));
+    CU_ASSERT (ts != apteryx_timestamp (path));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+}
+
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
@@ -5022,6 +5037,7 @@ static CU_TestInfo tests_api[] = {
     { "shutdown deadlock 2", test_deadlock2 },
     { "remote path contains colon", test_remote_path_colon },
     { "double fork", test_double_fork },
+    { "timestamp", test_timestamp },
     CU_TEST_INFO_NULL,
 };
 
