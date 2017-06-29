@@ -295,6 +295,12 @@ db_prune (const char *path)
 
     if (node)
     {
+        uint64_t now = db_calculate_timestamp ();
+        struct hashtree_node *iter = &node->hashtree_node;
+        while ((iter = hashtree_parent_get (iter)) != NULL)
+        {
+            ((struct database_node *) iter)->timestamp = now;
+        }
         db_purge (node);
         db_evaporate (node);
     }
