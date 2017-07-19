@@ -527,7 +527,16 @@ rpc_client_connect (rpc_instance rpc, const char *url)
     client->refcount++;
 
     /* Start processing this socket */
-    rpc_socket_process (sock);
+    if (!rpc_socket_process (sock))
+    {
+        ERROR ("RPC: Failed to start socket processing for client service\n");
+        g_hash_table_remove (rpc->clients, client->url);
+        g_free (client->url);
+        g_free (client);
+        rpc_socket_deref (sock);
+        pthread_mutex_unlock (&rpc->lock);
+        return NULL;
+    }
 
     /* Release the instance */
     pthread_mutex_unlock (&rpc->lock);

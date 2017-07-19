@@ -213,17 +213,19 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
     return sock;
 }
 
-void
+bool
 rpc_socket_process (rpc_socket sock)
 {
     int ret = pthread_create (&sock->thread, NULL, listen_thread, sock);
     if (ret != 0)
     {
         syslog (LOG_CRIT, "Failed to create thread: %s\n", strerror (errno));
+        return false;
     }
     char tname[16];
     snprintf ((char *)&tname, 16, "rpc.%i", sock->sock);
     pthread_setname_np (sock->thread, tname);
+    return true;
 }
 
 void *

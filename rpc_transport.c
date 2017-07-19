@@ -105,7 +105,11 @@ accept_thread (void *p)
                 }
             }
             s->clients = g_list_append (s->clients, r);
-            rpc_socket_process (r);
+            if (!rpc_socket_process (r))
+            {
+                s->clients = g_list_remove (s->clients, r);
+                rpc_socket_deref (r);
+            }
             pthread_mutex_unlock (&s->lock);
         }
     }
