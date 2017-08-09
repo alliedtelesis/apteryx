@@ -331,10 +331,10 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
     (g_node_prepend_data (g_node_prepend_data (p, (gpointer)n), (gpointer)v))
 #define APTERYX_LEAF_INT(ROOT,KEY,VALUE) \
   do { \
-    char *value = NULL; \
-    if (asprintf (&value, "%i", (VALUE)) >= 0) \
+    char *__value = NULL; \
+    if (asprintf (&__value, "%i", (VALUE)) >= 0) \
       { \
-        APTERYX_LEAF ((ROOT), strdup ((KEY)), value); \
+        APTERYX_LEAF ((ROOT), strdup ((KEY)), __value); \
       } \
   } while (0)
 #define APTERYX_LEAF_STRING(ROOT,KEY,VALUE) \
