@@ -198,11 +198,13 @@ bool apteryx_set_int (const char *path, const char *key, int32_t value);
 char *apteryx_get (const char *path);
 /** Helper to retrieve the value using an extended path based on the specified key */
 char *apteryx_get_string (const char *path, const char *key);
+char *apteryx_get_string_default (const char *path, const char *key, char *deflt);
 /**
  * Helper to retrieve a simple integer from an extended path
  * @return -1 if the value cannot be represented as an int (and set errno to -ERANGE)
  */
 int32_t apteryx_get_int (const char *path, const char *key);
+int32_t apteryx_get_int_default (const char *path, const char *key, int32_t deflt);
 
 /**
  * Check if a path has a value in Apteryx
