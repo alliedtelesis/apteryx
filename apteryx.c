@@ -693,6 +693,18 @@ apteryx_get_string (const char *path, const char *key)
     return str;
 }
 
+char *
+apteryx_get_string_default (const char *path, const char *key, char *deflt)
+{
+    char *value = NULL;
+    value = apteryx_get_string (path, key);
+    if (!value)
+    {
+        return deflt;
+    }
+    return value;
+}
+
 int32_t
 apteryx_get_int (const char *path, const char *key)
 {
@@ -738,6 +750,24 @@ apteryx_get_int (const char *path, const char *key)
 
         free (full_path);
     }
+    return value;
+}
+
+int32_t
+apteryx_get_int_default (const char *path, const char *key, int32_t deflt)
+{
+    int32_t value;
+    int errno_old;
+
+    errno_old = errno;
+    errno = 0;
+    value = apteryx_get_int (path, key);
+    if (value == -1 && errno == -ERANGE)
+    {
+        value = deflt;
+    }
+
+    errno = errno_old;
     return value;
 }
 
