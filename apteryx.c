@@ -694,13 +694,13 @@ apteryx_get_string (const char *path, const char *key)
 }
 
 char *
-apteryx_get_string_default (const char *path, const char *key, char *deflt)
+apteryx_get_string_default (const char *path, const char *key, const char *deflt)
 {
     char *value = NULL;
     value = apteryx_get_string (path, key);
     if (!value)
     {
-        return deflt;
+        value = strdup (deflt);
     }
     return value;
 }
