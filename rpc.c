@@ -211,7 +211,7 @@ rpc_init (int timeout, rpc_msg_handler handler)
     rpc->server = server;
     rpc->clients = g_hash_table_new (g_str_hash, g_str_equal);
     rpc->workers = g_thread_pool_new ((GFunc)worker_func, NULL, 8, FALSE, NULL);
-    rpc->slow_workers = g_thread_pool_new ((GFunc)worker_func, NULL, 1, FALSE, NULL);
+    rpc->slow_workers = g_thread_pool_new ((GFunc)worker_func, NULL, 1, TRUE, NULL);
 
     DEBUG ("RPC: New Instance (%p)\n", rpc);
     return rpc;
@@ -237,10 +237,15 @@ void
 rpc_shutdown (rpc_instance rpc)
 {
     int i;
-
     assert (rpc);
 
     DEBUG ("RPC: Shutdown Instance (%p)\n", rpc);
+
+    /* This needs to be done prior to the stop unused threads due to it's
+     * exclusive nature.
+     */
+    g_thread_pool_free (rpc->slow_workers, TRUE, TRUE);
+    rpc->slow_workers = NULL;
 
     /* Need to wait until all threads are cleaned up */
     for (i=0; i<10; i++)
@@ -248,8 +253,6 @@ rpc_shutdown (rpc_instance rpc)
         g_thread_pool_stop_unused_threads ();
         if (g_thread_pool_unprocessed (rpc->workers) == 0 &&
             g_thread_pool_get_num_threads (rpc->workers) == 0 &&
-            g_thread_pool_unprocessed (rpc->slow_workers) == 0 &&
-            g_thread_pool_get_num_threads (rpc->slow_workers) == 0 &&
             g_thread_pool_get_num_unused_threads () == 0)
         {
             break;
@@ -260,10 +263,10 @@ rpc_shutdown (rpc_instance rpc)
         }
         g_usleep (RPC_TIMEOUT_US / 10);
     }
+
     g_thread_pool_free (rpc->workers, FALSE, TRUE);
     rpc->workers = NULL;
-    g_thread_pool_free (rpc->slow_workers, FALSE, TRUE);
-    rpc->slow_workers = NULL;
+
     if (rpc->queue)
     {
         g_async_queue_unref (rpc->queue);
@@ -279,6 +282,7 @@ rpc_shutdown (rpc_instance rpc)
 
     /* Free instance */
     g_free ((void*) rpc);
+
 }
 
 bool
