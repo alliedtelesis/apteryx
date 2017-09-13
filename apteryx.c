@@ -1693,3 +1693,14 @@ apteryx_timestamp (const char *path)
     DEBUG ("    = %"PRIu64"\n", value);
     return value;
 }
+
+/**
+ * When the Apteryx library is unloaded or a process is exited, this will be called
+ * automatically and will shut down all remaining users.
+ */
+__attribute__ ((destructor)) void
+apteryx_unload (void)
+{
+    DEBUG ("UNLOAD: Shutting down remaining users\n");
+    apteryx_shutdown_force ();
+}
