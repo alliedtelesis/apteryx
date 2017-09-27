@@ -1803,3 +1803,33 @@ apteryx_timestamp (const char *path)
     DEBUG ("    = %"PRIu64"\n", value);
     return value;
 }
+
+static void
+_apteryx_atfork_prepare (void)
+{
+    pthread_mutex_lock (&lock);
+}
+
+static void
+_apteryx_atfork_parent (void)
+{
+    pthread_mutex_unlock (&lock);
+}
+
+static void
+_apteryx_atfork_child (void)
+{
+    // Throw away all data related to the parent process. The assumption is that exec will
+    // be called shortly anyway, replacing the memory space, so memory leak doesn't matter.
+    _client_data = NULL;
+    pthread_mutex_unlock (&lock);
+}
+
+/**
+ * Register fork handlers to ensure that we can gracefully handle forking
+ */
+__attribute__ ((constructor)) void
+apteryx_load (void)
+{
+    pthread_atfork (_apteryx_atfork_prepare, _apteryx_atfork_parent, _apteryx_atfork_child);
+}
