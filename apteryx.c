@@ -330,7 +330,11 @@ apteryx_init (bool debug_enabled)
 bool
 apteryx_shutdown (void)
 {
-    ASSERT ((ref_count > 0), return false, "SHUTDOWN: Not initialised\n");
+    if (ref_count <= 0)
+    {
+        DEBUG ("SHUTDOWN: Not initialised\n");
+        return false;
+    }
 
     /* Decrement ref count */
     pthread_mutex_lock (&lock);
