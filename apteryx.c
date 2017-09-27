@@ -323,6 +323,28 @@ msg_handler (rpc_message msg)
 /**
  * The global lock must be held when calling this function.
  */
+static bool
+_apteryx_init_callback_server (struct apteryx_client *client_data)
+{
+    char *uri = NULL;
+
+    /* Bind to the default uri for this client */
+    if (asprintf (&uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+            || !rpc_server_bind (client_data->rpc, uri, uri))
+    {
+        ERROR ("Failed to bind uri %s\n", uri);
+        free (uri);
+        return false;
+    }
+    DEBUG ("Bound to uri %s\n", uri);
+    client_data->bound = true;
+    free (uri);
+    return true;
+}
+
+/**
+ * The global lock must be held when calling this function.
+ */
 static struct apteryx_client *
 _apteryx_init_client (void)
 {
@@ -340,12 +362,14 @@ _apteryx_init_client (void)
     return client_data;
 }
 
-bool
-apteryx_init (bool debug_enabled)
+/**
+ * The global lock must be held when calling this function.
+ */
+static bool
+_apteryx_init_internal (void)
 {
     struct apteryx_client *client_data;
 
-    pthread_mutex_lock (&lock);
     client_data = _apteryx_client_get_ptr ();
     if (!client_data)
     {
@@ -358,48 +382,46 @@ apteryx_init (bool debug_enabled)
         ERROR ("Init: Failed to init client data\n");
         return false;
     }
-
-    /* Increment refcount */
-    client_data->ref_count++;
-    apteryx_debug |= debug_enabled;
-    if (client_data->ref_count == 1)
+    else
     {
-        char * uri = NULL;
-
-        /* Create RPC instance */
-        client_data->rpc = rpc_init (RPC_CLIENT_TIMEOUT_US, msg_handler);
-        if (client_data->rpc == NULL)
+        client_data->ref_count++;
+        if (client_data->ref_count == 1)
         {
-            ERROR ("Init: Failed to initialise RPC service\n");
-            client_data->ref_count--;
-            pthread_mutex_unlock (&lock);
-            return false;
-        }
-
-        /* Only need to bind if we have previously added callbacks */
-        if (client_data->have_callbacks)
-        {
-            /* Bind to the default uri for this client */
-            if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
-                    || !rpc_server_bind (client_data->rpc, uri, uri))
+            client_data->rpc = rpc_init (RPC_CLIENT_TIMEOUT_US, msg_handler);
+            if (client_data->rpc == NULL)
             {
-                ERROR ("Failed to bind uri %s\n", uri);
+                ERROR ("Init: Failed to initialise RPC service\n");
                 client_data->ref_count--;
-                pthread_mutex_unlock (&lock);
-                free ((void*) uri);
                 return false;
             }
-            DEBUG ("Bound to uri %s\n", uri);
-            client_data->bound = true;
-            free ((void*) uri);
+
+            if (client_data->have_callbacks && !_apteryx_init_callback_server (client_data))
+            {
+                client_data->ref_count--;
+                return false;
+            }
+
+            /* Ready to go */
+            DEBUG ("Init: Initialised\n");
         }
     }
+
+    return true;
+}
+
+bool
+apteryx_init (bool debug_enabled)
+{
+    bool ret;
+
+    pthread_mutex_lock (&lock);
+    apteryx_debug |= debug_enabled;
+
+    ret = _apteryx_init_internal ();
     pthread_mutex_unlock (&lock);
 
     /* Ready to go */
-    if (client_data->ref_count == 1)
-        DEBUG ("Init: Initialised\n");
-    return true;
+    return ret;
 }
 
 bool
@@ -1601,20 +1623,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     client_data->cb_list = g_list_prepend (client_data->cb_list, (void *) cb);
     if (!client_data->bound)
     {
-        char * uri = NULL;
-
-        /* Bind to the default uri for this client */
-        if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
-                || !rpc_server_bind (client_data->rpc, uri, uri))
-        {
-            ERROR ("Failed to bind uri %s\n", uri);
-            pthread_mutex_unlock (&lock);
-            free ((void*) uri);
-            return false;
-        }
-        DEBUG ("Bound to uri %s\n", uri);
-        free ((void*) uri);
-        client_data->bound = true;
+        _apteryx_init_callback_server (client_data);
     }
     pthread_mutex_unlock (&lock);
 
