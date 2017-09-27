@@ -1833,3 +1833,16 @@ apteryx_load (void)
 {
     pthread_atfork (_apteryx_atfork_prepare, _apteryx_atfork_parent, _apteryx_atfork_child);
 }
+
+/**
+ * When the Apteryx library is unloaded or a process is exited, this will be called
+ * automatically and will shut down all remaining users. This function will also get
+ * called after a forked process unloads the library, but apteryx_atfork_child should have
+ * been called to make this safe.
+ */
+__attribute__ ((destructor)) void
+apteryx_unload (void)
+{
+    DEBUG ("UNLOAD: Shutting down remaining users\n");
+    apteryx_shutdown_force ();
+}
