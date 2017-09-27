@@ -424,6 +424,27 @@ apteryx_init (bool debug_enabled)
     return ret;
 }
 
+/**
+ * Get the apteryx client data. If the client is not initialized, the call will initialize
+ * and return a new client.
+ */
+static struct apteryx_client *
+_apteryx_client_get (void)
+{
+    struct apteryx_client *client_data;
+
+    pthread_mutex_lock (&lock);
+    client_data = _apteryx_client_get_ptr ();
+    if (!client_data || client_data->ref_count == 0)
+    {
+        _apteryx_init_internal ();
+        client_data = _apteryx_client_get_ptr ();
+    }
+    pthread_mutex_unlock (&lock);
+
+    return client_data;
+}
+
 bool
 apteryx_shutdown (void)
 {
@@ -478,7 +499,7 @@ apteryx_shutdown_force (void)
 int
 apteryx_process (bool poll)
 {
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "PROCESS: Not initialised\n");
     return rpc_server_process (client_data->rpc, poll);
@@ -489,7 +510,7 @@ apteryx_bind (const char *url)
 {
     char path[PATH_MAX];
     bool result;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "BIND: Not initialised\n");
     ASSERT (url, return false, "BIND: Invalid parameters\n");
@@ -508,7 +529,7 @@ bool
 apteryx_unbind (const char *url)
 {
     char path[PATH_MAX];
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "UNBIND: Not initialised\n");
     ASSERT (url, return false, "UNBIND: Invalid parameters\n");
@@ -528,7 +549,7 @@ apteryx_prune (const char *path)
     rpc_client rpc_client;
     rpc_message_t msg = {};
     int32_t result;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "PRUNE: Not initialised\n");
     ASSERT (path, return false, "PRUNE: Invalid parameters\n");
@@ -580,7 +601,7 @@ bool
 apteryx_dump (const char *path, FILE *fp)
 {
     char *value = NULL;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "DUMP: Not initialised\n");
     ASSERT (path, return false, "DUMP: Invalid parameters\n");
@@ -617,7 +638,7 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
     rpc_client rpc_client;
     rpc_message_t msg = {};
     int result = -ETIMEDOUT;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "SET: Not initialised\n");
     ASSERT (path, return false, "SET: Invalid parameters\n");
@@ -737,7 +758,7 @@ apteryx_get (const char *path)
     char *value = NULL;
     rpc_client rpc_client;
     rpc_message_t msg = {};
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return NULL, "GET: Not initialised\n");
     ASSERT (path, return NULL, "GET: Invalid parameters\n");
@@ -1046,7 +1067,7 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     rpc_client rpc_client;
     rpc_message_t msg = {};
     int32_t result = 0;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "SET_TREE: Not initialised\n");
     ASSERT (root, return false, "SET_TREE: Invalid parameters\n");
@@ -1171,7 +1192,7 @@ apteryx_get_tree (const char *path)
     GNode *root = NULL;
     int slen = strlen (path);
     char *value;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return NULL, "GET_TREE: Not initialised\n");
     ASSERT (path, return NULL, "GET_TREE: Invalid parameters\n");
@@ -1256,7 +1277,7 @@ apteryx_query (GNode *root)
     char *old_root_name = NULL;
     char *value = NULL;
     GNode *rroot = NULL;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return NULL, "QUERY: Not initialised\n");
     ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
@@ -1342,7 +1363,7 @@ apteryx_search (const char *path)
     rpc_client rpc_client;
     rpc_message_t msg = {};
     GList *paths = NULL;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return NULL, "SEARCH: Not initialised\n");
     ASSERT (path, return NULL, "SEARCH: Invalid parameters\n");
@@ -1452,7 +1473,7 @@ apteryx_find (const char *path, const char *value)
     rpc_message_t msg = {};
     GList *paths = NULL;
     char *tmp_path = NULL;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return NULL, "FIND: Not initialised\n");
     ASSERT (path, return NULL, "FIND: Invalid parameters\n");
@@ -1538,7 +1559,7 @@ apteryx_find_tree (GNode *root)
     rpc_message_t msg = {};
     const char *path = APTERYX_NAME (root);
     GList *paths = NULL;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return NULL, "FIND_TREE: Not initialised\n");
     ASSERT (path, return NULL, "FIND_TREE: Invalid parameters\n");
@@ -1605,7 +1626,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     size_t pid = getpid ();
     char _path[PATH_MAX];
     cb_t *cb;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "ADD_CB: Not initialised\n");
     ASSERT (type, return false, "ADD_CB: Invalid type\n");
@@ -1643,7 +1664,7 @@ delete_callback (const char *type, const char *path, void *fn)
     uint64_t ref;
     GList *iter;
     cb_t *cb;
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return false, "DEL_CB: Not initialised\n");
     ASSERT (type, return false, "DEL_CB: Invalid type\n");
@@ -1758,7 +1779,7 @@ apteryx_timestamp (const char *path)
     uint64_t value = 0;
     rpc_client rpc_client;
     rpc_message_t msg = {};
-    struct apteryx_client *client_data = _apteryx_client_get_ptr ();
+    struct apteryx_client *client_data = _apteryx_client_get ();
 
     ASSERT ((client_data && client_data->ref_count > 0), return 0, "TIMESTAMP: Not initialised\n");
     ASSERT (path, return 0, "TIMESTAMP: Invalid parameters\n");
