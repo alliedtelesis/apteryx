@@ -18,6 +18,7 @@
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
 #include "internal.h"
+#include <fcntl.h>
 
 /* An RPC instance.
  * Provides the service, service
@@ -314,6 +315,14 @@ rpc_server_process (rpc_instance rpc, bool poll)
          (rpc->queue = g_async_queue_new_full (work_destroy)) == NULL)
         {
             ERROR ("RPC: Failed to enable poll mode\n");
+            goto cleanup;
+        }
+
+        /* Configure the pipe as non-blocking */
+        int flags = fcntl (rpc->pollfd[0], F_GETFL, 0);
+        if (fcntl (rpc->pollfd[ 0], F_SETFL, flags | O_NONBLOCK) < 0)
+        {
+            ERROR ("RPC: failed to set pipe nonblocking\n");
             goto cleanup;
         }
     }
