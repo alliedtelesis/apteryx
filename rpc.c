@@ -38,6 +38,7 @@ struct rpc_instance_s {
     GThreadPool *slow_workers;
     int pollfd[2];
     GAsyncQueue *queue;
+    uint32_t overflow;
 
     /* Clients */
     GHashTable *clients;
@@ -164,7 +165,7 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
         g_async_queue_push (rpc->queue, (gpointer) work);
         if (write (rpc->pollfd[1], &dummy, 1) != 1)
         {
-            ERROR ("RPC: Unable to signal client\n");
+            g_atomic_int_inc (&rpc->overflow);
         }
     }
     /* Callbacks from local Apteryx threads */
@@ -305,6 +306,8 @@ int
 rpc_server_process (rpc_instance rpc, bool poll)
 {
     assert (rpc);
+    int flags;
+    int dummy;
 
     /* Start polling if requested */
     if (poll && rpc->queue == NULL)
@@ -314,6 +317,13 @@ rpc_server_process (rpc_instance rpc, bool poll)
          (rpc->queue = g_async_queue_new_full (work_destroy)) == NULL)
         {
             ERROR ("RPC: Failed to enable poll mode\n");
+            goto cleanup;
+        }
+        /* Write is non-blocking to avoid blocking apteryxd */
+        flags = fcntl (rpc->pollfd[1], F_GETFL, 0);
+        if (fcntl (rpc->pollfd[1], F_SETFL, flags | O_NONBLOCK) < 0)
+        {
+            ERROR ("RPC: Failed to set pipe nonblocking\n");
             goto cleanup;
         }
     }
@@ -331,6 +341,13 @@ rpc_server_process (rpc_instance rpc, bool poll)
         else
         {
             DEBUG ("RPC: Polling. Nothing to process\n");
+        }
+
+        /* Check for overflow */
+        if (g_atomic_int_get (&rpc->overflow) &&
+            write (rpc->pollfd[1], &dummy, 1) == 1)
+        {
+            g_atomic_int_dec_and_test (&rpc->overflow);
         }
 
         /* Return the poll fd for the client to monitor */

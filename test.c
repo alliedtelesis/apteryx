@@ -4601,6 +4601,46 @@ test_single_watch_myself ()
     apteryx_process (false);
 }
 
+void
+test_single_watch_myself_blocked ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    int fd = apteryx_process (true);
+    long pipe_size = (long)fcntl(fd, F_GETPIPE_SZ);
+    int count = pipe_size + 50;
+    char dummy;
+    int i;
+
+    watch_count = 0;
+    CU_ASSERT (apteryx_watch (path, test_single_watch_myself_callback));
+    for (i = 0; i < count; i++)
+    {
+        CU_ASSERT (apteryx_set (path, "down"));
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (fcntl (fd, F_SETFL, fcntl (fd, F_GETFL, 0) | O_NONBLOCK) == 0);
+    for (i = 0; i <= count; i++)
+    {
+        struct pollfd poll_fd = {
+            .fd = fd,
+            .events = POLLIN | POLLERR | POLLHUP,
+        };
+        if (i == count) {
+            CU_ASSERT (poll (&poll_fd, 1, 1) == 0);
+            CU_ASSERT (read (fd, &dummy, 1) < 0);
+        }
+        else {
+            CU_ASSERT (poll (&poll_fd, 1, 1) == 1 && read (fd, &dummy, 1) == 1);
+            apteryx_process (true);
+        }
+    }
+    CU_ASSERT (watch_count == count);
+    CU_ASSERT (apteryx_unwatch (path, test_single_watch_myself_callback));
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+}
+
 #ifdef HAVE_LUA
 static bool
 _run_lua (char *script)
@@ -5175,6 +5215,7 @@ static CU_TestInfo tests_single_threaded[] = {
     { "single-threaded provide", test_single_provide },
     { "single-threaded provide no polling", test_single_provide_no_polling },
     { "single-threaded watch myself", test_single_watch_myself },
+    { "single-threaded watch myself blocked", test_single_watch_myself_blocked },
     CU_TEST_INFO_NULL,
 };
 
