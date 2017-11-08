@@ -30,6 +30,7 @@ struct rpc_instance_s {
     /* General settings */
     int timeout;
     uint64_t gc_time;
+    sigset_t worker_sigmask;
 
     /* Single service */
     rpc_msg_handler handler;
@@ -92,6 +93,10 @@ worker_func (gpointer a, gpointer b)
         rpc_msg_handler handler = work->handler;
         rpc_id id = work->id;
         rpc_message msg = &work->msg;
+
+        /* Set the signal mask for the worker thread */
+        sigset_t *mask = (sigset_t *)b;
+        pthread_sigmask (SIG_SETMASK, mask, NULL);
 
         /* TEST: force a delay here to change callback timing */
         if (rpc_test_random_watch_delay)
@@ -206,13 +211,17 @@ rpc_init (int timeout, rpc_msg_handler handler)
 
     /* Create a new RPC instance */
     pthread_mutex_init (&rpc->lock, NULL);
+    pthread_sigmask (SIG_SETMASK, NULL, &rpc->worker_sigmask);
     rpc->timeout = timeout;
     rpc->gc_time = get_time_us ();
     rpc->handler = handler;
     rpc->server = server;
     rpc->clients = g_hash_table_new (g_str_hash, g_str_equal);
-    rpc->workers = g_thread_pool_new ((GFunc)worker_func, NULL, 8, FALSE, NULL);
-    rpc->slow_workers = g_thread_pool_new ((GFunc)worker_func, NULL, 1, FALSE, NULL);
+    rpc->workers = g_thread_pool_new ((GFunc)worker_func, (gpointer)&rpc->worker_sigmask,
+                                      8, FALSE, NULL);
+    rpc->slow_workers = g_thread_pool_new ((GFunc)worker_func,
+                                           (gpointer)&rpc->worker_sigmask,
+                                           1, FALSE, NULL);
 
     DEBUG ("RPC: New Instance (%p)\n", rpc);
     return rpc;
