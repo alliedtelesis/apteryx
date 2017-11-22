@@ -18,6 +18,7 @@ CC:=$(CROSS_COMPILE)gcc
 LD:=$(CROSS_COMPILE)ld
 PKG_CONFIG ?= pkg-config
 
+ABI_VERSION=4
 CFLAGS := $(CFLAGS) -g -O2
 EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
 EXTRA_CFLAGS += -I. $(shell $(PKG_CONFIG) --cflags glib-2.0)
@@ -37,9 +38,12 @@ endif
 
 all: libapteryx.so apteryx apteryxd
 
-libapteryx.so: rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
+libapteryx.so.$(ABI_VERSION): rpc.o rpc_transport.o rpc_socket.o apteryx.o lua.o
 	@echo "Creating library "$@""
-	$(Q)$(CC) -shared $(LDFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
+	$(Q)$(CC) -shared $(LDFLAGS) -o $@.$(ABI_VERSION) $^ $(EXTRA_LDFLAGS) -Wl,-soname,$@.$(ABI_VERSION)
+
+libapteryx.so: libapteryx.so.$(ABI_VERSION)
+	@ln -s -f $@.$(ABI_VERSION) $@
 	@ln -s -f $@ apteryx.so
 
 %.o: %.c
