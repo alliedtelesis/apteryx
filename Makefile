@@ -14,6 +14,7 @@ endif
 
 DESTDIR?=./
 PREFIX?=/usr/
+LIBDIR?=lib
 CC:=$(CROSS_COMPILE)gcc
 LD:=$(CROSS_COMPILE)ld
 PKG_CONFIG ?= pkg-config
@@ -80,7 +81,8 @@ test: apteryxd apteryx
 
 install: all
 	@install -d $(DESTDIR)/$(PREFIX)/lib
-	@install -D libapteryx.so $(DESTDIR)/$(PREFIX)/lib/
+	@install -D libapteryx.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/
+	@ln -sf libapteryx.so.$(ABI_VERSION) $(DESTDIR)/$(PREFIX)/$(LIBDIR)/libapteryx.so
 	@install -d $(DESTDIR)/$(PREFIX)/include
 	@install -D apteryx.h $(DESTDIR)/$(PREFIX)/include
 	@install -d $(DESTDIR)/$(PREFIX)/bin
