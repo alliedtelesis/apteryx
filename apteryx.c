@@ -441,7 +441,7 @@ apteryx_prune (const char *path)
     rpc_msg_encode_string (&msg, path);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("PRUNE: No response\n");
+        ERROR ("PRUNE: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
@@ -542,7 +542,7 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
         rpc_msg_encode_string (&msg, "");
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("SET: No response\n");
+        ERROR ("SET: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
@@ -656,7 +656,7 @@ apteryx_get (const char *path)
     rpc_msg_encode_string (&msg, path);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("GET: No response\n");
+        ERROR ("GET: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
@@ -975,7 +975,7 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &msg);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("SET_TREE: No response\n");
+        ERROR ("SET_TREE: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         root->data = old_root_name;
@@ -1088,7 +1088,7 @@ apteryx_get_tree (const char *path)
     rpc_msg_encode_string (&msg, path);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("GET_TREE: No response\n");
+        ERROR ("GET_TREE: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
@@ -1184,7 +1184,7 @@ apteryx_query (GNode *root)
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_LEAVES, -1, _get_multi, &msg);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("QUERY: No response\n");
+        ERROR ("QUERY: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
@@ -1278,7 +1278,7 @@ apteryx_search (const char *path)
     rpc_msg_encode_string (&msg, path);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("SEARCH: No response\n");
+        ERROR ("SEARCH: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
@@ -1394,7 +1394,7 @@ apteryx_find (const char *path, const char *value)
     rpc_msg_encode_string (&msg, value);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("FIND: No response\n");
+        ERROR ("FIND: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (tmp_path);
@@ -1464,7 +1464,7 @@ apteryx_find_tree (GNode *root)
     g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &msg);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("FIND_TREE: No response\n");
+        ERROR ("FIND_TREE: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
@@ -1683,7 +1683,7 @@ apteryx_timestamp (const char *path)
     rpc_msg_encode_string (&msg, path);
     if (!rpc_msg_send (rpc_client, &msg))
     {
-        ERROR ("TIMESTAMP: No response\n");
+        ERROR ("TIMESTAMP: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
         free (url);
