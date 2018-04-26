@@ -1147,8 +1147,6 @@ handle_query (rpc_message msg)
     char *tmp = NULL;
     char *ptr = NULL;
     char *chunk;
-    bool traverse = false;
-    bool one_level = false;
 
     INC_COUNTER (counters.query);
 
@@ -1160,6 +1158,9 @@ handle_query (rpc_message msg)
     paths = g_list_reverse (paths);
     for (iter2 = g_list_first (paths); iter2; iter2 = g_list_next (iter2))
     {
+        bool traverse = false;
+        bool one_level = false;
+
         if (strchr (iter2->data, '*') == NULL)
         {
             value = get_value ((char *) iter2->data);
