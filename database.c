@@ -49,7 +49,7 @@ db_calculate_timestamp (void)
 {
     struct timespec tms;
     uint64_t micros = 0;
-    if (clock_gettime(CLOCK_REALTIME, &tms)) {
+    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tms)) {
         return 0;
     }
 
