@@ -145,7 +145,7 @@ bool apteryx_dump (const char *path, FILE *fp);
  * Set a path/value in Apteryx with full options
  * @param path path to the value to set
  * @param value value to set at the specified path
- * @param ts timestamp to be compared to the paths last change time
+ * @param ts monotonic timestamp to be compared to the paths last change time
  * @param wait_for_completion flag that indicates blocking / non-blocking
  *                            watch callbacks from this set
  * @return true on a successful set
@@ -157,7 +157,7 @@ bool apteryx_set_full (const char *path, const char *value, uint64_t ts,
 /**
  * Set a tree of multiple values in Apteryx, with full options
  * @param root pointer to the N-ary tree of nodes.
- * @param ts timestamp to be compared to the paths last change time
+ * @param ts monotonic timestamp to be compared to the paths last change time
  * @param wait_for_completion flag that indicates blocking / non-blocking
  *                            watch callbacks from this tree set
  * @return true on a successful set
@@ -214,15 +214,15 @@ int32_t apteryx_get_int_default (const char *path, const char *key, int32_t defl
 bool apteryx_has_value (const char *path);
 
 /**
- * Get the last change timestamp of a given path
+ * Get the last change timestamp in monotonic time of a given path
  * @param path path to get the timestamp for
- * @return 0 if the path doesn't exist, last change timestamp otherwise
+ * @return 0 if the path doesn't exist, last change timestamp in monotonic time otherwise
  */
 uint64_t apteryx_timestamp (const char *path);
 
 /**
  * Set a path/value in Apteryx, but only if the existing
- * value has not changed since the specified timestamp.
+ * value has not changed since the specified monotonic timestamp.
  * Can be used for a Compare-And-Swap operation.
  * Example: Safely reserve the next free row in a table
     uint32_t index = 1;
@@ -251,7 +251,7 @@ uint64_t apteryx_timestamp (const char *path);
     }
  * @param path path to the value to set
  * @param value value to set at the specified path
- * @param ts timestamp to be compared to the paths last change time
+ * @param ts monotonic timestamp to be compared to the paths last change time
  * @return true on a successful set
  * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
  */
@@ -259,7 +259,7 @@ uint64_t apteryx_timestamp (const char *path);
 
 /**
  * Set a path/value in Apteryx, but only if the existing
- * value has not changed since the specified timestamp and
+ * value has not changed since the specified monotonic timestamp and
  * wait for watch execution to complete.
  * Can be used for a Compare-And-Swap operation.
  * Example: Safely reserve the next free row in a table
@@ -292,7 +292,7 @@ uint64_t apteryx_timestamp (const char *path);
     }
  * @param path path to the value to set
  * @param value value to set at the specified path
- * @param ts timestamp to be compared to the paths last change time
+ * @param ts monotonic timestamp to be compared to the paths last change time
  * @return true on a successful set after watches have completed
  * @return false if the set failed (errno == -EBUSY if timestamp comparison failed)
  */
@@ -427,9 +427,9 @@ GNode *apteryx_query (GNode *root);
 
 /**
  * Set a tree of multiple values in Apteryx, but only if
- * the existing value has not changed since the specified timestamp.
+ * the existing value has not changed since the specified monotonic timestamp.
  * @param root pointer to the N-ary tree of nodes.
- * @param ts timestamp to be compared to the paths last change time
+ * @param ts monotonic timestamp to be compared to the paths last change time
  * @return true on a successful set.
  * @return false on failure.
  */
@@ -437,10 +437,10 @@ GNode *apteryx_query (GNode *root);
 
 /**
  * Set a tree of multiple values in Apteryx, but only if
- * the existing value has not changed since the specified timestamp.
+ * the existing value has not changed since the specified monotonic timestamp.
  * Wait for watches to be executed before returning.
  * @param root pointer to the N-ary tree of nodes.
- * @param ts timestamp to be compared to the paths last change time
+ * @param ts monotonic timestamp to be compared to the paths last change time
  * @return true on a successful set.
  * @return false on failure.
  */
