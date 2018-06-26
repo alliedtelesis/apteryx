@@ -1627,8 +1627,6 @@ exit:
     }
 
     /* Cleanup callbacks */
-    config_shutdown ();
-    db_shutdown ();
     if (proxy_rpc)
     {
         rpc_shutdown (proxy_rpc);
@@ -1638,6 +1636,9 @@ exit:
         rpc_server_release (rpc, url);
         rpc_shutdown (rpc);
     }
+
+    db_shutdown ();
+    config_shutdown ();
 
     /* Remove the pid file */
     if (background && pid_file)
