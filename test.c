@@ -71,20 +71,6 @@ assert_apteryx_empty (void)
 }
 
 void
-test_init ()
-{
-    const char *path = TEST_PATH"/entity/zones/private/name";
-    char *value = NULL;
-
-    apteryx_shutdown_force ();
-    CU_ASSERT (apteryx_set (path, "private") == FALSE);
-    CU_ASSERT ((value = apteryx_get (path)) == NULL);
-    CU_ASSERT (apteryx_set (path, NULL) == FALSE);
-    CU_ASSERT (assert_apteryx_empty ());
-    apteryx_init (apteryx_debug);
-}
-
-void
 test_set_get ()
 {
     const char *path = TEST_PATH"/entity/zones/private/name";
@@ -5116,7 +5102,6 @@ suite_clean (void)
 
 static CU_TestInfo tests_api[] = {
     { "doc example", test_docs },
-    { "initialisation", test_init },
     { "set and get", test_set_get },
     { "set with ack", test_set_with_ack },
     { "raw byte streams", test_set_get_raw },
