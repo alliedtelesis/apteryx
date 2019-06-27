@@ -2872,10 +2872,45 @@ test_query_basic ()
     APTERYX_NODE (iroot, strdup ("ifname"));
     rroot = apteryx_query (root);
     CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 10);
 
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
     g_free (path);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_query_subtree_root ()
+{
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = g_node_new (strdup (TEST_PATH"/routing/ipv4/rib/1"));
+    APTERYX_NODE (root, strdup ("proto"));
+    APTERYX_NODE (root, strdup ("ifname"));
+    rroot = apteryx_query (root);
+    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 5);
+
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
 
     apteryx_prune (TEST_PATH);
 }
@@ -5252,6 +5287,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     { "get tree provided", test_get_tree_provided },
     { "query basic", test_query_basic},
+    { "query subtree root", test_query_subtree_root},
     { "query one star", test_query_one_star},
     { "query one star traverse", test_query_one_star_traverse},
     { "query multi star traverse", test_query_multi_star_traverse},
