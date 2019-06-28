@@ -1144,6 +1144,7 @@ apteryx_query (GNode *root)
     char *old_root_name = NULL;
     char *value = NULL;
     GNode *rroot = NULL;
+    int slen;
 
     ASSERT ((ref_count > 0), return NULL, "QUERY: Not initialised\n");
     ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
@@ -1167,6 +1168,7 @@ apteryx_query (GNode *root)
         assert (!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
+    slen = strlen (path);
 
     /* IPC */
     rpc_client = rpc_client_connect (rpc, url);
@@ -1205,7 +1207,7 @@ apteryx_query (GNode *root)
         {
             value = rpc_msg_decode_string (&msg);
             DEBUG ("  %s = %s\n", path, value);
-            apteryx_path_to_node (rroot, path, value);
+            apteryx_path_to_node (rroot, path + slen, value);
             path = rpc_msg_decode_string (&msg);
         }
     }
