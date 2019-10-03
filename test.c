@@ -3246,6 +3246,37 @@ test_query_two_branches ()
 }
 
 void
+test_query_provided ()
+{
+    const char *path = TEST_PATH"/devices/*/interfaces/*/state";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/devices/unit1/interfaces/eth0");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/devices/unit1/interfaces/eth1");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, TEST_PATH"/devices/*", NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 4);
+
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+    apteryx_prune (TEST_PATH);
+}
+
+void
 test_cas_tree ()
 {
     const char *path = TEST_PATH"/interfaces/eth0";
@@ -5296,6 +5327,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query two star", test_query_two_star},
     { "query null values", test_query_null_values},
     { "query two branches", test_query_two_branches},
+    { "query provided", test_query_provided},
     { "cas tree", test_cas_tree},
     { "tree atomic", test_tree_atomic},
     CU_TEST_INFO_NULL,

@@ -1051,7 +1051,13 @@ _traverse_paths (GList **paths, GList **values, const char *path)
         /* Append any provided paths */
         GList *providers = NULL;
         providers = config_search_providers (path_s);
-        children = g_list_concat (children, providers);
+        for (iter = providers; iter; iter = iter->next)
+        {
+            char *p = (char*)iter->data;
+            if (!g_list_find_custom (children, p, (GCompareFunc)strcmp))
+                children = g_list_prepend (children, strdup (p));
+        }
+        g_list_free_full (providers, free);
     }
     for (iter = children; iter; iter = g_list_next (iter))
     {
@@ -1248,6 +1254,7 @@ handle_query (rpc_message msg)
     for (ipath = g_list_first (matches), ivalue = g_list_first (value_matches);
          ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
     {
+        DEBUG ("  %s = %s\n", (char *) ipath->data, (char *) ivalue->data);
         rpc_msg_encode_string (msg, (char *) ipath->data);
         rpc_msg_encode_string (msg, (char *) ivalue->data);
     }
