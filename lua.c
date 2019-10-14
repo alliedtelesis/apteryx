@@ -438,10 +438,12 @@ lua_do_index (const char *path, size_t ref)
 {
     int res = 0;
     lua_State* L = g_L;
+
+    ASSERT (L, return NULL, "Index: LUA is not multi-threaded (use apteryx.process)\n");
     int ssize = lua_gettop (L);
     GList *paths = NULL;
     if (!push_callback (L, ref))
-        return false;
+        return NULL;
     lua_pushstring (L, path);
     res = lua_pcall (L, 1, 1, 0);
     if (res != 0)
@@ -510,6 +512,8 @@ lua_do_watch (const char *path, const char *value, size_t ref)
 {
     int res = 0;
     lua_State* L = g_L;
+
+    ASSERT (L, return false, "Watch: LUA is not multi-threaded (use apteryx.process)\n");
     int ssize = lua_gettop (L);
     if (!push_callback (L, ref))
         return false;
@@ -564,10 +568,12 @@ lua_do_validate (const char *path, const char *value, size_t ref)
 {
     int res = 0;
     lua_State* L = g_L;
+
+    ASSERT (L, return -1, "Validate: LUA is not multi-threaded (use apteryx.process)\n");
     int ssize = lua_gettop (L);
     int rc = 0;
     if (!push_callback (L, ref))
-        return false;
+        return -1;
     lua_pushstring (L, path);
     lua_pushstring (L, value);
     res = lua_pcall (L, 2, 1, 0);
@@ -624,6 +630,8 @@ lua_do_provide (const char *path, size_t ref)
 {
     int res = 0;
     lua_State* L = g_L;
+
+    ASSERT (L, return NULL, "Provide: LUA is not multi-threaded (use apteryx.process)\n");
     int ssize = lua_gettop (L);
     char *value = NULL;
     if (!push_callback (L, ref))
