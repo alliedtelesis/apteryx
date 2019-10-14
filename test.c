@@ -4329,7 +4329,7 @@ test_socket_latency (int family, bool cd, bool req, bool resp)
     if (ret < 0)
         return;
 
-    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=1 > /dev/null 2>&1") == 0);
+    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=1 > /dev/null 2>&1 || true") == 0);
     if ((pid = fork ()) == 0)
     {
         if (!cd)
@@ -4394,7 +4394,7 @@ test_socket_latency (int family, bool cd, bool req, bool resp)
             close (s);
     }
 exit:
-    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=0 > /dev/null 2>&1") == 0);
+    CU_ASSERT (system ("sudo sysctl -w net.ipv4.tcp_tw_recycle=0 > /dev/null 2>&1 || true") == 0);
     kill (pid, 9);
     waitpid (pid, &status, 0);
     if (family == AF_UNIX)
