@@ -564,6 +564,67 @@ lua_apteryx_unwatch (lua_State *L)
 }
 
 static int
+lua_do_refresh (const char *path, size_t ref)
+{
+    int res = 0;
+    lua_State* L = g_L;
+
+    ASSERT (L, return 0, "Refresh: LUA is not multi-threaded (use apteryx.process)\n");
+    int ssize = lua_gettop (L);
+    int timeout = 0;
+    if (!push_callback (L, ref))
+        return 0;
+    lua_pushstring (L, path);
+    res = lua_pcall (L, 1, 1, 0);
+    if (res != 0)
+        lua_apteryx_error (L, res);
+    if (lua_gettop (L))
+    {
+        timeout = lua_tonumber (L, -1);
+        lua_pop (L, 1);
+    }
+    lua_pop (L, 1); /* pop fn */
+    ASSERT (lua_gettop (L) == ssize, return timeout, "Refresh: Stack changed\n");
+    return timeout;
+}
+
+static int
+lua_apteryx_refresh (lua_State *L)
+{
+    luaL_checktype (L, 1, LUA_TSTRING);
+    luaL_checktype (L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
+
+    if (!add_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, false, (void *) ref))
+    {
+        luaL_error (L, "Failed to register refresh\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
+lua_apteryx_unrefresh (lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TSTRING);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+
+    if (!delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh))
+    {
+        luaL_error (L, "Failed to unregister callback\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
 lua_do_validate (const char *path, const char *value, size_t ref)
 {
     int res = 0;
@@ -781,6 +842,8 @@ luaopen_libapteryx (lua_State *L)
         { "unindex", lua_apteryx_unindex },
         { "watch", lua_apteryx_watch },
         { "unwatch", lua_apteryx_unwatch },
+        { "refresh", lua_apteryx_refresh },
+        { "unrefresh", lua_apteryx_unrefresh },
         { "validate", lua_apteryx_validate },
         { "unvalidate", lua_apteryx_unvalidate },
         { "provide", lua_apteryx_provide },

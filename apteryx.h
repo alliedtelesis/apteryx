@@ -13,6 +13,7 @@
  *     VALIDATE - accept / deny sets that match the specified path
  *     WATCH - watch for changes in the specified path
  *     GET - get the value stored at the specified path
+ *     REFRESH - refresh the value stored at the specified path when required
  *     PROVIDE - provide the value stored at the specified path
  *     SEARCH - look for sub-paths that match the requested root path
  *     INDEX - provide search results for the specified root path
@@ -47,6 +48,8 @@
   /apteryx/sockets/-                       - Unique identifier based on HASH(url). Value is the url to listen on.
   /apteryx/watchers                        - List of watched paths and registered callbacks for those watches.
   /apteryx/watchers/-                      - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
+  /apteryx/refreshers                      - List of refreshed paths and registered callbacks for those refreshers.
+  /apteryx/refreshers/-                    - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/providers                       - List of provided paths and registered callbacks for providing gets to that path.
   /apteryx/providers/-                     - Unique identifier based on PID-CALLBACK-HASH(path). Value is the path.
   /apteryx/validators                      - List of validated paths and registered callbacks for validating sets to that path.
@@ -64,6 +67,7 @@
 #define APTERYX_DEBUG_ENABLE                         1
 #define APTERYX_SOCKETS_PATH                     "/apteryx/sockets"
 #define APTERYX_WATCHERS_PATH                    "/apteryx/watchers"
+#define APTERYX_REFRESHERS_PATH                  "/apteryx/refreshers"
 #define APTERYX_PROVIDERS_PATH                   "/apteryx/providers"
 #define APTERYX_VALIDATORS_PATH                  "/apteryx/validators"
 #define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
@@ -549,6 +553,29 @@ typedef int (*apteryx_validate_callback) (const char *path, const char *value);
 bool apteryx_validate (const char *path, apteryx_validate_callback cb);
 /** UnValidate changes in the path */
 bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
+
+/**
+ * Callback function to be called when a library user
+ * makes a get to a "refreshed" path.
+ * @param path path to the value to be refreshed
+ * @return timeout in microseconds to next refresh
+ */
+typedef uint64_t (*apteryx_refresh_callback) (const char *path);
+
+/**
+ * Refresh values when required
+ * Whenever a get is performed on the given path, callback is
+ * called to refresh the values of the tree.
+ * examples: (using contrived usage example)
+ * - apteryx_refresh ("/hw/interfaces/\*\/counters/*", refresh_intf_tx_counters, 50);
+ * @param path path to the value that others will request
+ * @param cb function to be called if others request the path
+ * @param timeout time after refresh is requred
+ * @return true on successful registration
+ */
+bool apteryx_refresh (const char *path, apteryx_refresh_callback cb);
+/** Remove refresher for this path */
+bool apteryx_unrefresh (const char *path, apteryx_refresh_callback cb);
 
 /**
  * Callback function to be called when a library users

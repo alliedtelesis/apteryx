@@ -11,6 +11,7 @@ i.e. /root/node1/node2/node3 = value
 * **VALIDATE** - accept / deny sets that match the specified path
 * **WATCH** - watch for changes in the specified path
 * **GET** - get the value stored at the specified path
+* **REFRESH** - refresh database just in time when someone does a get for the specified path
 * **PROVIDE** - provide the value stored at the specified path
 * **SEARCH** - look for sub-paths that match the requested root path
 * **INDEX** - provide search results for the specified root path

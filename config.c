@@ -27,6 +27,7 @@ extern rpc_instance rpc;
 /* Callback structures */
 static struct callback_node *watch_list;
 static struct callback_node *validation_list;
+static struct callback_node *refresh_list;
 static struct callback_node *provide_list;
 static struct callback_node *index_list;
 static struct callback_node *proxy_list;
@@ -167,6 +168,19 @@ handle_watchers_set (const char *path, const char *value)
 }
 
 static bool
+handle_refreshers_set (const char *path, const char *value)
+{
+    const char *guid = path + strlen (APTERYX_REFRESHERS_PATH"/");
+    cb_info_t *cb;
+
+    DEBUG ("CFG-Refresh: %s = %s\n", guid, value);
+
+    cb = update_callback (refresh_list, guid, value);
+    cb_release (cb);
+    return true;
+}
+
+static bool
 handle_providers_set (const char *path, const char *value)
 {
     const char *guid = path + strlen (APTERYX_PROVIDERS_PATH"/");
@@ -258,6 +272,7 @@ config_shutdown ()
 {
     cb_shutdown (watch_list);
     cb_shutdown (validation_list);
+    cb_shutdown (refresh_list);
     cb_shutdown (provide_list);
     cb_shutdown (index_list);
     cb_shutdown (proxy_list);
@@ -279,6 +294,12 @@ GList *
 config_get_providers (const char *path)
 {
     return cb_match (provide_list, path);
+}
+
+GList *
+config_get_refreshers (const char *path)
+{
+    return cb_match (refresh_list, path);
 }
 
 GList *
@@ -306,6 +327,7 @@ config_init (void)
 
     watch_list = cb_init ();
     validation_list = cb_init ();
+    refresh_list = cb_init ();
     provide_list = cb_init ();
     index_list = cb_init ();
     proxy_list = cb_init ();
@@ -338,6 +360,11 @@ config_init (void)
     /* Watchers */
     cb = cb_create (watch_list, "watchers", APTERYX_WATCHERS_PATH "/",
                     (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set);
+    cb_release (cb);
+
+    /* Refeshers */
+    cb = cb_create (watch_list, "refreshers", APTERYX_REFRESHERS_PATH "/",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_refreshers_set);
     cb_release (cb);
 
     /* Providers */

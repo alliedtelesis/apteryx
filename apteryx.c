@@ -234,6 +234,27 @@ handle_validate (rpc_message msg)
 }
 
 static bool
+handle_refresh (rpc_message msg)
+{
+    uint64_t ref;
+    const char *path;
+    uint64_t timeout;
+
+    /* Parse the parameters */
+    ref = rpc_msg_decode_uint64 (msg);
+    path = rpc_msg_decode_string (msg);
+    assert (path);
+
+    DEBUG ("REFRESH CB: \"%s\" (0x%"PRIx64")\n", path, ref);
+
+    /* Process callback */
+    timeout = (uint64_t) call_callback (ref, path, NULL);
+    rpc_msg_reset (msg);
+    rpc_msg_encode_uint64 (msg, timeout);
+    return true;
+}
+
+static bool
 handle_provide (rpc_message msg)
 {
     char *value;
@@ -271,6 +292,8 @@ msg_handler (rpc_message msg)
         return handle_watch (msg);
     case MODE_VALIDATE:
         return handle_validate (msg);
+    case MODE_REFRESH:
+        return handle_refresh (msg);
     case MODE_PROVIDE:
         return handle_provide (msg);
     default:
@@ -1606,6 +1629,18 @@ bool
 apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 {
     return delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb);
+}
+
+bool
+apteryx_refresh (const char *path, apteryx_refresh_callback cb)
+{
+    return add_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb, false, NULL);
+}
+
+bool
+apteryx_unrefresh (const char *path, apteryx_refresh_callback cb)
+{
+    return delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb);
 }
 
 bool

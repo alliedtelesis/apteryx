@@ -95,6 +95,7 @@ typedef enum
     MODE_TRAVERSE,
     MODE_WATCH,
     MODE_WATCH_WITH_ACK,
+    MODE_REFRESH,
     MODE_PROVIDE,
     MODE_INDEX,
     MODE_VALIDATE,
@@ -119,6 +120,7 @@ typedef struct _cb_info_t
     struct callback_node *node;
     int refcnt;
     uint32_t count;
+    uint64_t timeout;
 } cb_info_t;
 
 #define X_FIELDS \
@@ -134,6 +136,9 @@ typedef struct _cb_info_t
     X(uint32_t, indexed) \
     X(uint32_t, indexed_no_handler) \
     X(uint32_t, indexed_timeout) \
+    X(uint32_t, refreshed) \
+    X(uint32_t, refreshed_no_handler) \
+    X(uint32_t, refreshed_timeout) \
     X(uint32_t, watched) \
     X(uint32_t, watched_no_handler) \
     X(uint32_t, watched_timeout) \
@@ -226,6 +231,7 @@ GList *config_search_providers (const char *path);
 /* Returns a list of cb_info_t* */
 GList *config_get_indexers (const char *path);
 GList *config_get_providers (const char *path);
+GList *config_get_refreshers (const char *path);
 GList *config_get_proxies (const char *path);
 GList *config_get_watchers (const char *path);
 GList *config_get_validators (const char *path);
