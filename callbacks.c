@@ -34,6 +34,7 @@ struct callback_node
 
 struct callback_node *watch_list = NULL;
 struct callback_node *validation_list = NULL;
+struct callback_node *refresh_list = NULL;
 struct callback_node *provide_list = NULL;
 struct callback_node *index_list = NULL;
 struct callback_node *proxy_list = NULL;

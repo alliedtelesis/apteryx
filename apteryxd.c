@@ -284,6 +284,99 @@ notify_watchers (const char *path, bool ack)
         g_free (value);
 }
 
+static uint64_t
+calculate_timestamp (void)
+{
+    struct timespec tms;
+    uint64_t micros = 0;
+    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tms)) {
+        return 0;
+    }
+
+    micros = ((uint64_t)tms.tv_sec) * 1000000;
+    micros += tms.tv_nsec/1000;
+    return micros;
+}
+
+static void
+call_refreshers (const char *path)
+{
+    GList *refreshers = NULL;
+    GList *iter = NULL;
+    uint64_t timestamp;
+    uint64_t now;
+    uint64_t timeout = 0;
+
+    /* Retrieve a list of refreshers for this path */
+    refreshers = config_get_refreshers (path);
+    if (!refreshers)
+        return;
+
+    /* Get the latest timestamp for the path and now */
+    timestamp = db_timestamp (path);
+    now = calculate_timestamp ();
+
+    /* Call each refresher */
+    for (iter = refreshers; iter; iter = g_list_next (iter))
+    {
+        cb_info_t *refresher = iter->data;
+        rpc_client rpc_client;
+        rpc_message_t msg = {};
+
+        /* Check if it is time to refresh */
+        if (now < (timestamp + refresher->timeout))
+            continue;
+
+        /* Check for local refresher */
+        if (refresher->id == getpid ())
+        {
+            apteryx_refresh_callback cb = (apteryx_refresh_callback) (long) refresher->ref;
+            DEBUG ("REFRESH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                    refresher->path, refresher->id, refresher->ref);
+            timeout = cb (path);
+            if (refresher->timeout == 0 || timeout < refresher->timeout)
+                refresher->timeout = timeout;
+            continue;
+        }
+
+        DEBUG ("REFRESH CB %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
+                path, refresher->path, refresher->id, refresher->ref, refresher->uri);
+
+        /* IPC */
+        rpc_client = rpc_client_connect (rpc, refresher->uri);
+        if (!rpc_client)
+        {
+            /* Throw away the no good validator */
+            ERROR ("Invalid REFRESH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                   refresher->path, refresher->id, refresher->ref);
+            cb_disable (refresher);
+            INC_COUNTER (counters.refreshed_no_handler);
+            continue;
+        }
+        rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
+        rpc_msg_encode_uint64 (&msg, refresher->ref);
+        rpc_msg_encode_string (&msg, path);
+        if (!rpc_msg_send (rpc_client, &msg))
+        {
+            INC_COUNTER (counters.refreshed_timeout);
+            ERROR ("Failed to notify refresher for path \"%s\"\n", (char *) path);
+            rpc_client_release (rpc, rpc_client, false);
+        }
+        else
+        {
+            rpc_client_release (rpc, rpc_client, true);
+            timeout = rpc_msg_decode_uint64 (&msg);
+            if (refresher->timeout == 0 || timeout < refresher->timeout)
+                refresher->timeout = timeout;
+        }
+        rpc_msg_reset (&msg);
+
+        INC_COUNTER (counters.refreshed);
+        INC_COUNTER (refresher->count);
+    }
+    g_list_free_full (refreshers, (GDestroyNotify) cb_release);
+}
+
 static char *
 provide_get (const char *path)
 {
@@ -777,6 +870,9 @@ get_value (const char *path)
     /* Proxy first */
     if ((value = proxy_get (path)) == NULL)
     {
+        /* Call refreshers */
+        call_refreshers (path);
+
         /* Database second */
         if (!db_get (path, (unsigned char**)&value, &vsize))
         {
@@ -841,6 +937,9 @@ search_path (const char *path)
         }
         else
         {
+            /* Call refreshers */
+            call_refreshers (path);
+
             /* Search database next */
             results = db_search (path);
             DEBUG (" got %d entries from database...\n", g_list_length (results));
@@ -1028,6 +1127,9 @@ _traverse_paths (GList **paths, GList **values, const char *path)
     GList *children, *iter;
     char *value = NULL;
     size_t vsize;
+
+    /* Call refreshers */
+    call_refreshers (path);
 
     /* Look for a value - db first */
     if (!db_get (path, (unsigned char**)&value, &vsize))

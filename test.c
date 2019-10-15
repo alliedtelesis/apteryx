@@ -2189,6 +2189,153 @@ test_validate_ordering_tree ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static int _cb_timeout;
+static uint64_t
+test_refresh_callback (const char *path)
+{
+    char *value = g_strdup_printf ("%d", _cb_count);
+    apteryx_set (path, value);
+    g_free (value);
+    _cb_count++;
+    return _cb_timeout;
+}
+
+void
+test_refresh ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+    apteryx_unrefresh (path, test_refresh_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_unneeded ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5 * 1000 * 1000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+    apteryx_unrefresh (path, test_refresh_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_timeout ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+    usleep (_cb_timeout);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "1") == 0);
+    if (value)
+        free ((void *) value);
+    apteryx_unrefresh (path, test_refresh_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static uint64_t
+test_refresh_tree_callback (const char *path)
+{
+    GNode* root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
+    GNode* state = APTERYX_NODE (root, "state");
+    APTERYX_LEAF (state, "state", "up");
+    APTERYX_LEAF (state, "speed", "1000");
+    APTERYX_LEAF (state, "duplex", "full");
+    apteryx_set_tree (root);
+    g_node_destroy (root);
+    _cb_count++;
+    return _cb_timeout;
+}
+
+void
+test_refresh_trunk ()
+{
+    const char *path = TEST_PATH"/interfaces/*";
+    const char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/interfaces/eth0/state/state")) != NULL);
+    CU_ASSERT (value && strcmp (value, "up") == 0);
+    if (value)
+        free ((void *) value);
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/*";
+    GNode *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+    CU_ASSERT ((value = apteryx_get_tree (TEST_PATH"/interfaces/eth0")) != NULL);
+    CU_ASSERT (value != NULL);
+    if (value)
+        apteryx_free_tree (value);
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_search ()
+{
+    const char *path = TEST_PATH"/interfaces/*";
+    GList *paths = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/interfaces/eth0", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_up (const char *path)
 {
@@ -4924,7 +5071,47 @@ test_lua_basic_watch (void)
             "assert(v == 'me')                                            \n"
             "apteryx.unwatch('"TEST_PATH"/watch', test_watch)             \n"
             "apteryx.set('"TEST_PATH"/watch')                             \n"
+            "apteryx.process(false)                                       \n"
     ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
+test_lua_refresh_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_refresh (path)                                   "
+            "    assert (path == '"TEST_PATH"/refresh')                     "
+            "    apteryx.set('"TEST_PATH"/refresh', 'me')                   "
+            "    return 0                                                   "
+            "end                                                          \n"
+            "apteryx.refresh('"TEST_PATH"/refresh', test_refresh)         \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unrefresh('"TEST_PATH"/refresh', test_refresh)       \n"
+            "apteryx.set('"TEST_PATH"/refresh')                           \n"
+            "apteryx.process(false)                                       \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_basic_refresh (void)
+{
+    pthread_t client;
+    char *value = NULL;
+
+    pthread_create (&client, NULL, (void *) &test_lua_refresh_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/refresh")) != NULL);
+    CU_ASSERT (value && strcmp (value, "me") == 0);
+    if (value)
+        free ((void *) value);
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -4943,6 +5130,7 @@ test_lua_provide_thread (void *data)
             "    os.execute('sleep 0.1')                                    "
             "end                                                          \n"
             "apteryx.unprovide('"TEST_PATH"/provide', test_provide)       \n"
+            "apteryx.process(false)                                       \n"
     ));
     return 0;
 }
@@ -4979,6 +5167,7 @@ test_lua_index_thread (void *data)
             "    os.execute('sleep 0.1')                                    "
             "end                                                          \n"
             "apteryx.unindex('"TEST_PATH"/index/', test_index)            \n"
+            "apteryx.process(false)                                       \n"
     ));
     return 0;
 }
@@ -5016,6 +5205,7 @@ test_lua_validate_thread (void *data)
             "    os.execute('sleep 0.1')                                    "
             "end                                                          \n"
             "apteryx.unvalidate('"TEST_PATH"/validate', test_validate)    \n"
+            "apteryx.process(false)                                       \n"
     ));
     return 0;
 }
@@ -5270,6 +5460,16 @@ static CU_TestInfo tests_api_validate[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_api_refresh[] = {
+    { "refresh", test_refresh },
+    { "refresh unneeded", test_refresh_unneeded },
+    { "refresh timeout", test_refresh_timeout },
+    { "refresh trunk", test_refresh_trunk },
+    { "refresh tree", test_refresh_tree },
+    { "refresh search", test_refresh_search },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_api_provide[] = {
     { "provide", test_provide },
     { "provider timeout", test_provide_timeout },
@@ -5405,6 +5605,7 @@ CU_TestInfo tests_lua[] = {
     { "lua basic query", test_lua_basic_query},
     { "lua basic timestamp", test_lua_basic_timestamp },
     { "lua basic watch", test_lua_basic_watch },
+    { "lua basic refresh", test_lua_basic_refresh },
     { "lua basic provide", test_lua_basic_provide },
     { "lua basic index", test_lua_basic_index },
     { "lua basic validate", test_lua_basic_validate },
@@ -5475,6 +5676,12 @@ static CU_SuiteInfo suites[] = {
         .pInitFunc = suite_init,
         .pCleanupFunc = suite_clean,
         .pTests = tests_api_validate
+    },
+    {
+        .pName = "Apteryx API Refresh",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_refresh
     },
     {
         .pName = "Apteryx API Provide",
