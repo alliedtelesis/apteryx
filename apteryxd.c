@@ -942,18 +942,19 @@ search_path (const char *path)
 
             /* Search database next */
             results = db_search (path);
-            DEBUG (" got %d entries from database...\n", g_list_length (results));
-            /* Append any provided paths */
-            GList *providers = NULL;
-            providers = config_search_providers (path);
-            DEBUG (" got %d entries from providers...\n", g_list_length (providers));
-            for (iter = providers; iter; iter = iter->next)
+            DEBUG (" Got %d entries from database...\n", g_list_length (results));
+            /* Append any provided or refreshed paths */
+            GList *callbacks = NULL;
+            callbacks = config_search_providers (path);
+            callbacks = g_list_concat (config_search_refreshers (path), callbacks);
+            DEBUG (" Got %d entries from providers and refreshers...\n", g_list_length (callbacks));
+            for (iter = callbacks; iter; iter = iter->next)
             {
                 char *p = (char*)iter->data;
                 if (!g_list_find_custom (results, p, (GCompareFunc)strcmp))
                     results = g_list_prepend (results, strdup (p));
             }
-            g_list_free_full (providers, free);
+            g_list_free_full (callbacks, free);
         }
     }
     return results;
@@ -1149,17 +1150,19 @@ _traverse_paths (GList **paths, GList **values, const char *path)
     {
         /* Search database next */
         children = db_search (path_s);
-
-        /* Append any provided paths */
-        GList *providers = NULL;
-        providers = config_search_providers (path_s);
-        for (iter = providers; iter; iter = iter->next)
+        DEBUG (" Got %d entries from database...\n", g_list_length (children));
+        /* Append any provided or refreshed paths */
+        GList *callbacks = NULL;
+        callbacks = config_search_providers (path_s);
+        callbacks = g_list_concat (config_search_refreshers (path), callbacks);
+        DEBUG (" Got %d entries from providers and refreshers...\n", g_list_length (callbacks));
+        for (iter = callbacks; iter; iter = iter->next)
         {
             char *p = (char*)iter->data;
             if (!g_list_find_custom (children, p, (GCompareFunc)strcmp))
                 children = g_list_prepend (children, strdup (p));
         }
-        g_list_free_full (providers, free);
+        g_list_free_full (callbacks, free);
     }
     for (iter = children; iter; iter = g_list_next (iter))
     {

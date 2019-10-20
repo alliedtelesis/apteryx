@@ -297,6 +297,12 @@ config_get_providers (const char *path)
 }
 
 GList *
+config_search_refreshers (const char *path)
+{
+    return cb_search (refresh_list, path);
+}
+
+GList *
 config_get_refreshers (const char *path)
 {
     return cb_match (refresh_list, path);

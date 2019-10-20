@@ -2253,6 +2253,10 @@ test_refresh_timeout ()
     CU_ASSERT (value && strcmp (value, "0") == 0);
     if (value)
         free ((void *) value);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
     usleep (_cb_timeout);
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "1") == 0);
@@ -2333,6 +2337,42 @@ test_refresh_search ()
     apteryx_unrefresh (path, test_refresh_tree_callback);
     CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
     CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static uint64_t
+test_refresh_subpath_callback (const char *path)
+{
+    char *value = g_strdup_printf ("%d", _cb_count);
+    apteryx_set (TEST_PATH"/atmf/backups/locations/first", value);
+    g_free (value);
+    _cb_count++;
+    return _cb_timeout;
+}
+
+void
+test_refresh_subpath_search ()
+{
+    const char *path = TEST_PATH"/atmf/backups/locations/*";
+    GList *paths = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_subpath_callback));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/atmf/backups/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/atmf/backups/locations", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT (_cb_count == 0);
+
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/atmf/backups/locations/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/atmf/backups/locations/first", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT (_cb_count == 1);
+
+    apteryx_unrefresh (path, test_refresh_subpath_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/atmf"));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -5467,6 +5507,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh trunk", test_refresh_trunk },
     { "refresh tree", test_refresh_tree },
     { "refresh search", test_refresh_search },
+    { "refresh subpath search", test_refresh_subpath_search },
     CU_TEST_INFO_NULL,
 };
 
