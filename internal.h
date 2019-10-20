@@ -227,6 +227,7 @@ void config_init (void);
 void config_shutdown (void);
 /* Returns a list of paths */
 GList *config_search_providers (const char *path);
+GList *config_search_refreshers (const char *path);
 
 /* Returns a list of cb_info_t* */
 GList *config_get_indexers (const char *path);
