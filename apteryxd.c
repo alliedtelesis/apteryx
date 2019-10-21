@@ -1154,7 +1154,7 @@ _traverse_paths (GList **paths, GList **values, const char *path)
         /* Append any provided or refreshed paths */
         GList *callbacks = NULL;
         callbacks = config_search_providers (path_s);
-        callbacks = g_list_concat (config_search_refreshers (path), callbacks);
+        callbacks = g_list_concat (config_search_refreshers (path_s), callbacks);
         DEBUG (" Got %d entries from providers and refreshers...\n", g_list_length (callbacks));
         for (iter = callbacks; iter; iter = iter->next)
         {
@@ -1166,6 +1166,7 @@ _traverse_paths (GList **paths, GList **values, const char *path)
     }
     for (iter = children; iter; iter = g_list_next (iter))
     {
+        DEBUG ("TRAVERSE: %s\n", (const char *) iter->data);
         _traverse_paths (paths, values, (const char *) iter->data);
     }
     g_list_free_full (children, g_free);
