@@ -248,7 +248,7 @@ handle_refresh (rpc_message msg)
     DEBUG ("REFRESH CB: \"%s\" (0x%"PRIx64")\n", path, ref);
 
     /* Process callback */
-    timeout = (uint64_t) call_callback (ref, path, NULL);
+    timeout = (uint64_t) (size_t) call_callback (ref, path, NULL);
     rpc_msg_reset (msg);
     rpc_msg_encode_uint64 (msg, timeout);
     return true;
