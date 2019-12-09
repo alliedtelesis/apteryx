@@ -1148,6 +1148,9 @@ _traverse_paths (GList **paths, GList **values, const char *path)
     char *path_s = g_strdup_printf ("%s/", path);
     if (!index_get (path_s, &children))
     {
+        /* Call refreshers for the search path */
+        call_refreshers (path_s);
+
         /* Search database next */
         children = db_search (path_s);
         DEBUG (" Got %d entries from database...\n", g_list_length (children));

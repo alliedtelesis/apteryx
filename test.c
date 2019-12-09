@@ -2376,6 +2376,25 @@ test_refresh_subpath_search ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_refresh_traverse ()
+{
+    const char *path = TEST_PATH"/interfaces/*";
+    GNode *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+    CU_ASSERT ((value = apteryx_get_tree (TEST_PATH"/interfaces")) != NULL);
+    CU_ASSERT (value != NULL);
+    if (value)
+        apteryx_free_tree (value);
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_up (const char *path)
 {
@@ -5508,6 +5527,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh tree", test_refresh_tree },
     { "refresh search", test_refresh_search },
     { "refresh subpath search", test_refresh_subpath_search },
+    { "refresh traverse", test_refresh_traverse },
     CU_TEST_INFO_NULL,
 };
 
