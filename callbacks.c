@@ -268,8 +268,10 @@ cb_search (struct callback_node *node, const char *path)
     {
         if (strcmp ((char *) iter->data, "*") != 0)
         {
-            full =
-                g_list_prepend (full, g_strdup_printf ("%s%s", path, (char *) iter->data));
+            char *npath = g_strdup_printf ("%s%s",
+                                           strlen (path) > 0 ? path : "/",
+                                           (char *) iter->data);
+            full = g_list_prepend (full, npath);
         }
     }
     g_list_free_full (matches, g_free);
