@@ -2624,6 +2624,22 @@ test_provide_search ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_provide_search_root ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
+    CU_ASSERT ((paths = apteryx_search ("/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 2);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH, (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+
+    apteryx_unprovide (path, test_provide_callback_up);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 char *test_provide_cb(const char *path)
 {
 	return strdup("tmp");
@@ -5542,6 +5558,7 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide callback get", test_provide_callback_get },
     { "provide callback get null", test_provide_callback_get_null },
     { "provide search", test_provide_search },
+    { "provide search root", test_provide_search_root },
     { "provide wildcard + search", test_provider_wildcard_search },
     { "provide and db search", test_provide_search_db },
     { "provide after db", test_provide_after_db },
