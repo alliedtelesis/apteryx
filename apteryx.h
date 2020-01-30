@@ -567,7 +567,7 @@ typedef uint64_t (*apteryx_refresh_callback) (const char *path);
  * Whenever a get is performed on the given path, callback is
  * called to refresh the values of the tree.
  * examples: (using contrived usage example)
- * - apteryx_refresh ("/hw/interfaces/\*\/counters/*", refresh_intf_tx_counters, 50);
+ * - apteryx_refresh ("/hw/interfaces/\*\/counters/\*", refresh_intf_tx_counters, 50);
  * @param path path to the value that others will request
  * @param cb function to be called if others request the path
  * @param timeout time after refresh is requred
