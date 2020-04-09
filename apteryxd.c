@@ -325,7 +325,13 @@ call_refreshers (const char *path)
 
         /* Check if it is time to refresh */
         if (now < (timestamp + refresher->timeout))
+        {
+            DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
+                   path, now, timestamp, refresher->timeout);
             continue;
+        }
+        DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
+               path, now, timestamp, refresher->timeout);
 
         /* Check for local refresher */
         if (refresher->id == getpid ())
@@ -366,8 +372,11 @@ call_refreshers (const char *path)
         {
             rpc_client_release (rpc, rpc_client, true);
             timeout = rpc_msg_decode_uint64 (&msg);
+            DEBUG ("REFRESH again in %"PRIu64"us\n", timeout);
             if (refresher->timeout == 0 || timeout < refresher->timeout)
                 refresher->timeout = timeout;
+            /* Make sure the DB has up to date timestamps */
+            db_update_timestamps (path, now);
         }
         rpc_msg_reset (&msg);
 
