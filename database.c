@@ -82,6 +82,30 @@ db_timestamp (const char *path)
     return timestamp;
 }
 
+static void
+_db_update_timestamps (struct database_node *node, uint64_t ts)
+{
+    node->timestamp = ts;
+    GList *children = hashtree_children_get (&node->hashtree_node);
+    for (GList *iter = children; iter; iter = g_list_next (iter))
+    {
+        _db_update_timestamps ((struct database_node *) iter->data, ts);
+    }
+}
+
+void
+db_update_timestamps (const char *path, uint64_t ts)
+{
+    pthread_rwlock_rdlock (&db_lock);
+    struct hashtree_node *node = hashtree_path_to_node (root, path);
+    if (node)
+    {
+        _db_update_timestamps ((struct database_node *) node, ts);
+    }
+    pthread_rwlock_unlock (&db_lock);
+    return;
+}
+
 bool
 db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
 {

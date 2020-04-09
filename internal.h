@@ -183,6 +183,7 @@ bool db_delete_no_lock (const char *path, uint64_t ts);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
+void db_update_timestamps (const char *path, uint64_t ts);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000

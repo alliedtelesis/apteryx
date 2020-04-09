@@ -2395,6 +2395,93 @@ test_refresh_traverse ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static uint64_t
+test_refresh_no_change_callback (const char *path)
+{
+    _cb_count++;
+    return _cb_timeout;
+}
+
+void
+test_refresh_path_empty ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_no_change_callback));
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    apteryx_unrefresh (path, test_refresh_no_change_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_no_change ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_no_change_callback));
+
+    apteryx_set (path, "0");
+    usleep (_cb_timeout);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+
+    apteryx_unrefresh (path, test_refresh_no_change_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_tree_no_change ()
+{
+    const char *path = TEST_PATH"/zones/private/network/lan/count";
+    GList *paths = NULL;
+    const char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    apteryx_set (path, "0");
+    usleep (_cb_timeout);
+    CU_ASSERT (apteryx_refresh (TEST_PATH"/zones/*", test_refresh_no_change_callback));
+
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    if (value)
+        free ((void *) value);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/zones/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/zones/private", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/zones/")) != NULL);
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/zones/private", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, free);
+
+    apteryx_unrefresh (TEST_PATH"/zones/*", test_refresh_no_change_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static char*
 test_provide_callback_up (const char *path)
 {
@@ -5544,6 +5631,9 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh search", test_refresh_search },
     { "refresh subpath search", test_refresh_subpath_search },
     { "refresh traverse", test_refresh_traverse },
+    { "refresh path empty", test_refresh_path_empty },
+    { "refresh no change", test_refresh_no_change },
+    { "refresh tree no change", test_refresh_tree_no_change },
     CU_TEST_INFO_NULL,
 };
 
