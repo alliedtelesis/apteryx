@@ -91,6 +91,7 @@ _db_update_timestamps (struct database_node *node, uint64_t ts)
     {
         _db_update_timestamps ((struct database_node *) iter->data, ts);
     }
+    g_list_free (children);
 }
 
 void
