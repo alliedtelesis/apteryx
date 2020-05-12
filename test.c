@@ -2969,6 +2969,44 @@ test_tree_find_children ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_tree_path_node ()
+{
+    GNode *root;
+    GNode *node;
+
+    root = APTERYX_NODE (NULL, TEST_PATH);
+    CU_ASSERT (root != NULL);
+    node = APTERYX_NODE (root, "interfaces");
+    CU_ASSERT (node != NULL);
+    node = APTERYX_NODE (node, "eth0");
+    CU_ASSERT (node != NULL);
+    node = NULL;
+
+    /* Test successful searches
+     */
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH)) != NULL);
+    CU_ASSERT (strcmp (APTERYX_NAME (node), TEST_PATH) == 0);
+    CU_ASSERT ((node = apteryx_path_node (root, "/interfaces")) != NULL);
+    CU_ASSERT (strcmp (APTERYX_NAME (node), "interfaces") == 0);
+    CU_ASSERT ((node = apteryx_path_node (root, "/interfaces/eth0")) != NULL);
+    CU_ASSERT (strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/interfaces/eth0")) != NULL);
+    CU_ASSERT (strcmp (APTERYX_NAME (node), "eth0") == 0);
+
+    /* Test it fails correctly
+     */
+    CU_ASSERT ((node = apteryx_path_node (root, "")) == NULL);
+    CU_ASSERT ((node = apteryx_path_node (root, "/interface")) == NULL);
+    CU_ASSERT ((node = apteryx_path_node (root, "/interfaces/eth1")) == NULL);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/interfaces/eth1")) == NULL);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"ing/interfaces/eth0")) == NULL);
+    CU_ASSERT ((node = apteryx_path_node (root, "/tes/interfaces/eth0")) == NULL);
+
+    g_node_destroy (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int
 test_tree_sort (const char *a, const char *b)
 {
@@ -5678,6 +5716,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes deep", test_tree_nodes_deep },
     { "tree nodes wide", test_tree_nodes_wide },
     { "tree find children", test_tree_find_children },
+    { "tree find node", test_tree_path_node },
     { "tree sort children", test_tree_sort_children },
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },

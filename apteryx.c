@@ -934,6 +934,74 @@ apteryx_node_path (GNode* node)
     return path;
 }
 
+static GNode *
+_apteryx_path_node (GNode *parent, const char *path)
+{
+    char *name;
+    GNode *node;
+    size_t component_len = strchrnul (path, '/') - path;
+
+    for (node = g_node_first_child (parent); node != NULL; node = node->next)
+    {
+        name = APTERYX_NAME (node);
+        if (name != NULL && strncmp (name, path, component_len) == 0)
+        {
+            if (name[component_len] == '\0')
+            {
+                if (path[component_len] == '/')
+                {
+                    node = _apteryx_path_node (node, path + component_len + 1);
+                }
+                else if (path[component_len] != '\0')
+                {
+                    continue;
+                }
+                return node;
+            }
+        }
+    }
+    return NULL;
+}
+
+GNode *
+apteryx_path_node (GNode *node, const char *path)
+{
+    GNode *found = NULL;
+    char *node_name;
+    size_t node_name_len;
+
+    ASSERT ((ref_count > 0), return false, "PATH_NODE: Not initialised\n");
+    ASSERT (node != NULL && path != NULL, return false, "PATH_NODE: Invalid parameters\n");
+
+    /* Check path */
+    path = validate_path (path, NULL);
+    if (path == NULL)
+    {
+        ERROR ("PATH_NODE: invalid path (%s)!\n", path);
+        assert (!apteryx_debug || path);
+        return NULL;
+    }
+
+    node_name = APTERYX_NAME (node);
+    if (node_name != NULL)
+    {
+        node_name_len = strlen (node_name);
+        if (strncmp (node_name, path, node_name_len - 1) == 0)
+        {
+            if (path[node_name_len] == '\0')
+            {
+                return node;
+            }
+            else if (path[node_name_len] == '/')
+            {
+                path += node_name_len;
+            }
+        }
+        found = _apteryx_path_node (node, path + 1);
+    }
+    return found;
+}
+
 static gboolean
 _set_multi (GNode *node, gpointer data)
 {
