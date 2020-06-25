@@ -1802,3 +1802,55 @@ apteryx_timestamp (const char *path)
     DEBUG ("    = %"PRIu64"\n", value);
     return value;
 }
+
+uint64_t
+apteryx_memuse (const char *path)
+{
+    char *url = NULL;
+    uint64_t value = 0;
+    rpc_client rpc_client;
+    rpc_message_t msg = {};
+
+    ASSERT ((ref_count > 0), return 0, "MEMUSE: Not initialised\n");
+    ASSERT (path, return 0, "MEMUSE: Invalid parameters\n");
+
+    DEBUG ("MEMUSE: %s\n", path);
+
+    /* Check path */
+    path = validate_path (path, &url);
+    /* if path is empty, or path ends in '/' but is not the root db path (ie "/") */
+    if (!path ||
+        ((path[strlen(path)-1] == '/') && strlen(path) > 1))
+    {
+        ERROR ("MEMUSE: invalid path (%s)!\n", path);
+        free (url);
+        assert (!apteryx_debug || path);
+        return 0;
+    }
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
+    {
+        ERROR ("MEMUSE: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
+        free (url);
+        return 0;
+    }
+    rpc_msg_encode_uint8 (&msg, MODE_MEMUSE);
+    rpc_msg_encode_string (&msg, path);
+    if (!rpc_msg_send (rpc_client, &msg))
+    {
+        ERROR ("MEMUSE: No response Path(%s)\n", path);
+        rpc_msg_reset (&msg);
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
+        return 0;
+    }
+    value = rpc_msg_decode_uint64 (&msg);
+    rpc_msg_reset (&msg);
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+
+    DEBUG ("    = %"PRIu64"\n", value);
+    return value;
+}

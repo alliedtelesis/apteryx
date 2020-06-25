@@ -1521,6 +1521,34 @@ handle_timestamp (rpc_message msg)
 }
 
 static bool
+handle_memuse (rpc_message msg)
+{
+    uint64_t value;
+    const char *path;
+
+    /* Parse the parameters */
+    path = rpc_msg_decode_string (msg);
+    if (path == NULL)
+    {
+        ERROR ("MEMUSE: Invalid parameters.\n");
+        INC_COUNTER (counters.memuse_invalid);
+        return false;
+    }
+
+    DEBUG ("MEMUSE: %s\n", path);
+    INC_COUNTER (counters.memuse);
+
+    /* Lookup value */
+    value = db_memuse (path);
+
+    /* Send result */
+    DEBUG ("     = %"PRIu64"\n", value);
+    rpc_msg_reset (msg);
+    rpc_msg_encode_uint64 (msg, value);
+    return true;
+}
+
+static bool
 msg_handler (rpc_message msg)
 {
     APTERYX_MODE mode = rpc_msg_decode_uint8 (msg);
@@ -1544,6 +1572,8 @@ msg_handler (rpc_message msg)
         return handle_prune (msg);
     case MODE_TIMESTAMP:
         return handle_timestamp (msg);
+    case MODE_MEMUSE:
+        return handle_memuse (msg);
     default:
         ERROR ("MSG: Unexpected mode %d\n", mode);
         break;

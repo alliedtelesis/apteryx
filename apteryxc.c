@@ -44,9 +44,9 @@ void
 usage ()
 {
 #ifdef TEST
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-u<filter>] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-m|-u<filter>] [<path>] [<value>]\n"
 #else
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-m] [<path>] [<value>]\n"
 #endif
             "  -h   show this help\n"
             "  -d   debug\n"
@@ -58,6 +58,7 @@ usage ()
             "  -p   provide <value> for <path>\n"
             "  -x   proxy <path> via url <value>\n"
             "  -l   last change <path>\n"
+            "  -m   dump memory usage for <path>\n"
 #ifdef TEST
             "  -u   run unit tests (optionally match only tests with <filter>)\n"
 #endif
@@ -104,7 +105,7 @@ main (int argc, char **argv)
     uint64_t value;
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftwpxlu::")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftwpxlmu::")) != -1)
     {
         switch (c)
         {
@@ -134,6 +135,9 @@ main (int argc, char **argv)
             break;
         case 'l':
             mode = MODE_TIMESTAMP;
+            break;
+        case 'm':
+            mode = MODE_MEMUSE;
             break;
 #ifdef TEST
         case 'u':
@@ -283,6 +287,30 @@ main (int argc, char **argv)
         printf ("%"PRIu64"\n", value);
         apteryx_shutdown ();
         break;
+    case MODE_MEMUSE:
+    {
+        if (!path || param)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (apteryx_debug);
+        if (path[strlen(path) - 1] != '/')
+            path = g_strdup_printf ("%s/", path);
+        else
+            path = g_strdup (path);
+        GList *paths = apteryx_search (path);
+        for (_iter = paths; _iter; _iter = _iter->next)
+        {
+            uint64_t size = apteryx_memuse ((char *) _iter->data);
+            if (size != 0)
+                printf ("%10"PRIu64" %s\n", size, (char *) _iter->data);
+        }
+        g_list_free_full (paths, free);
+        apteryx_shutdown ();
+        g_free (path);
+        break;
+    }
 #ifdef TEST
     case MODE_TEST:
         if (path || param)

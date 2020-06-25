@@ -118,6 +118,22 @@ hashtree_children_get (struct hashtree_node *node)
     return children;
 }
 
+uint64_t
+hashtree_node_memuse (struct hashtree_node *node)
+{
+    uint64_t memuse = sizeof (struct hashtree_node);
+    memuse += node->key ? strlen (node->key) + 1 : 0;
+    if (node->children)
+    {
+        /* GLib's hash_table memory usage varies with
+           the number of keys stored. These values are
+           approximations from statistical analysis */
+        memuse += 300;
+        memuse += (32 * g_hash_table_size (node->children));
+    }
+    return memuse;
+}
+
 bool
 hashtree_empty (struct hashtree_node *node)
 {

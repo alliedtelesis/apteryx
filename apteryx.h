@@ -225,6 +225,13 @@ bool apteryx_has_value (const char *path);
 uint64_t apteryx_timestamp (const char *path);
 
 /**
+ * Get the memory usage in bytes of a given path
+ * @param path path to get the memory usage for
+ * @return 0 if the path doesn't exist, memory usage in bytes otherwise
+ */
+uint64_t apteryx_memuse (const char *path);
+
+/**
  * Set a path/value in Apteryx, but only if the existing
  * value has not changed since the specified monotonic timestamp.
  * Can be used for a Compare-And-Swap operation.

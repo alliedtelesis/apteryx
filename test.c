@@ -4449,6 +4449,22 @@ test_timestamp ()
     CU_ASSERT (apteryx_prune (TEST_PATH));
 }
 
+void
+test_memuse ()
+{
+    const char *path = TEST_PATH"/memuse";
+    uint64_t memuse;
+
+    CU_ASSERT (apteryx_memuse (path) == 0);
+    CU_ASSERT (apteryx_set_int (path, "value", 10));
+    CU_ASSERT (apteryx_set_int (path, "value2", 11));
+    CU_ASSERT ((memuse = apteryx_memuse (path)) != 0);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/memuse/value"));
+    CU_ASSERT (apteryx_memuse (path) != 0);
+    CU_ASSERT (apteryx_memuse (path) < memuse);
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+}
+
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
@@ -5601,6 +5617,7 @@ static CU_TestInfo tests_api[] = {
     { "remote path contains colon", test_remote_path_colon },
     { "double fork", test_double_fork },
     { "timestamp", test_timestamp },
+    { "memuse", test_memuse },
     CU_TEST_INFO_NULL,
 };
 

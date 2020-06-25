@@ -103,6 +103,7 @@ typedef enum
     MODE_PRUNE,
     MODE_TIMESTAMP,
     MODE_TEST,
+    MODE_MEMUSE,
 } APTERYX_MODE;
 
 /* Callback */
@@ -156,7 +157,9 @@ typedef struct _cb_info_t
     X(uint32_t, find) \
     X(uint32_t, find_invalid) \
     X(uint32_t, timestamp) \
-    X(uint32_t, timestamp_invalid)
+    X(uint32_t, timestamp_invalid) \
+    X(uint32_t, memuse) \
+    X(uint32_t, memuse_invalid)
 
 /* Counters */
 typedef struct _counters_t
@@ -183,6 +186,7 @@ bool db_delete_no_lock (const char *path, uint64_t ts);
 bool db_get (const char *path, unsigned char **value, size_t *length);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
+uint64_t db_memuse (const char *path);
 void db_update_timestamps (const char *path, uint64_t ts);
 
 /* RPC API */

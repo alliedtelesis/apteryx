@@ -82,6 +82,41 @@ db_timestamp (const char *path)
     return timestamp;
 }
 
+static uint64_t
+db_memuse_no_lock (struct database_node *node)
+{
+    uint64_t memuse = 0;
+    if (node)
+    {
+        memuse = sizeof (struct database_node) - sizeof (struct hashtree_node);
+        memuse += node->length;
+        memuse += hashtree_node_memuse (&node->hashtree_node);
+        GList *children = hashtree_children_get (&node->hashtree_node);
+        for (GList *iter = children; iter; iter = g_list_next (iter))
+        {
+            memuse += db_memuse_no_lock ((struct database_node *) iter->data);
+        }
+        g_list_free (children);
+    }
+    return memuse;
+}
+
+uint64_t
+db_memuse (const char *path)
+{
+    struct database_node *node;
+    uint64_t memuse = 0;
+
+    pthread_rwlock_rdlock (&db_lock);
+    node = (struct database_node *) hashtree_path_to_node (root, path);
+    if (node)
+    {
+        memuse = db_memuse_no_lock (node);
+    }
+    pthread_rwlock_unlock (&db_lock);
+    return memuse;
+}
+
 static void
 _db_update_timestamps (struct database_node *node, uint64_t ts)
 {
