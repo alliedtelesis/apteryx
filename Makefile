@@ -25,7 +25,10 @@ EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
 EXTRA_CFLAGS += -I. $(shell $(PKG_CONFIG) --cflags glib-2.0)
 EXTRA_LDFLAGS := $(shell $(PKG_CONFIG) --libs glib-2.0) -lpthread
 ifneq ($(HAVE_LUA),no)
-LUAVERSION := $(shell $(PKG_CONFIG) --exists lua && echo lua || ($(PKG_CONFIG) --exists lua5.2 && echo lua5.2 || ($(PKG_CONFIG) --exists lua5.3 && echo lua5.3 || echo none)))
+LUAVERSION := $(shell $(PKG_CONFIG) --exists lua5.3 && echo lua5.3 ||\
+	($(PKG_CONFIG) --exists lua5.2 && echo lua5.2 ||\
+	($(PKG_CONFIG) --exists lua && echo lua ||\
+	echo none)))
 ifneq ($(LUAVERSION),none)
 EXTRA_CFLAGS += -DHAVE_LUA $(shell $(PKG_CONFIG) --cflags $(LUAVERSION))
 EXTRA_LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUAVERSION)) -ldl
