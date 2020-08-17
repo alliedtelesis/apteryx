@@ -985,6 +985,12 @@ apteryx_path_node (GNode *node, const char *path)
     node_name = APTERYX_NAME (node);
     if (node_name != NULL)
     {
+        /* Passed node may not be a root node, skip past path slash */
+        if (node_name[0] != '/')
+        {
+            path++;
+        }
+
         node_name_len = strlen (node_name);
         if (strncmp (node_name, path, node_name_len - 1) == 0)
         {
