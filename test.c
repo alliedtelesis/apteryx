@@ -2973,13 +2973,14 @@ void
 test_tree_path_node ()
 {
     GNode *root;
+    GNode *first_child;
     GNode *node;
 
     root = APTERYX_NODE (NULL, TEST_PATH);
     CU_ASSERT (root != NULL);
-    node = APTERYX_NODE (root, "interfaces");
-    CU_ASSERT (node != NULL);
-    node = APTERYX_NODE (node, "eth0");
+    first_child = APTERYX_NODE (root, "interfaces");
+    CU_ASSERT (first_child != NULL);
+    node = APTERYX_NODE (first_child, "eth0");
     CU_ASSERT (node != NULL);
     node = NULL;
 
@@ -2992,6 +2993,8 @@ test_tree_path_node ()
     CU_ASSERT ((node = apteryx_path_node (root, "/interfaces/eth0")) != NULL);
     CU_ASSERT (strcmp (APTERYX_NAME (node), "eth0") == 0);
     CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/interfaces/eth0")) != NULL);
+    CU_ASSERT (strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT ((node = apteryx_path_node (first_child, "/interfaces/eth0")) != NULL);
     CU_ASSERT (strcmp (APTERYX_NAME (node), "eth0") == 0);
 
     /* Test it fails correctly
