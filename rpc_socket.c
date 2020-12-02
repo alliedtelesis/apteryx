@@ -29,7 +29,7 @@ recv_data (int fd, void *data, size_t len)
             {
                 continue;
             }
-            else if (errno == ECONNRESET)
+            else if (errno == ECONNRESET || errno == ECONNABORTED)
             {
                 DEBUG ("RPC[%i]: Recv data: %s\n", fd, strerror (errno));
             }
