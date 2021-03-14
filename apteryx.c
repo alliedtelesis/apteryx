@@ -505,7 +505,7 @@ apteryx_dump (const char *path, FILE *fp)
 
     if (strlen (path) > 0 && (value = apteryx_get (path)))
     {
-        fprintf (fp, "%-64s%s\n", path, value);
+        fprintf (fp, "%-64s\t%s\n", path, value);
         free (value);
     }
 
