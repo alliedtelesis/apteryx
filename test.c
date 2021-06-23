@@ -2268,6 +2268,59 @@ test_refresh_timeout ()
 }
 
 static uint64_t
+test_refresh_a_callback (const char *path)
+{
+    _cb_count++;
+    apteryx_set_int (TEST_PATH"/interfaces/eth0", "one_hundred", 100);
+    return _cb_timeout;
+}
+
+static uint64_t
+test_refresh_b_callback (const char *path)
+{
+    _cb_count++;
+    apteryx_set_int (TEST_PATH"/interfaces/eth0", "collision", 200);
+    return _cb_timeout;
+}
+
+static uint64_t
+test_refresh_c_callback (const char *path)
+{
+    _cb_count++;
+    apteryx_set_int (TEST_PATH"/interfaces/eth0", "collision", 300);
+    return _cb_timeout;
+}
+
+void
+test_refresh_collision ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/*";
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+
+    CU_ASSERT (apteryx_refresh (path, test_refresh_a_callback));
+    CU_ASSERT (apteryx_refresh (path, test_refresh_b_callback));
+    CU_ASSERT (apteryx_refresh (path, test_refresh_c_callback));
+
+    /* We should get 3 refreshes, one for each callback above.
+     * "one_hundred" is provided by one, and the other two collide
+     * trying to set the "collision" field
+     */
+    CU_ASSERT (100 == apteryx_get_int (TEST_PATH"/interfaces/eth0","one_hundred"));
+    CU_ASSERT (200 == apteryx_get_int (TEST_PATH"/interfaces/eth0","collision") ||
+               300 == apteryx_get_int (TEST_PATH"/interfaces/eth0","collision"));
+    CU_ASSERT (_cb_count == 3);
+
+    apteryx_unrefresh (path, test_refresh_a_callback);
+    apteryx_unrefresh (path, test_refresh_b_callback);
+    apteryx_unrefresh (path, test_refresh_c_callback);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces/eth0"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static uint64_t
 test_refresh_tree_callback (const char *path)
 {
     GNode* root = APTERYX_NODE (NULL, TEST_PATH"/interfaces/eth0");
@@ -5692,6 +5745,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh path empty", test_refresh_path_empty },
     { "refresh no change", test_refresh_no_change },
     { "refresh tree no change", test_refresh_tree_no_change },
+    { "refresh collision", test_refresh_collision },
     CU_TEST_INFO_NULL,
 };
 
