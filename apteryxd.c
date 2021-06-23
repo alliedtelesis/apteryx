@@ -1146,9 +1146,6 @@ _traverse_paths (GList **paths, GList **values, const char *path)
     char *value = NULL;
     size_t vsize;
 
-    /* Call refreshers */
-    call_refreshers (path);
-
     /* Look for a value - db first */
     if (!db_get (path, (unsigned char**)&value, &vsize))
     {
@@ -1193,6 +1190,23 @@ _traverse_paths (GList **paths, GList **values, const char *path)
     g_free (path_s);
 }
 
+static void
+refreshers_traverse (const char *top_path)
+{
+    GList *iter, *paths = NULL;
+    gchar *needle = g_strdup_printf ("%s/", top_path);
+
+    /* Run down the tree (search_path calls refreshers) */
+    paths = search_path (needle);
+    for (iter = paths; iter; iter = g_list_next (iter))
+    {
+        const char *path = (const char *)iter->data;
+        refreshers_traverse (path);
+    }
+    g_list_free_full (paths, g_free);
+    g_free (needle);
+}
+
 static bool
 handle_traverse (rpc_message msg)
 {
@@ -1216,11 +1230,17 @@ handle_traverse (rpc_message msg)
 
     DEBUG ("TRAVERSE: %s\n", path);
 
+    /* Call refreshers */
+    refreshers_traverse (path);
+
     /* Proxy first */
     if (!proxy_traverse (&paths, &values, path))
     {
-        /* Traverse (local) paths */
+        /* Traverse (local) paths and make sure the database
+         * doesn't change while we're reading it */
+        pthread_rwlock_rdlock (&db_lock);
         _traverse_paths (&paths, &values, path);
+        pthread_rwlock_unlock (&db_lock);
     }
     paths = g_list_reverse (paths);
     values = g_list_reverse (values);

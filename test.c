@@ -3263,6 +3263,75 @@ test_get_tree_null ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static bool thrasher_running = false;
+
+static void *
+database_thrasher (void *unused)
+{
+    GNode *root = NULL;
+    thrasher_running = true;
+    for (int v = 0; thrasher_running; v++)
+    {
+        root = APTERYX_NODE (NULL, strdup (TEST_PATH"/database/filled/with/nothing"));
+        for (int i = 0; i < 50; i++)
+        {
+            char *k = NULL;
+            if(asprintf (&k, "%d", i))
+            {
+                APTERYX_LEAF_INT (root, k, v);
+                free (k);
+            }
+        }
+        apteryx_set_tree (root);
+        apteryx_free_tree (root);
+    }
+    return NULL;
+}
+
+void
+test_get_tree_while_thrashing ()
+{
+    pthread_t thrasher_thread;
+
+    pthread_create (&thrasher_thread, NULL, database_thrasher, NULL);
+
+    /* When we read this tree all values should be the same,
+     * and there should be about 50 of them */
+    usleep (TEST_SLEEP_TIMEOUT);
+    GNode *root = apteryx_get_tree (TEST_PATH"/database/filled/with/nothing");
+
+    CU_ASSERT (root != NULL);
+    if (root)
+    {
+        CU_ASSERT (APTERYX_NUM_NODES (root) == 51);
+        int found_value = 0;
+        for (int i = 0; i < 50; i++)
+        {
+            char k[10];
+            int value;
+
+            sprintf(k, "%d", i);
+            GNode *child = apteryx_find_child (root, k);
+            CU_ASSERT (child != NULL);
+            value = atoi (APTERYX_VALUE (child));
+            if (found_value)
+            {
+                CU_ASSERT (found_value == value);
+            }
+            else
+            {
+                found_value = value;
+            }
+        }
+        apteryx_free_tree (root);
+    }
+
+    thrasher_running = false;
+    pthread_join (thrasher_thread, NULL);
+
+    apteryx_prune (TEST_PATH"/database/filled/with/nothing");
+}
+
 void
 test_query_basic ()
 {
@@ -5817,6 +5886,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     { "get tree provided", test_get_tree_provided },
+    { "get tree thrashing" , test_get_tree_while_thrashing },
     { "query basic", test_query_basic},
     { "query subtree root", test_query_subtree_root},
     { "query one star", test_query_one_star},
