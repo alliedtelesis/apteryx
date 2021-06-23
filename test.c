@@ -2190,6 +2190,7 @@ test_validate_ordering_tree ()
 }
 
 static int _cb_timeout;
+static int _cb_delay = 0;
 static uint64_t
 test_refresh_callback (const char *path)
 {
@@ -2197,6 +2198,7 @@ test_refresh_callback (const char *path)
     apteryx_set (path, value);
     g_free (value);
     _cb_count++;
+    usleep(_cb_delay);
     return _cb_timeout;
 }
 
@@ -2208,6 +2210,7 @@ test_refresh ()
 
     _cb_count = 0;
     _cb_timeout = 0;
+    _cb_delay = 0;
     CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "0") == 0);
@@ -2226,6 +2229,7 @@ test_refresh_unneeded ()
 
     _cb_count = 0;
     _cb_timeout = 5 * 1000 * 1000;
+    _cb_delay = 0;
     CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "0") == 0);
@@ -2248,6 +2252,7 @@ test_refresh_timeout ()
 
     _cb_count = 0;
     _cb_timeout = 5000;
+    _cb_delay = 0;
     CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "0") == 0);
@@ -2277,6 +2282,7 @@ test_refresh_duplicate ()
 
     _cb_count = 0;
     _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    _cb_delay = 0;
     CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
     CU_ASSERT (apteryx_refresh (path2, test_refresh_callback));
 
@@ -2295,6 +2301,40 @@ test_refresh_duplicate ()
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
+
+static void *
+_state_get_thread (void *priv)
+{
+    char *value = apteryx_get ((const char *)priv);
+    /* These should all get called before the refresh is hit a second time */
+    CU_ASSERT(strcmp (value, "0"));
+    free (value);
+    return NULL;
+}
+
+void
+test_refresh_concurrent ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    int client_count = 16;
+    pthread_t clients[client_count];
+    int i;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT;
+    _cb_delay = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
+
+    for (i = 0; i < client_count; i++)
+        pthread_create (&clients[i], NULL, _state_get_thread, (void*)path);
+    for (i = 0; i < client_count; i++)
+        pthread_join (clients[i], NULL);
+
+    apteryx_unrefresh (path, test_refresh_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 
 static uint64_t
 test_refresh_tree_callback (const char *path)
@@ -5722,6 +5762,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh no change", test_refresh_no_change },
     { "refresh tree no change", test_refresh_tree_no_change },
     { "refresh single call", test_refresh_duplicate },
+    { "refresh concurrent", test_refresh_concurrent },
     CU_TEST_INFO_NULL,
 };
 
