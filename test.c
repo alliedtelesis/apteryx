@@ -2267,6 +2267,35 @@ test_refresh_timeout ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+void
+test_refresh_duplicate ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *path2 = TEST_PATH"/interfaces/eth0/*";
+    char *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
+    CU_ASSERT (apteryx_refresh (path2, test_refresh_callback));
+
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    free (value);
+    usleep (TEST_SLEEP_TIMEOUT);
+    _cb_count = 0;
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+
+    CU_ASSERT (value && strcmp (value, "0") == 0);
+    CU_ASSERT (_cb_count == 1);
+    if (value)
+        free ((void *) value);
+    apteryx_unrefresh (path, test_refresh_callback);
+    apteryx_unrefresh (path2, test_refresh_callback);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static uint64_t
 test_refresh_tree_callback (const char *path)
 {
@@ -5692,6 +5721,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh path empty", test_refresh_path_empty },
     { "refresh no change", test_refresh_no_change },
     { "refresh tree no change", test_refresh_tree_no_change },
+    { "refresh single call", test_refresh_duplicate },
     CU_TEST_INFO_NULL,
 };
 
