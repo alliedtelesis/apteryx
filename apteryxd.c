@@ -312,8 +312,7 @@ call_refreshers (const char *path)
     if (!refreshers)
         return;
 
-    /* Get the latest timestamp for the path and now */
-    timestamp = db_timestamp (path);
+    /* Get the time of the request */
     now = calculate_timestamp ();
 
     /* Call each refresher */
@@ -322,6 +321,9 @@ call_refreshers (const char *path)
         cb_info_t *refresher = iter->data;
         rpc_client rpc_client;
         rpc_message_t msg = {};
+
+        /* Get the latest timestamp for the path (could have been updated by another refresher) */
+        timestamp = db_timestamp (path);
 
         /* Check if it is time to refresh */
         if (now < (timestamp + refresher->timeout))
