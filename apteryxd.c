@@ -306,6 +306,7 @@ call_refreshers (const char *path)
     uint64_t timestamp;
     uint64_t now;
     uint64_t timeout = 0;
+    static pthread_mutex_t refresh_lock = PTHREAD_MUTEX_INITIALIZER;
 
     /* Retrieve a list of refreshers for this path */
     refreshers = config_get_refreshers (path);
@@ -322,6 +323,8 @@ call_refreshers (const char *path)
         rpc_client rpc_client;
         rpc_message_t msg = {};
 
+        pthread_mutex_lock (&refresh_lock);
+
         /* Get the latest timestamp for the path (could have been updated by another refresher) */
         timestamp = db_timestamp (path);
 
@@ -330,7 +333,7 @@ call_refreshers (const char *path)
         {
             DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
                    path, now, timestamp, refresher->timeout);
-            continue;
+            goto unlock;
         }
         DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
                path, now, timestamp, refresher->timeout);
@@ -344,7 +347,7 @@ call_refreshers (const char *path)
             timeout = cb (path);
             if (refresher->timeout == 0 || timeout < refresher->timeout)
                 refresher->timeout = timeout;
-            continue;
+            goto unlock;
         }
 
         DEBUG ("REFRESH CB %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
@@ -359,7 +362,7 @@ call_refreshers (const char *path)
                    refresher->path, refresher->id, refresher->ref);
             cb_disable (refresher);
             INC_COUNTER (counters.refreshed_no_handler);
-            continue;
+            goto unlock;
         }
         rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
         rpc_msg_encode_uint64 (&msg, refresher->ref);
@@ -384,6 +387,9 @@ call_refreshers (const char *path)
 
         INC_COUNTER (counters.refreshed);
         INC_COUNTER (refresher->count);
+        unlock:
+        DEBUG("done");
+        pthread_mutex_unlock(&refresh_lock);
     }
     g_list_free_full (refreshers, (GDestroyNotify) cb_release);
 }

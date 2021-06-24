@@ -2307,7 +2307,7 @@ _state_get_thread (void *priv)
 {
     char *value = apteryx_get ((const char *)priv);
     /* These should all get called before the refresh is hit a second time */
-    CU_ASSERT(strcmp (value, "0"));
+    CU_ASSERT(strcmp(value, "0") == 0);
     free (value);
     return NULL;
 }
@@ -2326,7 +2326,9 @@ test_refresh_concurrent ()
     CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
 
     for (i = 0; i < client_count; i++)
+    {
         pthread_create (&clients[i], NULL, _state_get_thread, (void*)path);
+    }
     for (i = 0; i < client_count; i++)
         pthread_join (clients[i], NULL);
 
