@@ -122,6 +122,7 @@ typedef struct _cb_info_t
     int refcnt;
     uint32_t count;
     uint64_t timeout;
+    pthread_mutex_t lock;
 } cb_info_t;
 
 #define X_FIELDS \
