@@ -93,6 +93,7 @@ cb_create (struct callback_node *tree_root, const char *guid, const char *path,
     }
 
     cb->node = node;
+    pthread_mutex_init (&cb->lock, NULL);
     pthread_mutex_unlock (&tree_lock);
     return cb;
 }
@@ -170,6 +171,7 @@ cb_free (gpointer data, void *param)
     {
         g_free ((void *) cb->uri);
     }
+    pthread_mutex_destroy (&cb->lock);
     g_free (cb);
 }
 

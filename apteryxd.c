@@ -314,6 +314,8 @@ call_refreshers (const char *path)
 
     /* Get the time of the request */
     now = calculate_timestamp ();
+    /* Get the latest timestamp for the path */
+    timestamp = db_timestamp (path);
 
     /* Call each refresher */
     for (iter = refreshers; iter; iter = g_list_next (iter))
@@ -322,15 +324,21 @@ call_refreshers (const char *path)
         rpc_client rpc_client;
         rpc_message_t msg = {};
 
-        /* Get the latest timestamp for the path (could have been updated by another refresher) */
-        timestamp = db_timestamp (path);
+        if (pthread_mutex_trylock (&refresher->lock))
+        {
+            /* If this refresher was being called when we came in, take the lock once
+             * the last call has finished, and get the new timestamp.
+             */
+            pthread_mutex_lock (&refresher->lock);
+            timestamp = db_timestamp (path);
+        }
 
         /* Check if it is time to refresh */
         if (now < (timestamp + refresher->timeout))
         {
             DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
                    path, now, timestamp, refresher->timeout);
-            continue;
+            goto unlock;
         }
         DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
                path, now, timestamp, refresher->timeout);
@@ -344,7 +352,7 @@ call_refreshers (const char *path)
             timeout = cb (path);
             if (refresher->timeout == 0 || timeout < refresher->timeout)
                 refresher->timeout = timeout;
-            continue;
+            goto unlock;
         }
 
         DEBUG ("REFRESH CB %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
@@ -359,7 +367,7 @@ call_refreshers (const char *path)
                    refresher->path, refresher->id, refresher->ref);
             cb_disable (refresher);
             INC_COUNTER (counters.refreshed_no_handler);
-            continue;
+            goto unlock;
         }
         rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
         rpc_msg_encode_uint64 (&msg, refresher->ref);
@@ -384,6 +392,8 @@ call_refreshers (const char *path)
 
         INC_COUNTER (counters.refreshed);
         INC_COUNTER (refresher->count);
+    unlock:
+        pthread_mutex_unlock (&refresher->lock);
     }
     g_list_free_full (refreshers, (GDestroyNotify) cb_release);
 }
