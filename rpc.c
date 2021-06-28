@@ -316,7 +316,7 @@ rpc_server_process (rpc_instance rpc, bool poll)
 {
     assert (rpc);
     int flags;
-    int dummy;
+    int dummy = 0;
 
     /* Start polling if requested */
     if (poll && rpc->queue == NULL)
