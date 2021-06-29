@@ -2312,6 +2312,7 @@ test_refresh_collision ()
     /* Call in order to get times on these fields */
     apteryx_get_int (TEST_PATH"/interfaces/eth0", "one_hundred");
     usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_cb_count == 3);
 
     _cb_count = 0;
     /* We should get 3 refreshes, one for each callback above.
@@ -2319,6 +2320,7 @@ test_refresh_collision ()
      * trying to set the "collision" field
      */
     CU_ASSERT (100 == apteryx_get_int (TEST_PATH"/interfaces/eth0","one_hundred"));
+    CU_ASSERT (_cb_count == 3);
     CU_ASSERT (200 == apteryx_get_int (TEST_PATH"/interfaces/eth0","collision") ||
                300 == apteryx_get_int (TEST_PATH"/interfaces/eth0","collision"));
     CU_ASSERT (_cb_count == 3);
