@@ -946,6 +946,31 @@ test_index_and_provide ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+static GList *
+_indexer_writes (const char *d)
+{
+    apteryx_set_string (d, "one", "1");
+    apteryx_set_string (d, "two", "2");
+    return NULL;
+}
+
+void
+test_index_writes ()
+{
+    char *path = TEST_PATH"/counters/*";
+    GNode *root;
+
+    CU_ASSERT (apteryx_index (path, _indexer_writes));
+    CU_ASSERT ((root = apteryx_get_tree (TEST_PATH"/counters")) == NULL);
+    if (root)
+        apteryx_free_tree (root);
+    CU_ASSERT (apteryx_unindex (path, _indexer_writes));
+    apteryx_prune (TEST_PATH"/counters");
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+
 void
 test_prune ()
 {
@@ -2427,6 +2452,29 @@ test_refresh_tree ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+/* If a refresher is called while traversing the database we can end up
+ * with lock contention when the refresher attempts to write to the
+ * database.
+ */
+void
+test_refresh_during_get_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/*";
+    GNode *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+    CU_ASSERT ((value = apteryx_get_tree (TEST_PATH"/interfaces/eth0")) != NULL);
+    CU_ASSERT (value != NULL);
+    if (value)
+        apteryx_free_tree (value);
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_refresh_search ()
 {
@@ -2835,9 +2883,10 @@ test_provide_search_root ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-char *test_provide_cb(const char *path)
+char *
+test_provide_cb(const char *path)
 {
-	return strdup("tmp");
+    return strdup("tmp");
 }
 
 void
@@ -3286,6 +3335,40 @@ test_get_tree_provided ()
     CU_ASSERT (node && g_node_n_children (node) == 1);
 
     CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* Writing to the database during a provide is a bit cruel and nasty,
+ * but we need to be sure that we don't get dead locked while trying
+ * to traverse the tree.
+ */
+char *
+test_provide_writes_cb (const char *path)
+{
+    apteryx_set (TEST_PATH"/unimportant", NULL);
+    return strdup ("tmp");
+}
+
+void
+test_get_tree_provider_write ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_writes_cb));
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && !APTERYX_HAS_VALUE (root));
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+
+    CU_ASSERT (apteryx_unprovide (path, test_provide_writes_cb));
     apteryx_free_tree (root);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -5810,6 +5893,7 @@ static CU_TestInfo tests_api_index[] = {
     { "index no handler", test_index_no_handler },
     { "index remove handler", test_index_remove_handler },
     { "index x/* with provide x/*", test_index_and_provide },
+    { "indexer writes to database", test_index_writes },
     { "index path ends with /", test_index_always_ends_with_slash },
     CU_TEST_INFO_NULL,
 };
@@ -5864,6 +5948,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh timeout", test_refresh_timeout },
     { "refresh trunk", test_refresh_trunk },
     { "refresh tree", test_refresh_tree },
+    { "refresh during get_tree", test_refresh_during_get_tree },
     { "refresh search", test_refresh_search },
     { "refresh subpath search", test_refresh_subpath_search },
     { "refresh traverse", test_refresh_traverse },
@@ -5924,6 +6009,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     { "get tree provided", test_get_tree_provided },
+    { "get tree provider writes", test_get_tree_provider_write },
     { "get tree thrashing" , test_get_tree_while_thrashing },
     { "query basic", test_query_basic},
     { "query subtree root", test_query_subtree_root},
