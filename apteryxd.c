@@ -1166,9 +1166,6 @@ _traverse_paths (GList **paths, GList **values, const char *path)
     char *path_s = g_strdup_printf ("%s/", path);
     if (!index_get (path_s, &children))
     {
-        /* Call refreshers for the search path */
-        call_refreshers (path_s);
-
         /* Search database next */
         children = db_search (path_s);
         DEBUG (" Got %d entries from database...\n", g_list_length (children));
@@ -1241,10 +1238,26 @@ handle_traverse (rpc_message msg)
     if (!proxy_traverse (&paths, &values, path))
     {
         /* Traverse (local) paths and make sure the database
-         * doesn't change while we're reading it */
-        pthread_rwlock_rdlock (&db_lock);
+         * doesn't change while we're reading it. If there are
+         * providers or indexers we are unable to serve a tree
+         * from a single point in time, so don't bother with
+         * the locking.
+         * */
+        bool lock_possible = true;
+        GList *callbacks = NULL;
+        callbacks = config_search_providers (path);
+        if (!callbacks)
+            callbacks = config_search_indexers (path);
+        if (callbacks)
+        {
+            lock_possible = false;
+            g_list_free_full (callbacks, free);
+        }
+        if (lock_possible)
+            pthread_rwlock_rdlock (&db_lock);
         _traverse_paths (&paths, &values, path);
-        pthread_rwlock_unlock (&db_lock);
+        if (lock_possible)
+            pthread_rwlock_unlock (&db_lock);
     }
     paths = g_list_reverse (paths);
     values = g_list_reverse (values);
