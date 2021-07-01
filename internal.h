@@ -232,6 +232,7 @@ void rpc_client_release (rpc_instance rpc, rpc_client client, bool keep);
 void config_init (void);
 void config_shutdown (void);
 /* Returns a list of paths */
+GList *config_search_indexers (const char *path);
 GList *config_search_providers (const char *path);
 GList *config_search_refreshers (const char *path);
 

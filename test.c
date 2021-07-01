@@ -2454,7 +2454,8 @@ test_refresh_tree ()
 
 /* If a refresher is called while traversing the database we can end up
  * with lock contention when the refresher attempts to write to the
- * database.
+ * database. The callback can be expected to be called more than once
+ * during the initial path building.
  */
 void
 test_refresh_during_get_tree ()
@@ -2471,7 +2472,6 @@ test_refresh_during_get_tree ()
         apteryx_free_tree (value);
     apteryx_unrefresh (path, test_refresh_tree_callback);
     CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
-    CU_ASSERT (_cb_count == 1);
     CU_ASSERT (assert_apteryx_empty ());
 }
 

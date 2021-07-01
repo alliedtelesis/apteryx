@@ -279,6 +279,12 @@ config_shutdown ()
 }
 
 GList *
+config_search_indexers (const char *path)
+{
+    return cb_search (index_list, path);
+}
+
+GList *
 config_get_indexers (const char *path)
 {
     return cb_match (index_list, path);
