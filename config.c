@@ -332,6 +332,24 @@ config_get_validators (const char *path)
     return cb_match (validation_list, path);
 }
 
+bool
+config_tree_has_refreshers (const char *path)
+{
+    return cb_exists (refresh_list, path);
+}
+
+bool
+config_tree_has_providers (const char *path)
+{
+    return cb_exists (provide_list, path);
+}
+
+bool
+config_tree_has_indexers (const char *path)
+{
+    return cb_exists (index_list, path);
+}
+
 void
 config_init (void)
 {

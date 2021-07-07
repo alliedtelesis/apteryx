@@ -2414,6 +2414,58 @@ test_refresh_tree_callback (const char *path)
     return _cb_timeout;
 }
 
+
+void
+test_refresh_wildcards ()
+{
+    const char *path = TEST_PATH"/interfaces/*/state/*";
+    _cb_count = 0;
+    _cb_timeout = 0;
+    _cb_delay = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+
+    /* We won't use the wildcard in the refresher path to traverse past
+     * interfaces and into state, so this one should not return any
+     * data.
+     */
+    GNode *root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root == NULL);
+    if (root)
+        apteryx_free_tree (root);
+    apteryx_prune (TEST_PATH);
+
+    /* Once there is something stored in /interfaces/eth0 we can get past
+     * and far enough to call the refresher.
+     */
+    apteryx_set (TEST_PATH"/interfaces/eth0/name", "eth0");
+    _cb_count = 0;
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count > 0);
+    if (root)
+        apteryx_free_tree (root);
+    apteryx_prune (TEST_PATH);
+
+    /* Even without any data in the tree, if we have no more wildcards
+     * in path (on the end is fine) we can traverse down the refresh
+     * path to call it (over the state key).
+     */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    if (root)
+        apteryx_free_tree (root);
+    apteryx_prune (TEST_PATH);
+
+    /* This one is probably the simplest case and tested elsewhere */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0/state");
+    CU_ASSERT (root != NULL);
+    if (root)
+        apteryx_free_tree (root);
+    apteryx_prune (TEST_PATH);
+
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+}
+
 void
 test_refresh_trunk ()
 {
@@ -2536,6 +2588,25 @@ void
 test_refresh_traverse ()
 {
     const char *path = TEST_PATH"/interfaces/*";
+    GNode *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+    CU_ASSERT ((value = apteryx_get_tree (TEST_PATH"/interfaces")) != NULL);
+    CU_ASSERT (value != NULL);
+    if (value)
+        apteryx_free_tree (value);
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_traverse_deeper ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/*";
     GNode *value = NULL;
 
     _cb_count = 0;
@@ -4370,6 +4441,45 @@ exit:
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+/* This test is an attempt to reproduce the performance of a
+ * moderately large tree with realistic branch layouts.
+ */
+void
+test_perf_get_tree_real ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode* root;
+    uint64_t start, time;
+    int count = 10;
+    int i, j, k;
+
+    /* I should do this with set tree but I'm too lazy */
+    for (i = 0; i < 250; i++)
+        for (j = 0; j < 50; j++)
+            for (k = 0; k < 4; k++)
+            {
+                sprintf (value, "dir%d/dir%d/value%d", i, j, k);
+                CU_ASSERT (apteryx_set_int (path, value, k));
+            }
+
+    start = get_time_us ();
+    for (i = 0; i < count; i++)
+    {
+        CU_ASSERT ((root = apteryx_get_tree (path)) != NULL);
+        if (!root)
+            goto exit;
+        apteryx_free_tree (root);
+    }
+    time = ((get_time_us () - start) / count);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+
+exit:
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+
 void
 test_perf_get_tree ()
 {
@@ -5952,11 +6062,13 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh search", test_refresh_search },
     { "refresh subpath search", test_refresh_subpath_search },
     { "refresh traverse", test_refresh_traverse },
+    { "refresh traverse deeper", test_refresh_traverse_deeper },
     { "refresh path empty", test_refresh_path_empty },
     { "refresh no change", test_refresh_no_change },
     { "refresh tree no change", test_refresh_tree_no_change },
     { "refresh collision", test_refresh_collision },
     { "refresh concurrent", test_refresh_concurrent },
+    { "refresh various wildcards", test_refresh_wildcards },
     CU_TEST_INFO_NULL,
 };
 
@@ -6061,6 +6173,7 @@ static CU_TestInfo tests_performance[] = {
     { "get", test_perf_get },
     { "get(tcp)", test_perf_tcp_get },
     { "get(tcp6)", test_perf_tcp6_get },
+    { "get tree real", test_perf_get_tree_real },
     { "get tree 50", test_perf_get_tree },
     { "get tree 5000", test_perf_get_tree_5000 },
     { "get null", test_perf_get_null },

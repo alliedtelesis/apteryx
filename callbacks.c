@@ -392,6 +392,77 @@ cb_match (struct callback_node *list, const char *path)
     return matches;
 }
 
+/* Finds if a given path has any callbacks from this tree under it */
+bool
+cb_exists (struct callback_node *node, const char *path)
+{
+    bool found = false;
+    if (node->following)
+    {
+        return true;
+    }
+
+    /* Terminating condition */
+    if (strlen (path) == 0 || !strchr (path + 1, '/'))
+    {
+        if (node->directory)
+        {
+            return true;
+        }
+
+        struct hashtree_node *next_stage =
+            hashtree_path_to_node (&node->hashtree_node, "/*");
+        if (next_stage)
+        {
+            return true;
+        }
+
+        if (!hashtree_empty (&node->hashtree_node))
+        {
+            return true;
+        }
+
+        node = (struct callback_node *) hashtree_path_to_node (&node->hashtree_node, path);
+        if (node && node->exact)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    char *tmp = strdup (path + 1);
+    if (strchr (tmp, '/'))
+    {
+        *strchr (tmp, '/') = '\0';
+    }
+
+    struct hashtree_node *next_stage = hashtree_path_to_node (&node->hashtree_node, "/*");
+    if (next_stage)
+    {
+        found = cb_exists ((struct callback_node *) next_stage,  path + strlen (tmp) + 1);
+    }
+
+    if (!found && strlen (tmp) > 0)
+    {
+        char *with_leading_slash = NULL;
+        if (asprintf (&with_leading_slash, "/%s", tmp) < 0)
+            goto exit;
+
+        next_stage = hashtree_path_to_node (&node->hashtree_node, with_leading_slash);
+        if (next_stage)
+        {
+            found = cb_exists ((struct callback_node *) next_stage,
+                                path + strlen (with_leading_slash));
+        }
+        free (with_leading_slash);
+    }
+exit:
+    free (tmp);
+
+    return found;
+}
+
 struct callback_node *
 cb_init (void)
 {

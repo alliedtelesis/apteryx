@@ -244,6 +244,10 @@ GList *config_get_proxies (const char *path);
 GList *config_get_watchers (const char *path);
 GList *config_get_validators (const char *path);
 
+bool config_tree_has_refreshers (const char *path);
+bool config_tree_has_providers (const char *path);
+bool config_tree_has_indexers (const char *path);
+
 /* Callbacks to clients */
 struct callback_node *cb_init (void);
 cb_info_t *cb_create (struct callback_node *list, const char *guid, const char *path,
@@ -258,7 +262,8 @@ void cb_release (cb_info_t *cb);
 #define CB_MATCH_WILD_PATH  (1<<4)
 #define CB_PATH_MATCH_PART  (1<<5)
 GList *cb_match (struct callback_node *list, const char *path);
-/* Returns a list of paths */
+bool cb_exists (struct callback_node *list, const char *path);
+/* Returns a list of paths which have callbacks further down. */
 GList *cb_search (struct callback_node *node, const char *path);
 void cb_shutdown (struct callback_node *root);
 

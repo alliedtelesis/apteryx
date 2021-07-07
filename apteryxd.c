@@ -1143,19 +1143,45 @@ handle_find (rpc_message msg)
     return true;
 }
 
+typedef enum {
+    cb_index = 0x1,
+    cb_provide = 0x2,
+    cb_refresh = 0x4,
+    cb_all = cb_index | cb_provide | cb_refresh,
+} cb_lookup_required;
+
+static char
+_update_path_callbacks (const char *path, char cb_lookup)
+{
+    if (cb_lookup & cb_index)
+        if (!config_tree_has_indexers (path))
+            cb_lookup &=~ cb_index;
+
+    if (cb_lookup & cb_provide)
+        if (!config_tree_has_providers (path))
+            cb_lookup &=~ cb_provide;
+
+    if (cb_lookup & cb_refresh)
+        if (!config_tree_has_refreshers (path))
+            cb_lookup &=~ cb_refresh;
+
+    return cb_lookup;
+}
+
 static void
-_traverse_paths (GList **paths, GList **values, const char *path)
+_traverse_paths (GList **paths, GList **values, const char *path, char cb_lookup)
 {
     GList *children, *iter;
     char *value = NULL;
     size_t vsize;
 
     /* Look for a value - db first */
-    if (!db_get (path, (unsigned char**)&value, &vsize))
+    if (!db_get (path, (unsigned char**)&value, &vsize) && (cb_lookup & cb_provide))
     {
         /* Provide next */
         value = provide_get (path);
     }
+
     if (value)
     {
         *paths = g_list_prepend (*paths, (gpointer) g_strdup (path));
@@ -1164,15 +1190,19 @@ _traverse_paths (GList **paths, GList **values, const char *path)
 
     /* Check for children - index first */
     char *path_s = g_strdup_printf ("%s/", path);
-    if (!index_get (path_s, &children))
+    if (!(cb_lookup & cb_index) || !index_get (path_s, &children))
     {
         /* Search database next */
         children = db_search (path_s);
         DEBUG (" Got %d entries from database...\n", g_list_length (children));
         /* Append any provided or refreshed paths */
         GList *callbacks = NULL;
-        callbacks = config_search_providers (path_s);
-        callbacks = g_list_concat (config_search_refreshers (path_s), callbacks);
+        if (cb_lookup & cb_provide)
+            callbacks = config_search_providers (path_s);
+
+        if (cb_lookup & cb_refresh)
+            callbacks = g_list_concat (config_search_refreshers (path_s), callbacks);
+
         DEBUG (" Got %d entries from providers and refreshers...\n", g_list_length (callbacks));
         for (iter = callbacks; iter; iter = iter->next)
         {
@@ -1182,30 +1212,59 @@ _traverse_paths (GList **paths, GList **values, const char *path)
         }
         g_list_free_full (callbacks, free);
     }
+
+    cb_lookup = _update_path_callbacks (path_s, cb_lookup);
+
     for (iter = children; iter; iter = g_list_next (iter))
     {
         DEBUG ("TRAVERSE: %s\n", (const char *) iter->data);
-        _traverse_paths (paths, values, (const char *) iter->data);
+        _traverse_paths (paths, values, (const char *) iter->data, cb_lookup);
     }
     g_list_free_full (children, g_free);
     g_free (path_s);
 }
 
 static void
-refreshers_traverse (const char *top_path)
+refreshers_traverse (const char *top_path, char cb_lookup)
 {
     GList *iter, *paths = NULL;
-    gchar *needle = g_strdup_printf ("%s/", top_path);
+    gchar *needle = g_strdup_printf("%s/", top_path);
 
-    /* Run down the tree (search_path calls refreshers) */
-    paths = search_path (needle);
+    call_refreshers (needle);
+
+    if (!config_tree_has_refreshers (top_path))
+    {
+        free (needle);
+        return;
+    }
+
+    if (cb_lookup & cb_index)
+    {
+        index_get (top_path, &paths);
+        paths = g_list_concat (config_search_indexers (needle), paths);
+    }
+
+    /* We might be able to find our way down to a refresher */
+    if (cb_lookup & cb_refresh)
+    {
+        paths = g_list_concat (config_search_refreshers (needle), paths);
+    }
+
+    if (cb_lookup & cb_provide)
+    {
+        paths = g_list_concat (config_search_providers (needle), paths);
+    }
+    paths = g_list_concat (db_search (needle), paths);
+
+    cb_lookup = _update_path_callbacks (needle, cb_lookup);
+    free (needle);
+
     for (iter = paths; iter; iter = g_list_next (iter))
     {
         const char *path = (const char *) iter->data;
-        refreshers_traverse (path);
+        refreshers_traverse (path, cb_lookup);
     }
     g_list_free_full (paths, g_free);
-    g_free (needle);
 }
 
 static bool
@@ -1232,7 +1291,7 @@ handle_traverse (rpc_message msg)
     DEBUG ("TRAVERSE: %s\n", path);
 
     /* Call refreshers */
-    refreshers_traverse (path);
+    refreshers_traverse (path, cb_all);
 
     /* Proxy first */
     if (!proxy_traverse (&paths, &values, path))
@@ -1255,7 +1314,7 @@ handle_traverse (rpc_message msg)
         }
         if (lock_possible)
             pthread_rwlock_rdlock (&db_lock);
-        _traverse_paths (&paths, &values, path);
+        _traverse_paths (&paths, &values, path, cb_all);
         if (lock_possible)
             pthread_rwlock_unlock (&db_lock);
     }
@@ -1380,7 +1439,7 @@ handle_query (rpc_message msg)
                 for (iter = g_list_first (possible_matches); iter;
                      iter = g_list_next (iter))
                 {
-                    _traverse_paths (&matches, &value_matches, (char *) iter->data);
+                    _traverse_paths (&matches, &value_matches, (char *) iter->data, cb_all);
                 }
             }
             else
