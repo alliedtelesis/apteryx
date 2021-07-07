@@ -190,7 +190,7 @@ main (int argc, char **argv)
             free (param);
         }
         else
-            printf ("Not found\n");
+            fprintf (stderr, "Not found\n");
         apteryx_shutdown ();
         break;
     case MODE_SET:
@@ -201,7 +201,7 @@ main (int argc, char **argv)
         }
         apteryx_init (apteryx_debug);
         if (!apteryx_set (path, param))
-            printf ("Failed\n");
+            fprintf (stderr, "Failed\n");
         apteryx_shutdown ();
         break;
     case MODE_FIND:
