@@ -1874,6 +1874,63 @@ test_watch_myself_blocked ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+static pthread_t watch_thread_id = -1;
+static bool
+test_watch_callback_thread_info (const char *path, const char *value)
+{
+    if (_path)
+        free (_path);
+    if (_value)
+        free (_value);
+
+    usleep(TEST_SLEEP_TIMEOUT / 100);
+
+    if (watch_thread_id == -1)
+        watch_thread_id = pthread_self ();
+    else
+        CU_ASSERT (pthread_self() == watch_thread_id);
+
+    _path = strdup (path);
+    if (value)
+        _value = strdup (value);
+    else
+        _value = NULL;
+    _cb_count++;
+    return true;
+}
+
+
+void
+test_watch_ack_thread ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    _cb_count = 0;
+    watch_thread_id = -1;
+    CU_ASSERT (apteryx_watch (path, test_watch_callback_thread_info));
+    apteryx_set (path, "1");
+    apteryx_set_wait (path, "2");
+
+    /* By the time the apteryx_set_wait finishes we have to have cleared the
+     * backlog of watch callbacks.
+     */
+    CU_ASSERT (_cb_count == 2);
+    apteryx_set (path, "3");
+
+    /* The test sleep timeout should be long enough for the callback to be
+     * called.
+     */
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_cb_count == 3);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_callback_thread_info));
+    apteryx_prune (TEST_PATH);
+    if (_path)
+        free(_path);
+    if (_value)
+        free(_value);
+    _path = NULL;
+}
+
 static bool
 test_perf_watch_callback (const char *path, const char *value)
 {
@@ -6034,6 +6091,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch order", test_watch_order },
     { "watch rpc restart", test_watch_rpc_restart },
     { "watch myself blocked", test_watch_myself_blocked },
+    { "watch and watch_with_ack in same thread", test_watch_ack_thread },
     CU_TEST_INFO_NULL,
 };
 

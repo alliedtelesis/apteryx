@@ -747,6 +747,7 @@ test_cb_exist_locking ()
     }
     test_running = false;
     pthread_join (thrasher, NULL);
+    cb_shutdown (test_list);
 }
 
 CU_TestInfo tests_callbacks[] = {
