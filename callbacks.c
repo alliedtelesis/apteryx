@@ -43,7 +43,7 @@ static pthread_mutex_t tree_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
 cb_create (struct callback_node *tree_root, const char *guid, const char *path,
-        uint64_t id, uint64_t callback)
+           uint64_t id, uint64_t callback)
 {
     cb_info_t *cb = (cb_info_t *) g_malloc0 (sizeof (cb_info_t));
     cb->active = true;
@@ -393,8 +393,8 @@ cb_match (struct callback_node *list, const char *path)
 }
 
 /* Finds if a given path has any callbacks from this tree under it */
-bool
-cb_exists (struct callback_node *node, const char *path)
+static bool
+_cb_exists (struct callback_node *node, const char *path)
 {
     bool found = false;
     if (node->following)
@@ -440,7 +440,7 @@ cb_exists (struct callback_node *node, const char *path)
     struct hashtree_node *next_stage = hashtree_path_to_node (&node->hashtree_node, "/*");
     if (next_stage)
     {
-        found = cb_exists ((struct callback_node *) next_stage,  path + strlen (tmp) + 1);
+        found = _cb_exists ((struct callback_node *) next_stage, path + strlen (tmp) + 1);
     }
 
     if (!found && strlen (tmp) > 0)
@@ -452,15 +452,25 @@ cb_exists (struct callback_node *node, const char *path)
         next_stage = hashtree_path_to_node (&node->hashtree_node, with_leading_slash);
         if (next_stage)
         {
-            found = cb_exists ((struct callback_node *) next_stage,
+            found = _cb_exists ((struct callback_node *) next_stage,
                                 path + strlen (with_leading_slash));
         }
         free (with_leading_slash);
     }
-exit:
+  exit:
     free (tmp);
 
     return found;
+}
+
+bool
+cb_exists (struct callback_node *node, const char *path)
+{
+    bool result = false;
+    pthread_mutex_lock (&tree_lock);
+    result = _cb_exists (node, path);
+    pthread_mutex_unlock (&tree_lock);
+    return result;
 }
 
 struct callback_node *
@@ -705,6 +715,40 @@ test_cb_match_perf_random ()
     CU_ASSERT (match_perf_test (INDEX_RANDOM));
 }
 
+static bool test_running = false;
+static void *
+_cb_exist_locking_thrasher (void *list)
+{
+    struct callback_node *test_list = list;
+    while (test_running)
+    {
+        cb_info_t *cb =
+            cb_create (test_list, "tester", "/test/callback/path/down/*/someplace", 1, 0);
+        cb_release (cb);
+        /* remove this callback */
+        cb_release (cb);
+    }
+
+    return NULL;
+}
+
+void
+test_cb_exist_locking ()
+{
+    pthread_t thrasher;
+    struct callback_node *test_list = cb_init ();
+
+    test_running = true;
+    pthread_create (&thrasher, NULL, _cb_exist_locking_thrasher, test_list);
+    usleep (1000);
+    for (int i = 0; i < TEST_CB_MAX_ITERATIONS * 100; i++)
+    {
+        cb_exists (test_list, "/test/callback/path/down/here/someplace");
+    }
+    test_running = false;
+    pthread_join (thrasher, NULL);
+}
+
 CU_TestInfo tests_callbacks[] = {
     { "init", test_cb_init },
     { "match", test_cb_match },
@@ -713,6 +757,7 @@ CU_TestInfo tests_callbacks[] = {
     { "match performance random", test_cb_match_perf_random },
     { "match performance first", test_cb_match_perf_first },
     { "match performance last", test_cb_match_perf_last },
+    { "cb_exist locking", test_cb_exist_locking },
     CU_TEST_INFO_NULL,
 };
 #endif
