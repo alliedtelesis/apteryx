@@ -131,6 +131,7 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
 {
     rpc_instance rpc;
     struct rpc_work_s *work;
+    bool watch = false;
 
     DEBUG ("RPC[%d]: received %zd bytes\n", sock->sock, len);
 
@@ -163,6 +164,15 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
         work->responded = true;
     }
 
+    /* Both variants of watch callbacks need to be processed on the same thread -
+     * this is the single thread servicing the "slow_workers" pool.
+     */
+    if (*(unsigned char*)buffer == MODE_WATCH ||
+        *(unsigned char*)buffer == MODE_WATCH_WITH_ACK)
+    {
+        watch = true;
+    }
+
     /* Check if in polling mode first */
     if (rpc->queue)
     {
@@ -174,7 +184,7 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
         }
     }
     /* Callbacks from local Apteryx threads */
-    else if (rpc->workers && work->responded)
+    else if (rpc->slow_workers && (watch || work->responded))
         g_thread_pool_push (rpc->slow_workers, work, NULL);
     else if (rpc->workers)
         g_thread_pool_push (rpc->workers, work, NULL);
@@ -219,6 +229,9 @@ rpc_init (int timeout, rpc_msg_handler handler)
     rpc->clients = g_hash_table_new (g_str_hash, g_str_equal);
     rpc->workers = g_thread_pool_new ((GFunc)worker_func, (gpointer)&rpc->worker_sigmask,
                                       8, FALSE, NULL);
+    /* slow_workers handles the watch callbacks and jobs that have already been
+     * responded to and must be served by a single thread.
+     */
     rpc->slow_workers = g_thread_pool_new ((GFunc)worker_func,
                                            (gpointer)&rpc->worker_sigmask,
                                            1, FALSE, NULL);
