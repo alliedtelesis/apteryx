@@ -173,22 +173,26 @@ handle_watch (rpc_message msg)
     const char *path;
     const char *value;
 
-    /* Parse the parameters */
     ref = rpc_msg_decode_uint64 (msg);
-    path = rpc_msg_decode_string (msg);
-    value = rpc_msg_decode_string (msg);
-    assert (path && value);
-    if (value && (value[0] == '\0'))
-        value = NULL;
-
-    DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, ref);
-
     pthread_mutex_lock (&pending_watches_lock);
     ++pending_watch_count;
     pthread_mutex_unlock (&pending_watches_lock);
+    path = rpc_msg_decode_string (msg);
+    value = rpc_msg_decode_string (msg);
+    while (path && value)
+    {
+        DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, ref);
 
-    /* Call callback */
-    call_callback (ref, path, value);
+        if (value[0] == '\0')
+            value = NULL;
+
+        /* Call callback */
+        call_callback (ref, path, value);
+
+        /* Get next path/value */
+        path = rpc_msg_decode_string (msg);
+        value = rpc_msg_decode_string (msg);
+    }
     pthread_mutex_lock (&pending_watches_lock);
     if (--pending_watch_count == 0)
         pthread_cond_signal(&no_pending_watches);
