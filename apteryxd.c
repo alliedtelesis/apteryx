@@ -755,14 +755,15 @@ handle_set (rpc_message msg, bool ack)
     uint64_t ts = 0;
     GList *paths = NULL;
     GList *ipath;
-    char *path;
+    const char *path;
     GList *values = NULL;
     GList *ivalue;
-    char *value;
+    const char *value;
     int proxy_result = 0;
     int validation_result = 0;
     int validation_lock = 0;
     bool db_result = false;
+    GList *next;
 
     /* Parse the parameters */
     ts = rpc_msg_decode_uint64 (msg);
@@ -770,46 +771,54 @@ handle_set (rpc_message msg, bool ack)
     {
         value = rpc_msg_decode_string (msg);
         DEBUG ("SET: %s = %s\n", path, value);
-        paths = g_list_prepend (paths, path);
-        values = g_list_prepend (values, value);
+        paths = g_list_prepend (paths, (gpointer)path);
+        values = g_list_prepend (values, (gpointer)value);
     }
     paths = g_list_reverse (paths);
     values = g_list_reverse (values);
     INC_COUNTER (counters.set);
 
     /* Proxy first */
-    for (ipath = g_list_first (paths), ivalue = g_list_first (values);
-         ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+    ipath = g_list_first (paths);
+    ivalue = g_list_first (values);
+    while (ipath && ivalue)
     {
-        path = (char *) ipath->data;
-        value = (char *) ivalue->data;
+        path = (const char *) ipath->data;
+        value = (const char *) ivalue->data;
         if (value && value[0] == '\0')
             value = NULL;
 
         proxy_result = proxy_set (path, value, ts);
         if (proxy_result == 0)
         {
-            /*  Result success */
+            /* Result success */
             DEBUG ("SET: %s = %s proxied\n", path, value);
-            /* Mark the set as processed */
-            notify_watchers (path, ack);
-            ipath->data = NULL;
+            /* Call any watchers */
+            notify_watchers ((const char *)path, ack);
+            /* Safely remove from both lists as we dont need to do any more processing */
+            next = g_list_next (ipath);
+            paths = g_list_delete_link (paths, ipath);
+            ipath = next;
+            next = g_list_next (ivalue);
+            values = g_list_delete_link (values, ivalue);
+            ivalue = next;
+            continue;
         }
         else if (proxy_result < 0)
         {
             result = proxy_result;
             goto exit;
         }
+        ipath = g_list_next (ipath);
+        ivalue = g_list_next (ivalue);
     }
 
     /* Validate */
     for (ipath = g_list_first (paths), ivalue = g_list_first (values);
          ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
     {
-        path = (char *) ipath->data;
-        if (!path)
-            continue;
-        value = (char *) ivalue->data;
+        path = (const char *) ipath->data;
+        value = (const char *) ivalue->data;
         if (value && value[0] == '\0')
             value = NULL;
 
@@ -830,10 +839,8 @@ handle_set (rpc_message msg, bool ack)
     for (ipath = g_list_first (paths), ivalue = g_list_first (values);
          ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
     {
-        path = (char *) ipath->data;
-        if (!path)
-            continue;
-        value = (char *) ivalue->data;
+        path = (const char *) ipath->data;
+        value = (const char *) ivalue->data;
         if (value && value[0] == '\0')
             value = NULL;
 
@@ -860,9 +867,7 @@ exit:
         for (ipath = g_list_first (paths), ivalue = g_list_first (values);
              ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
         {
-            path = (char *) ipath->data;
-            if (path)
-                notify_watchers (path, ack);
+            notify_watchers ((const char *)ipath->data, ack);
         }
     }
 
