@@ -447,7 +447,7 @@ apteryx_prune (const char *path)
     path = validate_path (path, &url);
     if (!path)
     {
-        ERROR ("PRUNE: invalid path (%s)!\n", path);
+        ERROR ("PRUNE: invalid path!\n");
         assert (!apteryx_debug || path);
         return false;
     }
@@ -977,7 +977,7 @@ apteryx_path_node (GNode *node, const char *path)
     path = validate_path (path, NULL);
     if (path == NULL)
     {
-        ERROR ("PATH_NODE: invalid path (%s)!\n", path);
+        ERROR ("PATH_NODE: invalid path!\n");
         assert (!apteryx_debug || path);
         return NULL;
     }
@@ -1338,7 +1338,7 @@ apteryx_search (const char *path)
     path = validate_path (path, &url);
     if (!path)
     {
-        ERROR ("SEARCH: invalid root (%s)!\n", path);
+        ERROR ("SEARCH: invalid path!\n");
         free (url);
         assert (!apteryx_debug || path);
         return false;
@@ -1448,7 +1448,7 @@ apteryx_find (const char *path, const char *value)
     path = validate_path (path, &url);
     if (!path)
     {
-        ERROR ("FIND: invalid root (%s)!\n", path);
+        ERROR ("FIND: invalid path!\n");
         free (url);
         assert (!apteryx_debug || path);
         return NULL;
