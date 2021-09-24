@@ -2432,7 +2432,7 @@ void
 test_refresh_concurrent ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/state";
-    int client_count = 16;
+    int client_count = 7;
     pthread_t clients[client_count];
     int i;
 
@@ -2442,8 +2442,11 @@ test_refresh_concurrent ()
 
     CU_ASSERT (apteryx_refresh (path, test_refresh_callback));
 
-    /* Reading 16 times within the refresh timeout should cause all
+    /* Reading 7 times within the refresh timeout should cause all
      * reads to get the same value (0)
+     * Note that we currenly only support 8 apteryxd threads
+     * so we need to leave one free for the refresher to use
+     * for the SET operation.
      */
     for (i = 0; i < client_count; i++)
         pthread_create (&clients[i], NULL, _state_get_thread, (void*)path);
