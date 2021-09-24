@@ -2188,6 +2188,7 @@ test_validate_order_callback (const char *path, const char *value)
     int index;
     CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
     CU_ASSERT (index == test_validate_order_index);
+    test_validate_order_index++;
     return 0;
 }
 
@@ -2196,8 +2197,7 @@ test_validate_order_watch_callback (const char *path, const char *value)
 {
     int index;
     CU_ASSERT (sscanf (path, TEST_PATH"/entity/zones/private/%d", &index) == 1);
-    CU_ASSERT (index == test_validate_order_index);
-    test_validate_order_index++;
+    CU_ASSERT (index <= test_validate_order_index);
     return true;
 }
 
