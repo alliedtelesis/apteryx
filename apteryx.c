@@ -89,8 +89,8 @@ call_callback (uint64_t ref, const char *path, const char *value)
 {
     void *fn = NULL;
     void *data = NULL;
-    bool val = NULL;
-    uint32_t flags;
+    bool val = false;
+    uint32_t flags = 0;
 
     if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
     {
@@ -181,28 +181,54 @@ static bool
 handle_watch (rpc_message msg)
 {
     uint64_t ref;
+    void *fn = NULL;
+    void *data = NULL;
+    bool val = false;
+    uint32_t flags = 0;
     const char *path;
     const char *value;
 
     ref = rpc_msg_decode_uint64 (msg);
+    if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
+    {
+        DEBUG ("WATCH[%"PRIu64"]: cb not found\n", ref);
+        return false;
+    }
+
     pthread_mutex_lock (&pending_watches_lock);
     ++pending_watch_count;
     pthread_mutex_unlock (&pending_watches_lock);
-    path = rpc_msg_decode_string (msg);
-    value = rpc_msg_decode_string (msg);
-    while (path && value)
+    if (flags == 0)
     {
-        DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, ref);
-
-        if (value[0] == '\0')
-            value = NULL;
-
-        /* Call callback */
-        call_callback (ref, path, value);
-
-        /* Get next path/value */
         path = rpc_msg_decode_string (msg);
         value = rpc_msg_decode_string (msg);
+        while (path && value)
+        {
+            DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, ref);
+            if (value[0] == '\0')
+                value = NULL;
+            if (data)
+                ((void*(*)(const char*, const char*, void*)) fn) (path, value, data);
+            else
+                ((void*(*)(const char*, const char*)) fn) (path, value);
+            path = rpc_msg_decode_string (msg);
+            value = rpc_msg_decode_string (msg);
+        }
+    }
+    else
+    {
+        GNode *root = g_node_new (strdup ("/"));
+        path = rpc_msg_decode_string (msg);
+        while (path)
+        {
+            value = rpc_msg_decode_string (msg);
+            apteryx_path_to_node (root, path, value);
+            path = rpc_msg_decode_string (msg);
+        }
+        if (data)
+            ((void*(*)(const GNode*, void*)) fn) (root, data);
+        else
+            ((void*(*)(const GNode*)) fn) (root);
     }
     pthread_mutex_lock (&pending_watches_lock);
     if (--pending_watch_count == 0)
@@ -1705,6 +1731,18 @@ apteryx_watch (const char *path, apteryx_watch_callback cb)
 
 bool
 apteryx_unwatch (const char *path, apteryx_watch_callback cb)
+{
+    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+}
+
+bool
+apteryx_watch_tree (const char *path, apteryx_watch_tree_callback cb)
+{
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 1);
+}
+
+bool
+apteryx_unwatch_tree (const char *path, apteryx_watch_tree_callback cb)
 {
     return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
 }
