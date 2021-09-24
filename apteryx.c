@@ -55,18 +55,17 @@ typedef struct _cb_t
     bool value;
     void *fn;
     void *data;
+    uint32_t flags;
 } cb_t;
 static uint64_t next_ref = 0;
 static GList *cb_list = NULL;
 
-static void *
-call_callback (uint64_t ref, const char *path, const char *value)
+static bool
+find_callback (uint64_t ref, void **fn, void **data, bool *val, uint32_t *flags)
 {
-    cb_t *cb = NULL;
+    bool rc = false;
     GList *iter;
-    void *fn = NULL;
-    void *data = NULL;
-    bool val = false;
+    cb_t *cb;
 
     pthread_mutex_lock (&lock);
     for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
@@ -74,14 +73,26 @@ call_callback (uint64_t ref, const char *path, const char *value)
         cb = (cb_t *) iter->data;
         if (cb->ref == ref)
         {
-            fn = cb->fn;
-            data = cb->data;
-            val = cb->value;
-            break;
+            *fn = cb->fn;
+            *data = cb->data;
+            *val = cb->value;
+            *flags = cb->flags;
+            rc = true;
         }
     }
     pthread_mutex_unlock (&lock);
-    if (!fn)
+    return rc;
+}
+
+static void *
+call_callback (uint64_t ref, const char *path, const char *value)
+{
+    void *fn = NULL;
+    void *data = NULL;
+    bool val = NULL;
+    uint32_t flags;
+
+    if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
     {
         DEBUG ("CB[%"PRIu64"]: not found\n", ref);
         return NULL;
@@ -1587,7 +1598,7 @@ apteryx_find_tree (GNode *root)
 }
 
 bool
-add_callback (const char *type, const char *path, void *fn, bool value, void *data)
+add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags)
 {
     size_t pid = getpid ();
     char _path[PATH_MAX];
@@ -1604,6 +1615,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     cb->fn = fn;
     cb->value = value;
     cb->data = data;
+    cb->flags = flags;
 
     pthread_mutex_lock (&lock);
     cb_list = g_list_prepend (cb_list, (void *) cb);
@@ -1676,7 +1688,7 @@ delete_callback (const char *type, const char *path, void *fn)
 bool
 apteryx_index (const char *path, apteryx_index_callback cb)
 {
-    return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb, false, NULL);
+    return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb, false, NULL, 0);
 }
 
 bool
@@ -1688,7 +1700,7 @@ apteryx_unindex (const char *path, apteryx_index_callback cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL);
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 0);
 }
 
 bool
@@ -1700,7 +1712,7 @@ apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
-    return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb, true, NULL);
+    return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb, true, NULL, 0);
 }
 
 bool
@@ -1712,7 +1724,7 @@ apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 bool
 apteryx_refresh (const char *path, apteryx_refresh_callback cb)
 {
-    return add_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb, false, NULL);
+    return add_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb, false, NULL, 0);
 }
 
 bool
@@ -1724,7 +1736,7 @@ apteryx_unrefresh (const char *path, apteryx_refresh_callback cb)
 bool
 apteryx_provide (const char *path, apteryx_provide_callback cb)
 {
-    return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb, false, NULL);
+    return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb, false, NULL, 0);
 }
 
 bool
@@ -1742,7 +1754,7 @@ apteryx_proxy (const char *path, const char *url)
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = add_callback (APTERYX_PROXIES_PATH, value,
-            (void *)(size_t)g_str_hash (url), false, NULL);
+            (void *)(size_t)g_str_hash (url), false, NULL, 0);
     free (value);
     return res;
 }
