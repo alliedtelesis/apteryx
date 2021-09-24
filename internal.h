@@ -268,7 +268,7 @@ GList *cb_search (struct callback_node *node, const char *path);
 void cb_shutdown (struct callback_node *root);
 
 /* Callbacks to users */
-bool add_callback (const char *type, const char *path, void *fn, bool value, void *data);
+bool add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags);
 bool delete_callback (const char *type, const char *path, void *fn);
 
 /* Tests */
