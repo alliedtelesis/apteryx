@@ -206,82 +206,178 @@ validate_set (const char *path, const char *value)
     return result < 0 ? result : 1;
 }
 
-static void
-notify_watchers (const char *path, bool ack)
+/* For a list of paths find the common starting
+ * path including the trailing back-slash */
+static gchar *
+find_common_path (GList *paths)
 {
-    GList *watchers = NULL;
-    GList *iter = NULL;
-    char *value = NULL;
-    size_t vsize;
+    gchar *cpath = NULL;
+    GList *iter;
 
-    /* Retrieve a list of watchers for this path */
-    watchers = config_get_watchers (path);
-    if (!watchers)
-        return;
-
-    /* Find the new value for this path */
-    value = NULL;
-    vsize = 0;
-    db_get (path, (unsigned char **) &value, &vsize);
-
-    /* Call each watcher */
-    for (iter = watchers; iter; iter = g_list_next (iter))
+    for (iter = g_list_first (paths); iter; iter = g_list_next (iter))
     {
-        cb_info_t *watcher = iter->data;
-        rpc_client rpc_client;
-        rpc_message_t msg = {};
-
-        /* Check for local watcher */
-        if (watcher->id == getpid ())
-        {
-            apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->ref;
-            DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                    watcher->path, watcher->id, watcher->ref);
-            cb (path, value);
+        gchar *path = (gchar *) iter->data;
+        if (!path)
             continue;
-        }
-
-        DEBUG ("WATCH CB %s = %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
-                path, value, watcher->path, watcher->id, watcher->ref, watcher->uri);
-
-        /* IPC */
-        rpc_client = rpc_client_connect (rpc, watcher->uri);
-        if (!rpc_client)
+        if (cpath == NULL)
+            cpath = g_strconcat (path, "/", NULL);
+        else
         {
-            /* Throw away the no good validator */
-            ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                   watcher->path, watcher->id, watcher->ref);
-            cb_disable (watcher);
-            INC_COUNTER (counters.watched_no_handler);
-            continue;
+            int last_slash = 0;
+            int i = 0;
+            while (1)
+            {
+                if (cpath[i] == '\0')
+                    break;
+                if (cpath[i] != path[i])
+                {
+                    g_free (cpath);
+                    cpath = g_strndup (path, last_slash + 1);
+                    break;
+                }
+                if (cpath[i] == '/')
+                    last_slash = i;
+                i++;
+            }
         }
-        rpc_msg_encode_uint8 (&msg, ack ? MODE_WATCH_WITH_ACK : MODE_WATCH);
-        rpc_msg_encode_uint64 (&msg, watcher->ref);
-        rpc_msg_encode_string (&msg, path);
-        if (value)
-            rpc_msg_encode_string (&msg, value);
+    }
+    if (cpath && cpath[0] == '/' && cpath[1] == '\0')
+    {
+        g_free (cpath);
+        cpath = NULL;
+    }
+    return cpath;
+}
+
+static gint
+compare_watcher (cb_info_t *a, cb_info_t *b)
+{
+    if (a->id == b->id && a->ref == b->ref)
+        return 0;
+    return -1;
+}
+
+static void
+send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ack)
+{
+    rpc_client rpc_client;
+    rpc_message_t msg = {};
+    GList *ipath;
+    GList *ivalue;
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, watcher->uri);
+    if (!rpc_client)
+    {
+        /* Throw away the no good validator */
+        ERROR ("Invalid WATCH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                watcher->path, watcher->id, watcher->ref);
+        cb_disable (watcher);
+        INC_COUNTER (counters.watched_no_handler);
+        return;
+    }
+    rpc_msg_encode_uint8 (&msg, ack ? MODE_WATCH_WITH_ACK : MODE_WATCH);
+    rpc_msg_encode_uint64 (&msg, watcher->ref);
+    for (ipath = g_list_first (paths), ivalue = g_list_first (values);
+         ipath && ivalue;
+         ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+    {
+        rpc_msg_encode_string (&msg, (char *) ipath->data);
+        if (ivalue->data)
+            rpc_msg_encode_string (&msg, (char *) ivalue->data);
         else
             rpc_msg_encode_string (&msg, "");
-        if (!rpc_msg_send (rpc_client, &msg))
-        {
-            INC_COUNTER (counters.watched_timeout);
-            ERROR ("Failed to notify watcher for path \"%s\"\n", (char *) path);
-            rpc_client_release (rpc, rpc_client, false);
-        }
-        else
-        {
-            rpc_client_release (rpc, rpc_client, true);
-        }
-        rpc_msg_reset (&msg);
-
-        INC_COUNTER (counters.watched);
-        INC_COUNTER (watcher->count);
     }
-    g_list_free_full (watchers, (GDestroyNotify) cb_release);
+    if (!rpc_msg_send (rpc_client, &msg))
+    {
+        INC_COUNTER (counters.watched_timeout);
+        ERROR ("Failed to notify watcher for path \"%s\"\n", watcher->path);
+        rpc_client_release (rpc, rpc_client, false);
+    }
+    else
+    {
+        rpc_client_release (rpc, rpc_client, true);
+    }
+    rpc_msg_reset (&msg);
 
-    /* Free memory if allocated */
-    if (value)
-        g_free (value);
+    INC_COUNTER (counters.watched);
+    INC_COUNTER (watcher->count);
+}
+
+static void
+notify_watchers (GList *paths, GList *values, bool ack)
+{
+    GList *common_watchers = NULL;
+    GList *used_watchers = NULL;
+    gchar *cpath = NULL;
+    GList *ipath;
+    GList *ivalue;
+
+    /* Try to send all values at once if they have a common path */
+    if (g_list_length (paths) > 1)
+        cpath = find_common_path (paths);
+    if (cpath)
+    {
+        common_watchers = config_get_watchers (cpath);
+        if (common_watchers)
+        {
+            GList *iter = NULL;
+            for (iter = common_watchers; iter; iter = g_list_next (iter))
+            {
+                cb_info_t *watcher = iter->data;
+
+                if (watcher->id != getpid ())
+                {
+                    send_watch_notification (watcher, paths, values, ack);
+                    /* Remember so we dont use this one again */
+                    used_watchers = g_list_append (used_watchers, watcher);
+                }
+            }
+        }
+        g_free (cpath);
+    }
+
+    /* Find all watchers that did not match the common path */
+    ipath = g_list_first (paths);
+    ivalue = values ? g_list_first (values) : NULL;
+    while (ipath)
+    {
+        gchar *path = (gchar *) ipath->data;
+        gchar *value = ivalue ? (gchar *) ivalue->data : NULL;
+        GList *watchers;
+
+        if (path && (watchers = config_get_watchers (path)))
+        {
+            GList *iter;
+            for (iter = watchers; iter; iter = g_list_next (iter))
+            {
+                cb_info_t *watcher = iter->data;
+                if (g_list_find_custom (used_watchers, iter->data, (GCompareFunc) compare_watcher))
+                    continue;
+                if (watcher->id == getpid ())
+                {
+                    apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->ref;
+                    DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                            watcher->path, watcher->id, watcher->ref);
+                    if (value && (value[0] == '\0'))
+                        cb (path, NULL);
+                    else
+                        cb (path, value);
+                    continue;
+                }
+                GList *paths = g_list_append(NULL, (void *) path);
+                GList *values = g_list_append(NULL, (void *) value);
+                send_watch_notification (watcher, paths, values, ack);
+                g_list_free (paths);
+                g_list_free (values);
+            }
+            g_list_free_full (watchers, (GDestroyNotify) cb_release);
+        }
+        ipath = g_list_next (ipath);
+        ivalue = ivalue ? g_list_next (ivalue) : NULL;
+    }
+    g_list_free (used_watchers);
+    g_list_free_full (common_watchers, (GDestroyNotify) cb_release);
 }
 
 static uint64_t
@@ -794,7 +890,11 @@ handle_set (rpc_message msg, bool ack)
             /* Result success */
             DEBUG ("SET: %s = %s proxied\n", path, value);
             /* Call any watchers */
-            notify_watchers ((const char *)path, ack);
+            GList *wpaths = g_list_append (NULL, (gpointer) path);
+            GList *wvalues = g_list_append (NULL, (gpointer) value);
+            notify_watchers (wpaths, wvalues, ack);
+            g_list_free (wpaths);
+            g_list_free (wvalues);
             /* Safely remove from both lists as we dont need to do any more processing */
             next = g_list_next (ipath);
             paths = g_list_delete_link (paths, ipath);
@@ -864,11 +964,7 @@ exit:
     if (validation_result >= 0 && result == 0)
     {
         /* Notify watchers */
-        for (ipath = g_list_first (paths), ivalue = g_list_first (values);
-             ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
-        {
-            notify_watchers ((const char *)ipath->data, ack);
-        }
+        notify_watchers (paths, values, ack);
     }
 
     /* Release validation lock - this is a sensitive value */
@@ -1577,10 +1673,7 @@ handle_prune (rpc_message msg)
     if (validation_result >= 0)
     {
         /* Call watchers for each pruned path */
-        for (iter = paths; iter; iter = g_list_next (iter))
-        {
-            notify_watchers ((const char *)iter->data, false);
-        }
+        notify_watchers (paths, NULL, false);
     }
 
     /* Release validation lock - this is a sensitive value */
