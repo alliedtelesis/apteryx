@@ -44,9 +44,9 @@ void
 usage ()
 {
 #ifdef TEST
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-m|-u<filter>] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m|-u<filter>] [<path>] [<value>]\n"
 #else
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l|-m] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m] [<path>] [<value>]\n"
 #endif
             "  -h   show this help\n"
             "  -d   debug\n"
@@ -54,6 +54,7 @@ usage ()
             "  -g   get <path>\n"
             "  -f   find <path>\n"
             "  -t   traverse database from <path>\n"
+            "  -r   prune <path>\n"
             "  -w   watch changes to the path <path>\n"
             "  -p   provide <value> for <path>\n"
             "  -x   proxy <path> via url <value>\n"
@@ -105,7 +106,7 @@ main (int argc, char **argv)
     uint64_t value;
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftwpxlmu::")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftrwpxlmu::")) != -1)
     {
         switch (c)
         {
@@ -123,6 +124,9 @@ main (int argc, char **argv)
             break;
         case 't':
             mode = MODE_TRAVERSE;
+            break;
+        case 'r':
+            mode = MODE_PRUNE;
             break;
         case 'w':
             mode = MODE_WATCH;
@@ -229,6 +233,17 @@ main (int argc, char **argv)
         }
         apteryx_init (apteryx_debug);
         apteryx_dump (path, stdout);
+        apteryx_shutdown ();
+        break;
+    case MODE_PRUNE:
+        if (!path || param)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (apteryx_debug);
+        if (!apteryx_prune (path))
+            printf ("Failed\n");
         apteryx_shutdown ();
         break;
     case MODE_WATCH:
