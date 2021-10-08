@@ -1443,6 +1443,25 @@ test_watch_prune ()
 }
 
 void
+test_watch_prune_multiple ()
+{
+    _path = _value = NULL;
+    _cb_count = 0;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    const char *path2 = TEST_PATH"/entity/zones/private/state2";
+
+    CU_ASSERT (apteryx_set(path, "up"));
+    CU_ASSERT (apteryx_set(path2, "down"));
+    CU_ASSERT (apteryx_watch (TEST_PATH"/entity/*", test_watch_callback));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (_path && (strcmp (_path, path) == 0 || strcmp (_path, path2) == 0));
+    CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/*", test_watch_callback));
+    _watch_cleanup ();
+}
+
+void
 test_watch_one_level_path_prune ()
 {
     _path = _value = NULL;
@@ -4288,6 +4307,31 @@ test_watch_tree_prune ()
 }
 
 void
+test_watch_tree_prune_tree ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    GNode *node;
+
+    node = APTERYX_NODE (NULL, (gpointer) path);
+    APTERYX_LEAF (node, "state", "up");
+    APTERYX_LEAF (node, "speed", "1000");
+    APTERYX_LEAF (node, "duplex", "full");
+    CU_ASSERT (apteryx_set_tree (node));
+    g_node_destroy (node);
+    CU_ASSERT (apteryx_watch_tree (TEST_PATH"/interfaces/eth0/", test_watch_tree_callback));
+    CU_ASSERT (apteryx_prune (path));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state"), "") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "speed"), "") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "duplex"), "") == 0);
+    CU_ASSERT (apteryx_unwatch_tree (TEST_PATH"/interfaces/eth0/", test_watch_tree_callback));
+    _watch_tree_cleanup ();
+}
+
+void
 test_watch_tree_one_level ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
@@ -6276,6 +6320,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch one level path", test_watch_one_level_path },
     { "watch one level miss", test_watch_one_level_miss },
     { "watch prune", test_watch_prune },
+    { "watch prune multiple", test_watch_prune_multiple },
     { "watch one level path prune", test_watch_one_level_path_prune },
     { "watch empty path prune", test_watch_empty_path_prune },
     { "watch wildpath", test_watch_wildpath },
@@ -6401,6 +6446,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "watch tree no match", test_watch_tree_no_match },
     { "watch tree remove", test_watch_tree_remove },
     { "watch tree prune", test_watch_tree_prune },
+    { "watch tree prune tree", test_watch_tree_prune_tree },
     { "watch tree one level", test_watch_tree_one_level },
     { "watch tree one level multi", test_watch_tree_one_level_multi },
     { "watch tree one level miss", test_watch_tree_one_level_miss },
