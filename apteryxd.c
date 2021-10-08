@@ -279,11 +279,11 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
     rpc_msg_encode_uint8 (&msg, ack ? MODE_WATCH_WITH_ACK : MODE_WATCH);
     rpc_msg_encode_uint64 (&msg, watcher->ref);
     for (ipath = g_list_first (paths), ivalue = g_list_first (values);
-         ipath && ivalue;
+         ipath;
          ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
     {
         rpc_msg_encode_string (&msg, (char *) ipath->data);
-        if (ivalue->data)
+        if (ivalue && ivalue->data)
             rpc_msg_encode_string (&msg, (char *) ivalue->data);
         else
             rpc_msg_encode_string (&msg, "");
