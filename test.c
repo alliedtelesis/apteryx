@@ -4743,44 +4743,41 @@ exit:
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-/* This test is an attempt to reproduce the performance of a
- * moderately large tree with realistic branch layouts.
- */
 void
-test_perf_get_tree_real ()
+test_perf_set_tree_real ()
 {
-    const char *path = TEST_PATH"/interfaces/eth0";
-    char value[32];
-    GNode* root;
+    const char *path = TEST_PATH"/interfaces";
+    GNode *root, *node1, *node2;
     uint64_t start, time;
-    int count = 10;
     int i, j, k;
+    bool res;
 
-    /* I should do this with set tree but I'm too lazy */
+    root = APTERYX_NODE (NULL, strdup (path));
     for (i = 0; i < 250; i++)
+    {
+        node1 = APTERYX_NODE (root, g_strdup_printf ("eth%d", i));
+        node1 = APTERYX_NODE (node1, g_strdup_printf ("statistics"));
         for (j = 0; j < 50; j++)
+        {
+            node2 = APTERYX_NODE (node1, g_strdup_printf ("statistic%d", j));
             for (k = 0; k < 4; k++)
             {
-                sprintf (value, "dir%d/dir%d/value%d", i, j, k);
-                CU_ASSERT (apteryx_set_int (path, value, k));
+                APTERYX_LEAF (node2, g_strdup_printf ("counter%d", k), g_strdup_printf ("%d", i*j*k));
             }
+        }
+    }
 
     start = get_time_us ();
-    for (i = 0; i < count; i++)
-    {
-        CU_ASSERT ((root = apteryx_get_tree (path)) != NULL);
-        if (!root)
-            goto exit;
-        apteryx_free_tree (root);
-    }
-    time = ((get_time_us () - start) / count);
-    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
-
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("%"PRIu64"us ... ", time);
 exit:
+    apteryx_free_tree (root);
     CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
 }
-
 
 void
 test_perf_get_tree ()
@@ -4832,8 +4829,52 @@ test_perf_get_tree_5000 ()
     if (!root)
         goto exit;
     time = (get_time_us () - start);
-    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+    printf ("%"PRIu64"us ... ", time);
     apteryx_free_tree (root);
+exit:
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* This test is an attempt to reproduce the performance of a
+ * moderately large tree with realistic branch layouts.
+ */
+void
+test_perf_get_tree_real ()
+{
+    const char *path = TEST_PATH"/interfaces";
+    GNode *root, *node1, *node2;
+    uint64_t start, time;
+    int i, j, k;
+    bool res;
+
+    root = APTERYX_NODE (NULL, strdup (path));
+    for (i = 0; i < 250; i++)
+    {
+        node1 = APTERYX_NODE (root, g_strdup_printf ("eth%d", i));
+        node1 = APTERYX_NODE (node1, g_strdup_printf ("statistics"));
+        for (j = 0; j < 50; j++)
+        {
+            node2 = APTERYX_NODE (node1, g_strdup_printf ("statistic%d", j));
+            for (k = 0; k < 4; k++)
+            {
+                APTERYX_LEAF (node2, g_strdup_printf ("counter%d", k), g_strdup_printf ("%d", i*j*k));
+            }
+        }
+    }
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    apteryx_free_tree (root);
+
+    start = get_time_us ();
+    CU_ASSERT ((root = apteryx_get_tree (path)) != NULL);
+    if (!root)
+        goto exit;
+    apteryx_free_tree (root);
+    time = (get_time_us () - start);
+    printf ("%"PRIu64"us ... ", time);
+
 exit:
     CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
@@ -6484,12 +6525,13 @@ static CU_TestInfo tests_performance[] = {
     { "set(tcp6)", test_perf_tcp6_set },
     { "set tree 50", test_perf_set_tree },
     { "set tree 5000", test_perf_set_tree_5000 },
+    { "set tree real", test_perf_set_tree_real },
     { "get", test_perf_get },
     { "get(tcp)", test_perf_tcp_get },
     { "get(tcp6)", test_perf_tcp6_get },
-    { "get tree real", test_perf_get_tree_real },
     { "get tree 50", test_perf_get_tree },
     { "get tree 5000", test_perf_get_tree_5000 },
+    { "get tree real", test_perf_get_tree_real },
     { "get null", test_perf_get_null },
     { "search", test_perf_search },
     { "watch", test_perf_watch },
