@@ -52,6 +52,8 @@ index_get (const char *path, GList **result)
     GList *indexers = NULL;
     GList *results = NULL;
     GList *iter = NULL;
+    uint64_t start, duration;
+    bool res;
 
     /* Retrieve a list of providers for this path */
     indexers = config_get_indexers (path);
@@ -97,7 +99,10 @@ index_get (const char *path, GList **result)
         rpc_msg_encode_uint8 (&msg, MODE_INDEX);
         rpc_msg_encode_uint64 (&msg, indexer->ref);
         rpc_msg_encode_string (&msg, path);
-        if (!rpc_msg_send (rpc_client, &msg))
+        start = get_time_us ();
+        res = rpc_msg_send (rpc_client, &msg);
+        duration = get_time_us () - start;
+        if (!res)
         {
             ERROR ("INDEX: No response\n");
             rpc_msg_reset (&msg);
@@ -114,6 +119,11 @@ index_get (const char *path, GList **result)
 
         /* Result */
         INC_COUNTER (counters.indexed);
+        if (!indexer->min || duration < indexer->min)
+            SET_COUNTER(indexer->min, duration);
+        if (duration > indexer->max)
+            SET_COUNTER(indexer->max, duration);
+        ADD_COUNTER (indexer->total, duration);
         INC_COUNTER (indexer->count);
 
         if (results)
@@ -131,6 +141,8 @@ validate_set (const char *path, const char *value)
     GList *validators = NULL;
     GList *iter = NULL;
     int32_t result = 0;
+    uint64_t start, duration;
+    bool res;
 
     /* Retrieve a list of validators for this path */
     validators = config_get_validators (path);
@@ -180,7 +192,10 @@ validate_set (const char *path, const char *value)
             rpc_msg_encode_string (&msg, value);
         else
             rpc_msg_encode_string (&msg, "");
-        if (!rpc_msg_send (rpc_client, &msg))
+        start = get_time_us ();
+        res = rpc_msg_send (rpc_client, &msg);
+        duration = get_time_us () - start;
+        if (!res)
         {
             INC_COUNTER (counters.validated_timeout);
             ERROR ("Failed to validate for path \"%s\"\n", (char *)path);
@@ -192,7 +207,15 @@ validate_set (const char *path, const char *value)
         rpc_client_release (rpc, rpc_client, true);
         result = (int32_t) rpc_msg_decode_uint64 (&msg);
         rpc_msg_reset (&msg);
+
+        /* Result */
         INC_COUNTER (counters.validated);
+        if (!validator->min || duration < validator->min)
+            SET_COUNTER(validator->min, duration);
+        if (duration > validator->max)
+            SET_COUNTER(validator->max, duration);
+        ADD_COUNTER (validator->total, duration);
+        INC_COUNTER (validator->count);
         if (result < 0)
         {
             DEBUG ("Set of %s to %s rejected by process %"PRIu64" (%d)\n",
@@ -264,6 +287,8 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
     rpc_message_t msg = {};
     GList *ipath;
     GList *ivalue;
+    uint64_t start, duration;
+    bool res;
 
     /* IPC */
     rpc_client = rpc_client_connect (rpc, watcher->uri);
@@ -288,7 +313,10 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
         else
             rpc_msg_encode_string (&msg, "");
     }
-    if (!rpc_msg_send (rpc_client, &msg))
+    start = get_time_us ();
+    res = rpc_msg_send (rpc_client, &msg);
+    duration = get_time_us () - start;
+    if (!res)
     {
         INC_COUNTER (counters.watched_timeout);
         ERROR ("Failed to notify watcher for path \"%s\"\n", watcher->path);
@@ -301,6 +329,11 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
     rpc_msg_reset (&msg);
 
     INC_COUNTER (counters.watched);
+    if (!watcher->min || duration < watcher->min)
+        SET_COUNTER(watcher->min, duration);
+    if (duration > watcher->max)
+        SET_COUNTER(watcher->max, duration);
+    ADD_COUNTER (watcher->total, duration);
     INC_COUNTER (watcher->count);
 }
 
@@ -419,6 +452,8 @@ call_refreshers (const char *path)
         cb_info_t *refresher = iter->data;
         rpc_client rpc_client;
         rpc_message_t msg = {};
+        uint64_t start, duration;
+        bool res;
 
         if (pthread_mutex_trylock (&refresher->lock))
         {
@@ -468,7 +503,10 @@ call_refreshers (const char *path)
         rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
         rpc_msg_encode_uint64 (&msg, refresher->ref);
         rpc_msg_encode_string (&msg, path);
-        if (!rpc_msg_send (rpc_client, &msg))
+        start = get_time_us ();
+        res = rpc_msg_send (rpc_client, &msg);
+        duration = get_time_us () - start;
+        if (!res)
         {
             INC_COUNTER (counters.refreshed_timeout);
             ERROR ("Failed to notify refresher for path \"%s\"\n", (char *) path);
@@ -487,6 +525,11 @@ call_refreshers (const char *path)
         rpc_msg_reset (&msg);
 
         INC_COUNTER (counters.refreshed);
+        if (!refresher->min || duration < refresher->min)
+            SET_COUNTER(refresher->min, duration);
+        if (duration > refresher->max)
+            SET_COUNTER(refresher->max, duration);
+        ADD_COUNTER (refresher->total, duration);
         INC_COUNTER (refresher->count);
     unlock:
         pthread_mutex_unlock (&refresher->lock);
@@ -512,6 +555,8 @@ provide_get (const char *path)
         cb_info_t *provider = iter->data;
         rpc_client rpc_client;
         rpc_message_t msg = {};
+        uint64_t start, duration;
+        bool res;
 
         /* Check for local provider */
         if (provider->id == getpid ())
@@ -542,7 +587,10 @@ provide_get (const char *path)
         rpc_msg_encode_uint8 (&msg, MODE_PROVIDE);
         rpc_msg_encode_uint64 (&msg, provider->ref);
         rpc_msg_encode_string (&msg, path);
-        if (!rpc_msg_send (rpc_client, &msg))
+        start = get_time_us ();
+        res = rpc_msg_send (rpc_client, &msg);
+        duration = get_time_us () - start;
+        if (!res)
         {
             INC_COUNTER (counters.provided_timeout);
             ERROR ("No response from provider for path \"%s\"\n", (char *)path);
@@ -558,6 +606,11 @@ provide_get (const char *path)
         rpc_msg_reset (&msg);
 
         INC_COUNTER (counters.provided);
+        if (!provider->min || duration < provider->min)
+            SET_COUNTER(provider->min, duration);
+        if (duration > provider->max)
+            SET_COUNTER(provider->max, duration);
+        ADD_COUNTER (provider->total, duration);
         INC_COUNTER (provider->count);
         if (value)
             break;
