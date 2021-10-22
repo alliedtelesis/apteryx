@@ -104,6 +104,7 @@ typedef enum
     MODE_TIMESTAMP,
     MODE_TEST,
     MODE_MEMUSE,
+    MODE_COUNTERS,
 } APTERYX_MODE;
 
 /* Callback */
@@ -120,8 +121,11 @@ typedef struct _cb_info_t
 
     struct callback_node *node;
     int refcnt;
-    uint32_t count;
     uint64_t timeout;
+    uint32_t count;
+    uint32_t min;
+    uint32_t max;
+    uint64_t total;
     pthread_mutex_t lock;
 } cb_info_t;
 
@@ -170,6 +174,8 @@ typedef struct _counters_t
 #undef X
 } counters_t;
 #define INC_COUNTER(c) (void)g_atomic_int_inc(&c);
+#define SET_COUNTER(c,v) (void)g_atomic_int_set(&c,v);
+#define ADD_COUNTER(c,v) (void)__atomic_add_fetch (&c, v, __ATOMIC_SEQ_CST);
 
 /* GLobal counters */
 extern counters_t counters;
@@ -265,6 +271,7 @@ GList *cb_match (struct callback_node *list, const char *path);
 bool cb_exists (struct callback_node *list, const char *path);
 /* Returns a list of paths which have callbacks further down. */
 GList *cb_search (struct callback_node *node, const char *path);
+void cb_foreach (struct callback_node *list, GFunc func, gpointer user_data);
 void cb_shutdown (struct callback_node *root);
 
 /* Callbacks to users */

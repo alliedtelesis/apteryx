@@ -59,6 +59,7 @@
   /apteryx/proxies                         - List of proxied paths and remote url to proxy gets and sets to.
   /apteryx/proxies/-                       - Unique identifier based on PID-HASH(path)-HASH(url). Value is the full url for the path.
   /apteryx/counters                        - Formatted list of counters and values for Apteryx usage
+  /apteryx/statistics                      - Statistics for callback usage
  */
 #define APTERYX_PATH                             "/apteryx"
 #define APTERYX_DEBUG_PATH                       "/apteryx/debug"
@@ -73,6 +74,7 @@
 #define APTERYX_INDEXERS_PATH                    "/apteryx/indexers"
 #define APTERYX_PROXIES_PATH                     "/apteryx/proxies"
 #define APTERYX_COUNTERS                         "/apteryx/counters"
+#define APTERYX_STATISTICS                       "/apteryx/statistics"
 
 /** Initialise this instance of the Apteryx library.
  * @param debug verbose debug to stdout

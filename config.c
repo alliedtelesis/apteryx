@@ -267,6 +267,35 @@ handle_counters_get (const char *path)
     return value;
 }
 
+static void
+_statistics_fn (gpointer data, gpointer user_data)
+{
+    cb_info_t *cb = (cb_info_t *)data;
+    char *path, *value;
+    int avg = 0;
+    
+    path = g_strdup_printf (APTERYX_STATISTICS "/%s/%s", (char *) user_data, cb->guid);
+    if (cb->count)
+        avg = (int)(cb->total/(uint64_t)cb->count);
+    value = g_strdup_printf ("%u,%u,%u,%u", cb->count, cb->min, avg, cb->max);
+    db_add (path, (const unsigned char *)value, strlen (value) + 1, get_time_us ());
+    g_free (path);
+    g_free (value);
+}
+
+static uint64_t
+handle_statistics_refresh (const char *path)
+{
+    db_prune (APTERYX_STATISTICS);
+    cb_foreach (watch_list, _statistics_fn, "watchers");
+    cb_foreach (validation_list, _statistics_fn, "validators");
+    cb_foreach (refresh_list, _statistics_fn, "refreshers");
+    cb_foreach (provide_list, _statistics_fn, "providers");
+    cb_foreach (index_list, _statistics_fn, "indexers");
+    cb_foreach (proxy_list, _statistics_fn, "proxies");
+    return (1 * 1000 * 1000);
+}
+
 void
 config_shutdown ()
 {
@@ -375,6 +404,11 @@ config_init (void)
     cb_release (cb);
     cb = cb_create (provide_list, "counters", APTERYX_COUNTERS "/",
                     (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get);
+    cb_release (cb);
+
+    /* Statistics */
+    cb = cb_create (refresh_list, "statistics", APTERYX_STATISTICS "/*",
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_statistics_refresh);
     cb_release (cb);
 
     /* Sockets */

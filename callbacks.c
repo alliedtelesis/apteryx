@@ -517,6 +517,32 @@ cb_tree_destroy (struct callback_node *node)
     hashtree_node_delete (NULL, &node->hashtree_node);
 }
 
+struct _cb_foreach_t
+{
+    GFunc func;
+    gpointer user_data;
+};
+
+static void
+_cb_foreach (gpointer key, gpointer value, gpointer user_data)
+{
+    struct callback_node *list = (struct callback_node *) value;
+    struct _cb_foreach_t *cbt = (struct _cb_foreach_t *) user_data;
+    cb_foreach (list, cbt->func, cbt->user_data);
+    return;
+}
+
+void
+cb_foreach (struct callback_node *list, GFunc func, gpointer user_data)
+{
+    struct _cb_foreach_t cbt = {func, user_data};
+    g_list_foreach (list->exact, func, user_data);
+    g_list_foreach (list->directory, func, user_data);
+    g_list_foreach (list->following, func, user_data);
+    if (list->hashtree_node.children)
+        g_hash_table_foreach (list->hashtree_node.children, _cb_foreach, (gpointer) &cbt);
+}
+
 void
 cb_shutdown (struct callback_node *node)
 {

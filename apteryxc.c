@@ -44,9 +44,9 @@ void
 usage ()
 {
 #ifdef TEST
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m|-u<filter>] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m|-c|-u<filter>] [<path>] [<value>]\n"
 #else
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m|-c] [<path>] [<value>]\n"
 #endif
             "  -h   show this help\n"
             "  -d   debug\n"
@@ -59,7 +59,8 @@ usage ()
             "  -p   provide <value> for <path>\n"
             "  -x   proxy <path> via url <value>\n"
             "  -l   last change <path>\n"
-            "  -m   dump memory usage for <path>\n"
+            "  -m   display memory usage for <path>\n"
+            "  -c   display counters and statistics\n"
 #ifdef TEST
             "  -u   run unit tests (optionally match only tests with <filter>)\n"
 #endif
@@ -91,6 +92,120 @@ provide_callback (const char *path)
     return strdup ((char *) provide_value);
 }
 
+struct stat_t
+{
+    char *guid;
+    uint64_t pid;
+    uint64_t callback;
+    uint64_t hash;
+    uint64_t count;
+    uint64_t min;
+    uint64_t avg;
+    uint64_t max;
+};
+
+static int
+_sort_stats (struct stat_t *a, struct stat_t *b)
+{
+    return b->count - a->count;
+}
+
+static void
+_free_stats (struct stat_t *stat)
+{
+    g_free (stat->guid);
+    g_free (stat);
+}
+
+static inline gboolean
+_parse_stats (GNode *node, gpointer data)
+{
+    GList **stats = (GList **) data;
+    if (APTERYX_HAS_VALUE (node))
+    {
+        struct stat_t *stat = g_malloc0 (sizeof (struct stat_t));
+        stat->guid = g_strdup (APTERYX_NAME (node));
+        if (sscanf (APTERYX_NAME (node), "%" PRIX64 "-%" PRIx64 "-%" PRIx64 "",
+                    &stat->pid, &stat->callback, &stat->hash) != 3 ||
+            sscanf (APTERYX_VALUE (node), "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "",
+                    &stat->count, &stat->min, &stat->avg, &stat->max) != 4 ||
+            stat->count == 0)
+        {
+            g_free (stat->guid);
+            g_free (stat);
+            return false;
+        }
+        *stats = g_list_insert_sorted (*stats, (gpointer) stat, (GCompareFunc) _sort_stats);
+    }
+    return false;
+}
+
+static const char*
+procname (const int pid)
+{
+    static char name[1024];
+    name[0] = '\0';
+    sprintf (name, "/proc/%d/cmdline", pid);
+    FILE* f = fopen (name,"r");
+    if (f)
+    {
+        size_t size;
+        size = fread (name, sizeof(char), 1024, f);
+        if (size > 0)
+        {
+            if ('\n' == name[size-1])
+                name[size-1]='\0';
+        }
+        fclose(f);
+    }
+    if (strrchr (name, '/'))
+        return strrchr (name, '/') + 1;
+    return name;
+}
+
+static void
+_print_stats (struct stat_t *stat, char *rpath)
+{
+    char *cpath = g_strdup_printf ("%s/%s", rpath, stat->guid);
+    char *path = apteryx_get (cpath);
+    g_free (cpath);
+    printf (" %-*s %-*s%*" PRIu64 " %" PRIu64 "/%" PRIu64 "/%" PRIu64 "\n",
+            15, procname(stat->pid), 64, path, 8, stat->count, stat->min, stat->avg, stat->max);
+    g_free (path);
+    return;
+}
+
+static void
+print_stats (void)
+{
+    char *paths[] = { APTERYX_WATCHERS_PATH, APTERYX_REFRESHERS_PATH, APTERYX_PROVIDERS_PATH,
+                      APTERYX_VALIDATORS_PATH, APTERYX_INDEXERS_PATH, APTERYX_PROXIES_PATH };
+    int i;
+
+    printf (" %-*s %-*s%*s%s\n", 15, "process", 64, "path", 8, "count", " min/avg/max");
+    for (i = 0; i < (sizeof(paths)/sizeof(char *)); i++)
+    {
+        char *operation = strrchr (paths[i], '/') + 1;
+        char *path = g_strdup_printf (APTERYX_STATISTICS "/%s", operation);
+        GNode *tree = apteryx_get_tree (path);
+        g_free (path);
+        if (tree)
+        {
+            GList *stats = NULL;
+            g_node_traverse (tree, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _parse_stats, (gpointer) &stats);
+            if (stats)
+            {
+                char *header = g_ascii_strup (operation, -1);
+                printf ("%s:\n", header);
+                g_free (header);
+                g_list_foreach (stats, (GFunc) _print_stats, (gpointer) paths[i]);
+                g_list_free_full (stats, (GDestroyNotify)_free_stats);
+            }
+            apteryx_free_tree (tree);
+        }
+    }
+}
+
 /* Application entry point */
 int
 main (int argc, char **argv)
@@ -106,7 +221,7 @@ main (int argc, char **argv)
     uint64_t value;
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftrwpxlmu::")) != -1)
+    while ((c = getopt (argc, argv, "hdsgftrwpxlmcu::")) != -1)
     {
         switch (c)
         {
@@ -142,6 +257,9 @@ main (int argc, char **argv)
             break;
         case 'm':
             mode = MODE_MEMUSE;
+            break;
+        case 'c':
+            mode = MODE_COUNTERS;
             break;
 #ifdef TEST
         case 'u':
@@ -324,6 +442,18 @@ main (int argc, char **argv)
         g_list_free_full (paths, free);
         apteryx_shutdown ();
         g_free (path);
+        break;
+    }
+    case MODE_COUNTERS:
+    {
+        if (path || param)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (apteryx_debug);
+        print_stats ();
+        apteryx_shutdown ();
         break;
     }
 #ifdef TEST
