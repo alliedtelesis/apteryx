@@ -125,7 +125,7 @@ typedef struct _cb_info_t
     uint32_t count;
     uint32_t min;
     uint32_t max;
-    uint64_t total;
+    uint32_t total;
     pthread_mutex_t lock;
 } cb_info_t;
 
@@ -173,9 +173,10 @@ typedef struct _counters_t
     X_FIELDS
 #undef X
 } counters_t;
-#define INC_COUNTER(c) (void)g_atomic_int_inc(&c);
-#define SET_COUNTER(c,v) (void)g_atomic_int_set(&c,v);
-#define ADD_COUNTER(c,v) (void)__atomic_add_fetch (&c, v, __ATOMIC_SEQ_CST);
+#define GET_COUNTER(c) g_atomic_int_get(&c)
+#define INC_COUNTER(c) (void)g_atomic_int_inc(&c)
+#define SET_COUNTER(c,v) (void)g_atomic_int_set(&c,v)
+#define ADD_COUNTER(c,v) (void)g_atomic_int_add(&c,v)
 
 /* GLobal counters */
 extern counters_t counters;

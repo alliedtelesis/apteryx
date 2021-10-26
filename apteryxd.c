@@ -119,10 +119,10 @@ index_get (const char *path, GList **result)
 
         /* Result */
         INC_COUNTER (counters.indexed);
-        if (!indexer->min || duration < indexer->min)
-            SET_COUNTER(indexer->min, duration);
-        if (duration > indexer->max)
-            SET_COUNTER(indexer->max, duration);
+        if (!GET_COUNTER (indexer->min) || duration < GET_COUNTER (indexer->min))
+            SET_COUNTER (indexer->min, duration);
+        if (duration > GET_COUNTER (indexer->max))
+            SET_COUNTER (indexer->max, duration);
         ADD_COUNTER (indexer->total, duration);
         INC_COUNTER (indexer->count);
 
@@ -210,10 +210,10 @@ validate_set (const char *path, const char *value)
 
         /* Result */
         INC_COUNTER (counters.validated);
-        if (!validator->min || duration < validator->min)
-            SET_COUNTER(validator->min, duration);
-        if (duration > validator->max)
-            SET_COUNTER(validator->max, duration);
+        if (!GET_COUNTER (validator->min) || duration < GET_COUNTER (validator->min))
+            SET_COUNTER (validator->min, duration);
+        if (duration > GET_COUNTER (validator->max))
+            SET_COUNTER (validator->max, duration);
         ADD_COUNTER (validator->total, duration);
         INC_COUNTER (validator->count);
         if (result < 0)
@@ -329,10 +329,10 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
     rpc_msg_reset (&msg);
 
     INC_COUNTER (counters.watched);
-    if (!watcher->min || duration < watcher->min)
-        SET_COUNTER(watcher->min, duration);
-    if (duration > watcher->max)
-        SET_COUNTER(watcher->max, duration);
+    if (!GET_COUNTER (watcher->min) || duration < GET_COUNTER (watcher->min))
+        SET_COUNTER (watcher->min, duration);
+    if (duration > GET_COUNTER (watcher->max))
+        SET_COUNTER (watcher->max, duration);
     ADD_COUNTER (watcher->total, duration);
     INC_COUNTER (watcher->count);
 }
@@ -525,10 +525,10 @@ call_refreshers (const char *path)
         rpc_msg_reset (&msg);
 
         INC_COUNTER (counters.refreshed);
-        if (!refresher->min || duration < refresher->min)
-            SET_COUNTER(refresher->min, duration);
-        if (duration > refresher->max)
-            SET_COUNTER(refresher->max, duration);
+        if (!GET_COUNTER (refresher->min) || duration < GET_COUNTER (refresher->min))
+            SET_COUNTER (refresher->min, duration);
+        if (duration > GET_COUNTER (refresher->max))
+            SET_COUNTER (refresher->max, duration);
         ADD_COUNTER (refresher->total, duration);
         INC_COUNTER (refresher->count);
     unlock:
@@ -606,10 +606,10 @@ provide_get (const char *path)
         rpc_msg_reset (&msg);
 
         INC_COUNTER (counters.provided);
-        if (!provider->min || duration < provider->min)
-            SET_COUNTER(provider->min, duration);
-        if (duration > provider->max)
-            SET_COUNTER(provider->max, duration);
+        if (!GET_COUNTER (provider->min) || duration < GET_COUNTER (provider->min))
+            SET_COUNTER (provider->min, duration);
+        if (duration > GET_COUNTER (provider->max))
+            SET_COUNTER (provider->max, duration);
         ADD_COUNTER (provider->total, duration);
         INC_COUNTER (provider->count);
         if (value)
