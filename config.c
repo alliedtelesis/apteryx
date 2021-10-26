@@ -260,7 +260,7 @@ handle_counters_get (const char *path)
     char *value = NULL;
 #define X(type, name) \
     if (strcmp ("/"#name, counter) == 0 && \
-        asprintf (&value, "%d", counters.name) > 0) \
+        asprintf (&value, "%d", GET_COUNTER (counters.name)) > 0) \
         return value;
     X_FIELDS
 #undef X
@@ -276,8 +276,8 @@ _statistics_fn (gpointer data, gpointer user_data)
     
     path = g_strdup_printf (APTERYX_STATISTICS "/%s/%s", (char *) user_data, cb->guid);
     if (cb->count)
-        avg = (int)(cb->total/(uint64_t)cb->count);
-    value = g_strdup_printf ("%u,%u,%u,%u", cb->count, cb->min, avg, cb->max);
+        avg = (int)(GET_COUNTER(cb->total)/GET_COUNTER(cb->count));
+    value = g_strdup_printf ("%u,%u,%u,%u", GET_COUNTER(cb->count), GET_COUNTER(cb->min), avg, GET_COUNTER(cb->max));
     db_add (path, (const unsigned char *)value, strlen (value) + 1, get_time_us ());
     g_free (path);
     g_free (value);
