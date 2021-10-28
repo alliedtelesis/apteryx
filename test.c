@@ -4743,6 +4743,36 @@ exit:
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+void
+test_perf_set_tree_50000 ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode* root;
+    uint64_t start, time;
+    int count = 50000;
+    int i;
+    bool res;
+
+    root = APTERYX_NODE (NULL, strdup (path));
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        APTERYX_LEAF (root, strdup (value), strdup (value));
+    }
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+exit:
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_perf_set_tree_real ()
 {
@@ -4875,6 +4905,33 @@ test_perf_get_tree_real ()
     time = (get_time_us () - start);
     printf ("%"PRIu64"us ... ", time);
 
+exit:
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_get_tree_50000 ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode* root;
+    uint64_t start, time;
+    int count = 50000;
+    int i;
+
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        CU_ASSERT (apteryx_set_string (path, value, value));
+    }
+    start = get_time_us ();
+    CU_ASSERT ((root = apteryx_get_tree (path)) != NULL)
+    if (!root)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+    apteryx_free_tree (root);
 exit:
     CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
@@ -6583,12 +6640,14 @@ static CU_TestInfo tests_performance[] = {
     { "set(tcp6)", test_perf_tcp6_set },
     { "set tree 50", test_perf_set_tree },
     { "set tree 5000", test_perf_set_tree_5000 },
+    { "set tree 50000", test_perf_set_tree_50000 },
     { "set tree real", test_perf_set_tree_real },
     { "get", test_perf_get },
     { "get(tcp)", test_perf_tcp_get },
     { "get(tcp6)", test_perf_tcp6_get },
     { "get tree 50", test_perf_get_tree },
     { "get tree 5000", test_perf_get_tree_5000 },
+    { "get tree 50000", test_perf_get_tree_50000 },
     { "get tree real", test_perf_get_tree_real },
     { "get null", test_perf_get_null },
     { "search", test_perf_search },
