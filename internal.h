@@ -221,6 +221,15 @@ void rpc_msg_encode_uint8 (rpc_message msg, uint8_t value);
 uint8_t rpc_msg_decode_uint8 (rpc_message msg);
 void rpc_msg_encode_uint64 (rpc_message msg, uint64_t value);
 uint64_t rpc_msg_decode_uint64 (rpc_message msg);
+
+typedef enum {
+    rpc_done,
+    rpc_value,
+    rpc_start_children,
+    rpc_end_children,
+} rpc_type_t;
+void rpc_msg_encode_tree (rpc_message msg, GNode *root);
+GNode *rpc_msg_decode_tree (rpc_message msg);
 void rpc_msg_encode_string (rpc_message msg, const char *value);
 char* rpc_msg_decode_string (rpc_message msg);
 bool rpc_msg_send (rpc_client client, rpc_message msg);

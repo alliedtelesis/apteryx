@@ -45,6 +45,8 @@ struct rpc_instance_s {
     GHashTable *clients;
 };
 
+#include "apteryx.h"
+
 /* Garbage collection timer */
 #define RPC_GC_TIMEOUT_US (10 * RPC_TIMEOUT_US)
 
@@ -684,6 +686,114 @@ rpc_msg_decode_string (rpc_message msg)
     char *value = (char *) (msg->buffer + msg->offset);
     msg->offset += strlen (value) + 1;
     return value;
+}
+
+static void
+rpc_msg_add_children (rpc_message msg, GNode *root)
+{
+    GNode *child = NULL;
+
+    /* If there are any children, write them here. */
+    if (g_node_first_child(root))
+    {
+        rpc_msg_encode_uint8 (msg, rpc_start_children);
+        for (child = g_node_first_child(root); child; child = g_node_next_sibling(child))
+        {
+            rpc_msg_encode_tree (msg, child);
+        }
+        rpc_msg_encode_uint8 (msg, rpc_end_children);
+    }
+}
+
+void
+rpc_msg_encode_tree (rpc_message msg, GNode *root)
+{
+    const char *key = APTERYX_NAME (root);
+    const char *value = APTERYX_HAS_VALUE (root) ? APTERYX_VALUE (root) : NULL;
+
+    rpc_msg_encode_uint8 (msg, rpc_value);
+    /* Write this key (and value). */
+    rpc_msg_encode_string (msg, key);
+    rpc_msg_encode_string (msg, value ?: "");
+
+    /* If this node has no value, add its children. */
+    if (!APTERYX_HAS_VALUE (root))
+    {
+        rpc_msg_add_children (msg, root);
+    }
+}
+
+static GNode *
+_rpc_msg_decode_tree (rpc_message msg, GNode *root)
+{
+    rpc_type_t type;
+    char *key = NULL;
+    const char *value = NULL;
+    GNode *node = NULL;
+    bool has_children = false;
+    bool has_value = false;
+
+    do
+    {
+        type = rpc_msg_decode_uint8 (msg);
+        switch (type)
+        {
+            case rpc_value:
+                key = rpc_msg_decode_string (msg);
+                value = rpc_msg_decode_string (msg);
+
+                if (!root)
+                {
+                    /* Find the leading part of this path. Sometimes these nodes
+                     * can be a compound path (root key = /test/a/b/c) and they need
+                     * to be broken up into root + value.
+                     */
+                    gchar *path = g_strdup (key);
+                    key = strrchr(path, '/');
+                    if (key)
+                    {
+                        *key = '\0';
+                        key++;
+                    }
+
+                    /* Actually create the root node. */
+                    root = APTERYX_NODE (NULL, path);
+                }
+ 		if (value[0])
+                {
+                    node = APTERYX_LEAF (root, g_strdup (key), g_strdup (value));
+                    has_value = true;
+                }
+                else
+                {
+                   node = APTERYX_NODE (root, g_strdup (key));
+                }
+
+                break;
+            case rpc_start_children:
+                /* This node has children (which are also a tree). */
+                has_children = true;
+                _rpc_msg_decode_tree (msg, node ?: root);
+                break;
+            case rpc_end_children:
+            default:
+            case rpc_done:
+                /* This is a leaf being removed */
+                if (!has_children && !has_value && key && root)
+                {
+                    node = APTERYX_LEAF (root, g_strdup (key), g_strdup (""));
+                }
+                return root;
+        }
+    } while (type != rpc_end_children);
+
+    return root;
+}
+
+GNode *
+rpc_msg_decode_tree (rpc_message msg)
+{
+    return _rpc_msg_decode_tree (msg, NULL);
 }
 
 bool
