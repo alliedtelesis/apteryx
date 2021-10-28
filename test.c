@@ -4245,9 +4245,9 @@ test_watch_tree_wildcard ()
     CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_NON_LEAVES) == 7);
     CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 3);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, TEST_PATH"/interfaces/eth0")) != NULL);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state"), "up") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "speed"), "1000") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "duplex"), "full") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state") ?: "", "up") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "speed") ?: "", "1000") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "duplex") ?: "", "full") == 0);
     CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
     CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces/eth0"));
     _watch_tree_cleanup ();
@@ -4324,9 +4324,9 @@ test_watch_tree_prune_tree ()
     CU_ASSERT (_cb_count == 1);
     CU_ASSERT (watch_tree_root != NULL);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state"), "") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "speed"), "") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "duplex"), "") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state") ?: "x", "") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "speed") ?: "x", "") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "duplex") ?: "x", "") == 0);
     CU_ASSERT (apteryx_unwatch_tree (TEST_PATH"/interfaces/eth0/", test_watch_tree_callback));
     _watch_tree_cleanup ();
 }
@@ -4343,7 +4343,7 @@ test_watch_tree_one_level ()
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_cb_count == 1);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
-    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "down") == 0);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node) ?: "", "down") == 0);
     CU_ASSERT (apteryx_unwatch_tree (TEST_PATH"/entity/zones/private/", test_watch_tree_callback));
     CU_ASSERT (apteryx_set_string (path, NULL, NULL));
     _watch_tree_cleanup ();
@@ -4365,9 +4365,9 @@ test_watch_tree_one_level_multi ()
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (_cb_count == 1);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state"), "up") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "speed"), "1000") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "duplex"), "full") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state") ?: "", "up") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "speed") ?: "", "1000") == 0);
+    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "duplex") ?: "", "full") == 0);
     CU_ASSERT (apteryx_unwatch_tree (TEST_PATH"/interfaces/eth0/", test_watch_tree_callback));
     CU_ASSERT (apteryx_prune (path));
     _watch_tree_cleanup ();
