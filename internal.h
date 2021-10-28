@@ -254,6 +254,9 @@ GList *config_get_validators (const char *path);
 bool config_tree_has_refreshers (const char *path);
 bool config_tree_has_providers (const char *path);
 bool config_tree_has_indexers (const char *path);
+bool config_tree_has_proxies (const char *path);
+bool config_tree_has_watchers (const char *path);
+bool config_tree_has_validators (const char *path);
 
 /* Callbacks to clients */
 struct callback_node *cb_init (void);

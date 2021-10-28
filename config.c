@@ -379,6 +379,24 @@ config_tree_has_indexers (const char *path)
     return cb_exists (index_list, path);
 }
 
+bool
+config_tree_has_proxies (const char *path)
+{
+    return cb_exists (proxy_list, path);
+}
+
+bool
+config_tree_has_validators (const char *path)
+{
+    return cb_exists (validation_list, path);
+}
+
+bool
+config_tree_has_watchers (const char *path)
+{
+    return cb_exists (watch_list, path);
+}
+
 void
 config_init (void)
 {
