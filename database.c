@@ -720,18 +720,19 @@ test_db_timestamping ()
 
 
 CU_TestInfo tests_database[] = {
-    { "add/delete", test_db_add_delete },
-    { "add/delete performance", test_db_add_delete_perf },
-    { "large value", test_db_large_value },
-    { "long path", test_db_long_path },
-    { "path performance", test_db_path_perf },
-    { "path exists perf", test_db_path_exists_perf },
-    { "get", test_db_get },
-    { "get performance", test_db_get_perf },
-    { "replace", test_db_replace },
-    { "search", test_db_search },
-    { "search performance", test_db_search_perf },
-    { "timestamping", test_db_timestamping },
+    { "database: add/delete", test_db_add_delete },
+    { "database: add/delete performance", test_db_add_delete_perf },
+    { "database: large value", test_db_large_value },
+    { "database: long path", test_db_long_path },
+    { "database: path performance", test_db_path_perf },
+    { "database: path exists perf", test_db_path_exists_perf },
+    { "database: get", test_db_get },
+    { "database: get performance", test_db_get_perf },
+    { "database: replace", test_db_replace },
+    { "database: search", test_db_search },
+    { "database: search performance", test_db_search_perf },
+    { "database: timestamping", test_db_timestamping },
+    { "database: update simple", test_db_update },
     CU_TEST_INFO_NULL,
 };
 #endif
