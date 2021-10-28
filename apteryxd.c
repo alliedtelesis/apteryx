@@ -944,6 +944,61 @@ _gather_values (GNode *node, gpointer data)
     return FALSE;
 }
 
+/* Removes a node and any hanging parents from a GNode tree */
+static GNode *
+remove_node (GNode *_root, const char *_path)
+{
+    gchar *path = g_strdup (_path);
+    GNode *root = _root;
+    char *tok;
+    char *chunk;
+    chunk = strtok_r(path, "/", &tok);
+    while (chunk)
+    {
+        for (GNode *node = g_node_first_child (root); node; node = g_node_next_sibling (node)) {
+            /* Find the node in question. */
+            if ((g_strcmp0 (APTERYX_NAME (node), chunk) == 0))
+            {
+                if (APTERYX_HAS_VALUE(node))
+                {
+                    /* If this node has a value remove it, and free the node. */
+                    g_node_unlink (node);
+                    g_free (APTERYX_NAME (node));
+                    g_free (APTERYX_VALUE (node));
+                    g_node_destroy (node);
+
+                    /* Head up the tree freeing any that we can. */
+                    while (root && APTERYX_NUM_NODES(root) <= 1)
+                    {
+                        /* Save the node we are removing */
+                        node = root;
+                        /* Prepare to move up */
+                        root = node->parent;
+                        g_node_unlink (node);
+                        g_free (node->data);
+                        g_node_destroy (node);
+                    }
+                    /* Done removing + cleaning up tree. */
+                    goto exit;
+                }
+                else
+                {
+                    /* If this isn't a leaf, move down a level. */
+                    root = node;
+                    break;
+                }
+            }
+        }
+
+        /* Move on to the next piece of the path. */
+        chunk = strtok_r (NULL, "/", &tok);
+    };
+
+exit:
+    g_free (path);
+    return root;
+}
+
 static bool
 handle_set (rpc_message msg, bool ack)
 {
@@ -956,11 +1011,11 @@ handle_set (rpc_message msg, bool ack)
     GList *ivalue;
     const char *value;
     GNode *root;
+    char *root_path = NULL;
     int proxy_result = 0;
     int validation_result = 0;
     int validation_lock = 0;
     bool db_result = false;
-    GList *next;
     key_value_lists lists = { NULL, NULL };
 
     /* Parse the parameters */
@@ -973,8 +1028,18 @@ handle_set (rpc_message msg, bool ack)
         return false;
     }
 
-    /* Having rebuilt the tree that was set by the client, generate a list of paths + values */
-    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
+    /* Figure out if we need the lists for checking callbacks */
+    _node_to_path(root, &root_path);
+    if (config_tree_has_proxies(root_path) ||
+        config_tree_has_validators(root_path) ||
+        config_tree_has_watchers(root_path))
+        {
+            /* If we have to search for any proxies / validators / watchers then build a list
+             * of paths.+ values.
+             */
+            g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
+        }
+
     paths = g_list_reverse (lists.paths);
     values = g_list_reverse (lists.values);
     INC_COUNTER (counters.set);
@@ -982,85 +1047,83 @@ handle_set (rpc_message msg, bool ack)
     /* Proxy first */
     ipath = g_list_first (paths);
     ivalue = g_list_first (values);
-    while (ipath && ivalue)
-    {
-        path = (const char *) ipath->data;
-        value = (const char *) ivalue->data;
-        if (value && value[0] == '\0')
-            value = NULL;
 
-        proxy_result = proxy_set (path, value, ts);
-        if (proxy_result == 0)
+    /* Don't bother with this loop if there are no proxies */
+    if (config_tree_has_proxies(root_path))
+    {
+        while (ipath && ivalue)
         {
-            /* Result success */
-            DEBUG ("SET: %s = %s proxied\n", path, value);
-            /* Call any watchers */
-            GList *wpaths = g_list_append (NULL, (gpointer) path);
-            GList *wvalues = g_list_append (NULL, (gpointer) value);
-            notify_watchers (wpaths, wvalues, ack);
-            g_list_free (wpaths);
-            g_list_free (wvalues);
-            /* Safely remove from both lists as we dont need to do any more processing */
-            next = g_list_next (ipath);
-            paths = g_list_delete_link (paths, ipath);
-            ipath = next;
-            next = g_list_next (ivalue);
-            values = g_list_delete_link (values, ivalue);
-            ivalue = next;
-            continue;
-        }
-        else if (proxy_result < 0)
-        {
-            result = proxy_result;
-            goto exit;
-        }
-        ipath = g_list_next (ipath);
-        ivalue = g_list_next (ivalue);
+            path = (const char *) ipath->data;
+            value = (const char *) ivalue->data;
+            if (value && value[0] == '\0')
+                value = NULL;
+
+            proxy_result = proxy_set (path, value, ts);
+            if (proxy_result == 0)
+            {
+                /* Result success */
+                DEBUG ("SET: %s = %s proxied\n", path, value);
+                /* Call any watchers */
+                GList *wpaths = g_list_append (NULL, (gpointer) path);
+                GList *wvalues = g_list_append (NULL, (gpointer) value);
+                GList *next;
+                notify_watchers (wpaths, wvalues, ack);
+                g_list_free (wpaths);
+                g_list_free (wvalues);
+
+                /* This value needs to be removed from the tree */
+                root = remove_node(root, path);
+
+                /* Safely remove from both lists as we dont need to do any more processing */
+                  next = g_list_next (ipath);
+                  paths = g_list_delete_link (paths, ipath);
+                  ipath = next;
+                  next = g_list_next (ivalue);
+                  values = g_list_delete_link (values, ivalue);
+                  ivalue = next;
+                  continue;
+              }
+              else if (proxy_result < 0)
+              {
+                  result = proxy_result;
+                  goto exit;
+              }
+              ipath = g_list_next (ipath);
+              ivalue = g_list_next (ivalue);
+          }
     }
 
-    /* Validate */
-    for (ipath = g_list_first (paths), ivalue = g_list_first (values);
-         ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+    /* Validate, if there are any present */
+    if (config_tree_has_validators(root_path))
     {
-        path = (const char *) ipath->data;
-        value = (const char *) ivalue->data;
-        if (value && value[0] == '\0')
-            value = NULL;
-
-        /* Validate new data */
-        validation_result = validate_set (path, value);
-        if (validation_result != 0)
-            validation_lock++;
-        if (validation_result < 0)
+        for (ipath = g_list_first (paths), ivalue = g_list_first (values);
+             ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
         {
-            DEBUG ("SET: %s = %s refused by validate\n", path, value);
-            result = validation_result;
-            goto exit;
+            path = (const char *) ipath->data;
+            value = (const char *) ivalue->data;
+            if (value && value[0] == '\0')
+                value = NULL;
+
+            /* Validate new data */
+            validation_result = validate_set (path, value);
+            if (validation_result != 0)
+                validation_lock++;
+            if (validation_result < 0)
+            {
+                DEBUG ("SET: %s = %s refused by validate\n", path, value);
+                result = validation_result;
+                goto exit;
+            }
         }
     }
 
     /* Set in the database */
     pthread_rwlock_wrlock (&db_lock);
-    for (ipath = g_list_first (paths), ivalue = g_list_first (values);
-         ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+    db_result = db_update_no_lock (root, ts);
+    if (!db_result)
     {
-        path = (const char *) ipath->data;
-        value = (const char *) ivalue->data;
-        if (value && value[0] == '\0')
-            value = NULL;
-
-        /* Add/Delete to/from database */
-        if (value)
-            db_result = db_add_no_lock (path, (unsigned char*)value, strlen (value) + 1, ts);
-        else
-            db_result = db_delete_no_lock (path, ts);
-        if (!db_result)
-        {
-            DEBUG ("SET: %s = %s refused by DB\n", path, value);
-            result = -EBUSY;
-            pthread_rwlock_unlock (&db_lock);
-            goto exit;
-        }
+        DEBUG ("SET: tree rejected by DB (%ld)\n", ts);
+        result = -EBUSY;
     }
     pthread_rwlock_unlock (&db_lock);
 
@@ -1068,8 +1131,11 @@ exit:
     /* Return result and notify watchers */
     if (validation_result >= 0 && result == 0)
     {
-        /* Notify watchers */
-        notify_watchers (paths, values, ack);
+        /* Notify watchers, if any are present */
+        if (config_tree_has_watchers (root_path))
+        {
+            notify_watchers (paths, values, ack);
+        }
     }
 
     /* Release validation lock - this is a sensitive value */
@@ -1085,6 +1151,7 @@ exit:
     rpc_msg_encode_uint64 (msg, result);
     g_list_free (paths);
     g_list_free (values);
+    g_free (root_path);
     return true;
 }
 
