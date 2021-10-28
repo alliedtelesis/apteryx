@@ -258,6 +258,8 @@ db_get (const char *path, unsigned char **value, size_t *length)
     if (!node || !node->value)
     {
         pthread_rwlock_unlock (&db_lock);
+        *value = NULL;
+        *length = 0;
         return false;
     }
     *value = g_malloc (node->length);

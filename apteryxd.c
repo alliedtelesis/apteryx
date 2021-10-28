@@ -685,6 +685,7 @@ proxy_set (const char *path, const char *value, uint64_t ts)
     /* Do remote set */
     rpc_msg_encode_uint8 (&msg, MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
+    rpc_msg_encode_uint8 (&msg, rpc_value);
     rpc_msg_encode_string (&msg, path);
     if (value)
         rpc_msg_encode_string (&msg, value);
@@ -897,6 +898,52 @@ proxy_timestamp (const char *path)
     return value;
 }
 
+typedef struct {
+    GList *paths;
+    GList *values;
+} key_value_lists;
+
+static char *
+_node_to_path (GNode *node, char **buf)
+{
+    /* don't put a trailing / on */
+    char end = 0;
+    if (!*buf)
+    {
+        *buf = strdup ("");
+        end = 1;
+    }
+
+    if (node && node->parent)
+        _node_to_path (node->parent, buf);
+
+    char *tmp = NULL;
+    if (asprintf (&tmp, "%s%s%s", *buf ? : "",
+            node ? (char*)node->data : "/",
+            end ? "" : "/") >= 0)
+    {
+        free (*buf);
+        *buf = tmp;
+    }
+    return tmp;
+}
+
+
+static gboolean
+_gather_values (GNode *node, gpointer data)
+{
+    key_value_lists *lists = (key_value_lists *) data;
+    if (APTERYX_HAS_VALUE(node))
+    {
+        char *path = NULL;
+        /* Create the apteryx path for this node. */
+        _node_to_path (node, &path);
+        lists->paths = g_list_prepend (lists->paths, path);
+        lists->values = g_list_prepend (lists->values, g_strdup (APTERYX_VALUE (node)));
+    }
+    return FALSE;
+}
+
 static bool
 handle_set (rpc_message msg, bool ack)
 {
@@ -908,23 +955,28 @@ handle_set (rpc_message msg, bool ack)
     GList *values = NULL;
     GList *ivalue;
     const char *value;
+    GNode *root;
     int proxy_result = 0;
     int validation_result = 0;
     int validation_lock = 0;
     bool db_result = false;
     GList *next;
+    key_value_lists lists = { NULL, NULL };
 
     /* Parse the parameters */
     ts = rpc_msg_decode_uint64 (msg);
-    while ((path = rpc_msg_decode_string (msg)) != NULL)
+    root = rpc_msg_decode_tree (msg);
+
+    if (!root)
     {
-        value = rpc_msg_decode_string (msg);
-        DEBUG ("SET: %s = %s\n", path, value);
-        paths = g_list_prepend (paths, (gpointer)path);
-        values = g_list_prepend (values, (gpointer)value);
+        ERROR ("SET: Failed to decode message\n");
+        return false;
     }
-    paths = g_list_reverse (paths);
-    values = g_list_reverse (values);
+
+    /* Having rebuilt the tree that was set by the client, generate a list of paths + values */
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
+    paths = g_list_reverse (lists.paths);
+    values = g_list_reverse (lists.values);
     INC_COUNTER (counters.set);
 
     /* Proxy first */

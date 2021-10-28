@@ -599,6 +599,7 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
     }
     rpc_msg_encode_uint8 (&msg, ack ? MODE_SET_WITH_ACK : MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
+    rpc_msg_encode_uint8 (&msg, rpc_value);
     rpc_msg_encode_string (&msg, path);
     if (value)
         rpc_msg_encode_string (&msg, value);
@@ -1110,7 +1111,7 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     /* Create the list of Paths/Value's */
     rpc_msg_encode_uint8 (&msg, wait_for_completion ? MODE_SET_WITH_ACK : MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
-    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _set_multi, &msg);
+    rpc_msg_encode_tree (&msg, root);
     if (!rpc_msg_send (rpc_client, &msg))
     {
         ERROR ("SET_TREE: No response Path(%s)\n", path);
