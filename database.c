@@ -25,6 +25,7 @@
 #include <glib.h>
 #include <inttypes.h>
 #include "internal.h"
+#include <apteryx.h>
 #ifdef TEST
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
@@ -140,6 +141,144 @@ db_update_timestamps (const char *path, uint64_t ts)
     }
     pthread_rwlock_unlock (&db_lock);
     return;
+}
+
+
+/* Search for or create a node for node under db_node. node
+ * may have a name with slashes in it - we will need to set up the chain
+ * of database_nodes to reach the end value.
+ */
+static struct database_node *
+_db_align_nodes(struct database_node *db_node, GNode *node)
+{
+    if (APTERYX_NAME(node)[0] == '\0')
+    {
+        return db_node;
+    }
+
+    char *name = g_strdup(APTERYX_NAME(node));
+
+    char *tok = NULL;
+    char *chunk = strtok_r(name, "/", &tok);
+
+    if (!chunk)
+    {
+        goto exit;
+    }
+
+    do
+    {
+        /* Find / create the next node down. */
+        struct database_node *next_db_node = db_node->hashtree_node.children ? g_hash_table_lookup (db_node->hashtree_node.children, chunk) : NULL;
+        if (!next_db_node)
+        {
+            db_node = (struct database_node *) hashtree_node_add(&db_node->hashtree_node, sizeof(struct database_node), chunk);
+        }
+        else
+        {
+            db_node = next_db_node;
+        }
+    } while ((chunk = strtok_r (NULL, "/", &tok)) != NULL);
+
+exit:
+    g_free (name);
+
+    return db_node;
+}
+
+
+/* Execute a depth-first update of the database. As nodes are removed
+ * we will clean up the parent database node as we head back up the tree.
+ *
+ * The GNode passed in has a list of children, the database node has a
+ * hashtable of children, so there is some mapping to be done between
+ * the two.
+ */
+static bool
+_db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
+{
+    struct database_node *db_node;
+
+    if (!parent_node)
+     {
+         return false;
+     }
+
+    if (!new_node)
+     {
+         return true;
+     }
+
+    /* Move db_node along to match this new_node */
+    db_node = _db_align_nodes(parent_node, new_node);
+
+    /* Got to a leaf node - update / remove values as required */
+    if (APTERYX_HAS_VALUE(new_node))
+    {
+        const char *value = APTERYX_VALUE(new_node);
+
+        if (ts != UINT64_MAX && ts < db_node->timestamp)
+        {
+            return false;
+        }
+
+        if (db_node->value)
+        {
+            g_free(db_node->value);
+        }
+
+        /* We interpret an empty string as removal, so anything else
+         * is a value to set.
+         */
+        if (value[0])
+        {
+            db_node->value = (unsigned char*)g_strdup(value);
+            db_node->length = strlen(value) + 1;
+        }
+        else
+        {
+            db_node->value = NULL;
+            db_node->length = 0;
+        }
+
+        /* Update times up this tree */
+        uint64_t set_time = db_calculate_timestamp();
+        for (struct database_node *ts_update = db_node; ts_update; ts_update = (struct database_node *)ts_update->hashtree_node.parent)
+        {
+            ts_update->timestamp = set_time;
+        }
+    }
+    else
+    {
+        /* Non-leaf nodes have children, iterate down them. */
+        for (GNode *node = g_node_first_child (new_node); node; node = g_node_next_sibling (node)) {
+            if (!_db_update(db_node, node, ts))
+            {
+                return false;
+            }
+        }
+    }
+
+    /* Having updated both this node and its children, iterate up the tree until we
+     * reach either the root passed in, a node with children, or a node with a value.
+     */
+    while (db_node &&
+           db_node != parent_node &&
+           db_node->length == 0 &&
+           hashtree_empty(&db_node->hashtree_node))
+    {
+        struct database_node *parent = (struct database_node *)db_node->hashtree_node.parent;
+        hashtree_node_delete (root, &db_node->hashtree_node);
+        db_node = parent;
+    }
+
+    return true;
+}
+
+bool
+db_update_no_lock (GNode *new_data, uint64_t ts)
+{
+    return _db_update ((struct database_node*)root, new_data, ts);
 }
 
 bool
@@ -718,6 +857,53 @@ test_db_timestamping ()
     db_shutdown ();
 }
 
+void
+test_db_update ()
+{
+    size_t length = 0;
+    char *value = NULL;
+    GNode *root = APTERYX_NODE (NULL, "");
+    GNode *node = APTERYX_NODE (root, "test");
+    node = APTERYX_NODE (node, "eth0");
+    GNode *node2 = APTERYX_NODE (node, "statistics");
+    node = APTERYX_LEAF (node2, "rx_count", "10");
+    node = APTERYX_LEAF (node2, "tx_count", "20");
+    node = APTERYX_LEAF (node2, "removed", "");
+    node = APTERYX_LEAF (node2, "changed", "changed");
+
+    db_init ();
+
+    /* Install a value to remove with the update */
+    CU_ASSERT (db_add ("/test/eth0/statistics/removed", (const unsigned char *) "dummy", strlen ("dummy") + 1, UINT64_MAX));
+    /* Install a value to change with the update */
+    CU_ASSERT (db_add ("/test/eth0/statistics/changed", (const unsigned char *) "unchanged", strlen ("unchanged") + 1, UINT64_MAX));
+
+    pthread_rwlock_rdlock (&db_lock);
+    CU_ASSERT (db_update_no_lock (root, UINT64_MAX));
+
+    CU_ASSERT (db_get ("/test/eth0/statistics/rx_count", (unsigned char**)&value, &length) == true);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (length == (strlen ("10") + 1));
+    CU_ASSERT (value && strcmp (value, "10") == 0);
+    g_free ((void *) value);
+
+    db_get ("/test/eth0/statistics/removed", (unsigned char**)&value, &length);
+    CU_ASSERT (value == NULL);
+
+    CU_ASSERT (db_get ("/test/eth0/statistics/changed", (unsigned char**)&value, &length) == true);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (length == (strlen ("changed") + 1));
+    CU_ASSERT (value && strcmp (value, "changed") == 0);
+    g_free ((void *) value);
+
+    pthread_rwlock_unlock (&db_lock);
+
+    g_node_destroy(root);
+
+    db_prune ("/test");
+
+    db_shutdown ();
+}
 
 CU_TestInfo tests_database[] = {
     { "database: add/delete", test_db_add_delete },

@@ -186,6 +186,7 @@ extern pthread_rwlock_t db_lock;
 void db_init (void);
 void db_shutdown (void);
 bool db_add (const char *path, const unsigned char *value, size_t length, uint64_t ts);
+bool db_update_no_lock (GNode *root, uint64_t ts);
 bool db_add_no_lock (const char *path, const unsigned char *value, size_t length,
                      uint64_t ts);
 bool db_delete (const char *path, uint64_t ts);
