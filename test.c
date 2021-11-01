@@ -4749,17 +4749,19 @@ test_perf_set_tree_50000 ()
 {
     const char *path = TEST_PATH"/interfaces/eth0";
     char value[32];
-    GNode* root;
+    GNode *root, *node;
     uint64_t start, time;
     int count = 50000;
     int i;
     bool res;
 
-    root = APTERYX_NODE (NULL, strdup (path));
+    root = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    node = APTERYX_NODE (root, strdup ("interfaces"));
+    node = APTERYX_NODE (node, strdup ("eth0"));
     for (i=0; i<count; i++)
     {
         sprintf (value, "value%d", i);
-        APTERYX_LEAF (root, strdup (value), strdup (value));
+        APTERYX_LEAF (node, strdup (value), strdup (value));
     }
     start = get_time_us ();
     CU_ASSERT ((res = apteryx_set_tree (root)));
