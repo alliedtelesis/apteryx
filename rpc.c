@@ -759,7 +759,7 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
                     /* Actually create the root node. */
                     root = APTERYX_NODE (NULL, path);
                 }
- 		if (value[0])
+                if (value[0])
                 {
                     node = APTERYX_LEAF (root, g_strdup (key), g_strdup (value));
                     has_value = true;
