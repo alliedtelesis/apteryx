@@ -4719,12 +4719,13 @@ test_perf_set_tree_5000 ()
 {
     const char *path = TEST_PATH"/interfaces/eth0";
     char value[32];
-    GNode* root;
-    uint64_t start, time;
+    GNode *root, *node;
+    uint64_t start, time, start2, time2;
     int count = 5000;
     int i;
     bool res;
 
+    time = time2 = 0;
     root = APTERYX_NODE (NULL, strdup (path));
     for (i=0; i<count; i++)
     {
@@ -4740,6 +4741,33 @@ test_perf_set_tree_5000 ()
 exit:
     apteryx_free_tree (root);
     CU_ASSERT (apteryx_prune (path));
+
+    /* Do the same test, but with an exploded root path */
+    root = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    node = APTERYX_NODE (root, strdup ("interfaces"));
+    node = APTERYX_NODE (node, strdup ("eth0"));
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        APTERYX_LEAF (node, strdup (value), strdup (value));
+    }
+    start2 = get_time_us ();
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit2;
+    time2 = (get_time_us () - start2);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time2, time2/count);
+
+    /* These two sets really ought to be within 5% of each other,
+     * but there's a lot of variablity. I'll leave both runs here
+     * so we can inspect the output, but I don't want them failing.
+     */
+    // CU_ASSERT (abs(time - time2) / (time * 1.0) < 0.05);
+
+exit2:
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_prune (path));
+
     CU_ASSERT (assert_apteryx_empty ());
 }
 

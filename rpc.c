@@ -793,7 +793,28 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
 GNode *
 rpc_msg_decode_tree (rpc_message msg)
 {
-    return _rpc_msg_decode_tree (msg, NULL);
+    GNode *root = _rpc_msg_decode_tree (msg, NULL);
+
+    /* We might have a tree with an exploded root - collapse it
+     * as much as we can.
+     */
+    while (!APTERYX_HAS_VALUE (root) &&
+           g_node_n_children (root) == 1)
+    {
+        /* This node has no value and only one child, so we can
+         * squish it into the child.
+         */
+        GNode *child = g_node_first_child (root);
+        gchar *compressed_path = g_strdup_printf ("%s/%s", APTERYX_NAME (root), APTERYX_NAME (child));
+        g_free (child->data);
+        child->data = compressed_path;
+        g_node_unlink (child);
+        g_free (root->data);
+        g_node_destroy (root);
+        root = child;
+    }
+
+    return root;
 }
 
 bool
