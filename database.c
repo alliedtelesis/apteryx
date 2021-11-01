@@ -212,15 +212,15 @@ _db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
     /* Move db_node along to match this new_node */
     db_node = _db_align_nodes(parent_node, new_node);
 
+    if (ts != UINT64_MAX && db_node && ts < db_node->timestamp)
+    {
+        return false;
+    }
+
     /* Got to a leaf node - update / remove values as required */
     if (APTERYX_HAS_VALUE(new_node))
     {
         const char *value = APTERYX_VALUE(new_node);
-
-        if (ts != UINT64_MAX && ts < db_node->timestamp)
-        {
-            return false;
-        }
 
         if (db_node->value)
         {
