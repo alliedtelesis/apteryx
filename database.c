@@ -149,7 +149,7 @@ db_update_timestamps (const char *path, uint64_t ts)
  * of database_nodes to reach the end value.
  */
 static struct database_node *
-_db_align_nodes(struct database_node *db_node, GNode *node)
+_db_align_nodes(struct database_node *db_node, GNode *node, bool create)
 {
     if (APTERYX_NAME(node)[0] == '\0')
     {
@@ -169,10 +169,23 @@ _db_align_nodes(struct database_node *db_node, GNode *node)
     do
     {
         /* Find / create the next node down. */
-        struct database_node *next_db_node = db_node->hashtree_node.children ? g_hash_table_lookup (db_node->hashtree_node.children, chunk) : NULL;
+        struct database_node *next_db_node = db_node->hashtree_node.children ?
+                                             g_hash_table_lookup (db_node->hashtree_node.children, chunk) :
+                                             NULL;
+
+        /* Some callers to this function will require the nodes to be created,
+         * others will be happy to know there's nothing here.
+         */
+        if (!create && !next_db_node)
+        {
+            db_node = NULL;
+            goto exit;
+        }
         if (!next_db_node)
         {
-            db_node = (struct database_node *) hashtree_node_add(&db_node->hashtree_node, sizeof(struct database_node), chunk);
+            db_node = (struct database_node *) hashtree_node_add (&db_node->hashtree_node,
+                                                                  sizeof(struct database_node),
+                                                                  chunk);
         }
         else
         {
@@ -210,12 +223,7 @@ _db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
      }
 
     /* Move db_node along to match this new_node */
-    db_node = _db_align_nodes(parent_node, new_node);
-
-    if (ts != UINT64_MAX && db_node && ts < db_node->timestamp)
-    {
-        return false;
-    }
+    db_node = _db_align_nodes(parent_node, new_node, true);
 
     /* Got to a leaf node - update / remove values as required */
     if (APTERYX_HAS_VALUE(new_node))
@@ -275,9 +283,69 @@ _db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
     return true;
 }
 
+static bool
+_db_timestamp_ok (struct database_node *parent_node, GNode *new_node, uint64_t ts)
+{
+    struct database_node *db_node;
+    if (ts == UINT64_MAX)
+    {
+        return true;
+    }
+
+    if (!parent_node)
+    {
+        return false;
+    }
+
+    if (!new_node)
+    {
+        return true;
+    }
+
+    /* Move db_node along to match this new_node - not being able to find
+     * one means this node is empty, and we needn't check the timestamp
+     */
+    db_node = _db_align_nodes(parent_node, new_node, false);
+
+    /* Nothing below here means anything is fine. */
+    if (!db_node)
+    {
+        return true;
+    }
+
+    /* Got to a leaf node - check the timestamp. */
+    if (APTERYX_HAS_VALUE(new_node))
+    {
+        if (db_node->timestamp > ts)
+        {
+            return false;
+        }
+    }
+    else
+    {
+        /* Non-leaf nodes have children, iterate down them. */
+        for (GNode *node = g_node_first_child (new_node); node; node = g_node_next_sibling (node)) {
+            if (!_db_timestamp_ok(db_node, node, ts))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+
+}
+
 bool
 db_update_no_lock (GNode *new_data, uint64_t ts)
 {
+    if (!new_data)
+        return true;
+
+    if (!_db_timestamp_ok ((struct database_node*)root, new_data, ts))
+    {
+        return false;
+    }
     return _db_update ((struct database_node*)root, new_data, ts);
 }
 

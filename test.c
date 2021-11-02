@@ -4079,6 +4079,66 @@ test_cas_tree ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+void
+test_cas_tree_detailed ()
+{
+    const char *path = TEST_PATH"/team";
+    GNode *root, *node;
+    uint64_t ts;
+
+    /* Do a set into an empty place in the database */
+    root = APTERYX_NODE (NULL, (char*)path);
+    node = APTERYX_NODE (root, "blue");
+    APTERYX_LEAF (node, "first", "who");
+    APTERYX_LEAF (node, "second", "i don't know");
+    APTERYX_LEAF (node, "third", "why");
+    CU_ASSERT (apteryx_cas_tree (root, 0));
+    CU_ASSERT (!apteryx_cas_tree (root, 0));
+    CU_ASSERT (errno == -EBUSY);
+    CU_ASSERT ((ts = apteryx_timestamp (path)) != 0);
+    g_node_destroy (root);
+
+    /* Make sure we can set data that doesn't collide with previous */
+    root = APTERYX_NODE (NULL, (char*)path);
+    node = APTERYX_NODE (root, "numbers");
+    APTERYX_LEAF (node, "one", "1");
+    APTERYX_LEAF (node, "two", "2");
+    APTERYX_LEAF (node, "three", "3");
+    node = APTERYX_NODE (root, "colors");
+    APTERYX_LEAF (node, "red", "pink");
+    APTERYX_LEAF (node, "blue", "green");
+    APTERYX_LEAF (node, "black", "white");
+    CU_ASSERT (apteryx_cas_tree (root, 0));
+    CU_ASSERT (!apteryx_cas_tree (root, 0));
+    CU_ASSERT (errno == -EBUSY);
+    g_node_destroy (root);
+
+    /* Make sure that, in the case of a collision, none of the data
+     * is set.
+     */
+    root = APTERYX_NODE (NULL, (char*)path);
+    node = APTERYX_NODE (root, "animals");
+    APTERYX_LEAF (node, "pig", "piglet");
+    APTERYX_LEAF (node, "duck", "duckling");
+    APTERYX_LEAF (node, "cow", "veal");
+    node = APTERYX_NODE (root, "colors");
+    APTERYX_LEAF (node, "red", "pink");
+    APTERYX_LEAF (node, "blue", "green");
+    APTERYX_LEAF (node, "black", "white");
+    CU_ASSERT (!apteryx_cas_tree (root, 0));
+    CU_ASSERT (errno == -EBUSY);
+    g_node_destroy (root);
+
+    char *value = apteryx_get (TEST_PATH"/team/animals/pig");
+    CU_ASSERT (value == NULL);
+    if (value)
+        free (value);
+
+    CU_ASSERT (apteryx_prune (path));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static bool atomic_tree_running = true;
 static pthread_mutex_t atomic_tree_set_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t atomic_tree_prune_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -5219,6 +5279,7 @@ test_proxy_cas ()
     char *value = NULL;
     uint64_t ts;
 
+    printf("%d: doing %s\n", getpid(), __FUNCTION__);
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
 
@@ -6568,6 +6629,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query two branches", test_query_two_branches},
     { "query provided", test_query_provided},
     { "cas tree", test_cas_tree},
+    { "cas tree detailed", test_cas_tree_detailed},
     { "tree atomic", test_tree_atomic},
     { "watch tree", test_watch_tree },
     { "watch tree wildcard", test_watch_tree_wildcard },

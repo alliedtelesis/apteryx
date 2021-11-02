@@ -952,7 +952,29 @@ remove_node (GNode *_root, const char *_path)
     GNode *root = _root;
     char *tok;
     char *chunk;
-    chunk = strtok_r(path, "/", &tok);
+
+    /* Skip forward - the path really should start with the key of the
+     * root node.
+     */
+    if (strncmp(APTERYX_NAME(root), path, strlen(APTERYX_NAME(root))) != 0)
+    {
+        return _root;
+    }
+
+    /* This tree consists of a single node that we are removing. */
+    if (strlen(path + strlen (APTERYX_NAME (root))) == 0)
+    {
+        /* Got it in one. */
+        g_node_unlink (root);
+        g_free (APTERYX_NAME (root));
+        g_free (APTERYX_VALUE (root));
+        g_node_destroy (root);
+        root = NULL;
+        goto exit;
+    }
+
+    /* Skip past the root node part of the path */
+    chunk = strtok_r (path + strlen (APTERYX_NAME(root)), "/", &tok);
     while (chunk)
     {
         for (GNode *node = g_node_first_child (root); node; node = g_node_next_sibling (node)) {
