@@ -277,7 +277,7 @@ void cb_shutdown (struct callback_node *root);
 
 /* Callbacks to users */
 bool add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags);
-bool delete_callback (const char *type, const char *path, void *fn);
+bool delete_callback (const char *type, const char *path, void *fn, void *data);
 
 /* Tests */
 void run_unit_tests (const char *filter);

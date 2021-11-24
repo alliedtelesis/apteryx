@@ -6009,6 +6009,64 @@ test_lua_basic_watch (void)
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_lua_multiple_watchers ()
+{
+        CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "local v1 = nil                                               \n"
+            "local v2 = nil                                               \n"
+            "local v3 = nil                                               \n"
+            "function test_watch1 (path, value)                             "
+            "    assert (path == '"TEST_PATH"/watch')                       "
+            "    v1 = value                                                 "
+            "end                                                          \n"
+            "function test_watch2 (path, value)                             "
+            "    assert (path == '"TEST_PATH"/watch')                       "
+            "    v2 = value                                                 "
+            "end                                                          \n"
+            "function test_watch3 (path, value)                             "
+            "    assert (path == '"TEST_PATH"/watch')                       "
+            "    v3 = value                                                 "
+            "end                                                          \n"
+            "apteryx.watch('"TEST_PATH"/watch', test_watch1)              \n"
+            "apteryx.process()                                            \n"
+            "apteryx.watch('"TEST_PATH"/watch', test_watch2)              \n"
+            "apteryx.process()                                            \n"
+            "apteryx.watch('"TEST_PATH"/watch', test_watch3)              \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch', 'me')                       \n"
+            "apteryx.process()                                            \n"
+            "apteryx.process()                                            \n"
+            "apteryx.process()                                            \n"
+            "assert(v1 == 'me')                                           \n"
+            "assert(v2 == 'me')                                           \n"
+            "assert(v3 == 'me')                                           \n"
+            "apteryx.unwatch('"TEST_PATH"/watch', test_watch1)            \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch', 'too')                      \n"
+            "apteryx.process()                                            \n"
+            "apteryx.process()                                            \n"
+            "apteryx.process()                                            \n"
+            "assert(v1 == 'me')                                           \n"
+            "assert(v2 == 'too')                                          \n"
+            "assert(v3 == 'too')                                          \n"
+            "apteryx.unwatch('"TEST_PATH"/watch', test_watch3)            \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch', 'again')                    \n"
+            "apteryx.process()                                            \n"
+            "apteryx.process()                                            \n"
+            "apteryx.process()                                            \n"
+            "assert(v1 == 'me')                                           \n"
+            "assert(v2 == 'again')                                        \n"
+            "assert(v3 == 'too')                                          \n"
+            "apteryx.unwatch('"TEST_PATH"/watch', test_watch2)            \n"
+            "apteryx.set('"TEST_PATH"/watch')                             \n"
+            "apteryx.process(false)                                       \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int
 test_lua_refresh_thread (void *data)
 {
@@ -6568,6 +6626,7 @@ CU_TestInfo tests_lua[] = {
     { "lua basic query", test_lua_basic_query},
     { "lua basic timestamp", test_lua_basic_timestamp },
     { "lua basic watch", test_lua_basic_watch },
+    { "lua multiple watchers", test_lua_multiple_watchers },
     { "lua basic refresh", test_lua_basic_refresh },
     { "lua basic provide", test_lua_basic_provide },
     { "lua basic index", test_lua_basic_index },

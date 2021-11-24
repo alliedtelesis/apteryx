@@ -1635,6 +1635,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     ASSERT (path, return false, "ADD_CB: Invalid path\n");
     ASSERT (fn, return false, "ADD_CB: Invalid callback\n");
 
+    pthread_mutex_lock (&lock);
     cb = calloc (1, sizeof (cb_t));
     cb->ref = next_ref++;
     cb->path = strdup (path);
@@ -1642,8 +1643,6 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     cb->value = value;
     cb->data = data;
     cb->flags = flags;
-
-    pthread_mutex_lock (&lock);
     cb_list = g_list_prepend (cb_list, (void *) cb);
     if (!bound)
     {
@@ -1674,7 +1673,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
 }
 
 bool
-delete_callback (const char *type, const char *path, void *fn)
+delete_callback (const char *type, const char *path, void *fn, void *data)
 {
     char _path[PATH_MAX];
     uint64_t ref;
@@ -1690,7 +1689,7 @@ delete_callback (const char *type, const char *path, void *fn)
     for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
     {
         cb = (cb_t *) iter->data;
-        if (cb->fn == fn && strcmp (cb->path, path) == 0)
+        if (cb->fn == fn && strcmp (cb->path, path) == 0 && cb->data == data)
         {
             cb_list = g_list_remove (cb_list, cb);
             break;
@@ -1720,7 +1719,7 @@ apteryx_index (const char *path, apteryx_index_callback cb)
 bool
 apteryx_unindex (const char *path, apteryx_index_callback cb)
 {
-    return delete_callback (APTERYX_INDEXERS_PATH, path, (void *)cb);
+    return delete_callback (APTERYX_INDEXERS_PATH, path, (void *)cb, NULL);
 }
 
 bool
@@ -1732,7 +1731,7 @@ apteryx_watch (const char *path, apteryx_watch_callback cb)
 bool
 apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 {
-    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, NULL);
 }
 
 bool
@@ -1744,7 +1743,7 @@ apteryx_watch_tree (const char *path, apteryx_watch_tree_callback cb)
 bool
 apteryx_unwatch_tree (const char *path, apteryx_watch_tree_callback cb)
 {
-    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb);
+    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, NULL);
 }
 
 bool
@@ -1756,7 +1755,7 @@ apteryx_validate (const char *path, apteryx_validate_callback cb)
 bool
 apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 {
-    return delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb);
+    return delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb, NULL);
 }
 
 bool
@@ -1768,7 +1767,7 @@ apteryx_refresh (const char *path, apteryx_refresh_callback cb)
 bool
 apteryx_unrefresh (const char *path, apteryx_refresh_callback cb)
 {
-    return delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb);
+    return delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb, NULL);
 }
 
 bool
@@ -1780,7 +1779,7 @@ apteryx_provide (const char *path, apteryx_provide_callback cb)
 bool
 apteryx_unprovide (const char *path, apteryx_provide_callback cb)
 {
-    return delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb);
+    return delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb, NULL);
 }
 
 bool
@@ -1806,7 +1805,7 @@ apteryx_unproxy (const char *path, const char *url)
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = delete_callback (APTERYX_PROXIES_PATH, value,
-            (void *)(size_t)g_str_hash (url));
+            (void *)(size_t)g_str_hash (url), NULL);
     free (value);
     return res;
 }
