@@ -496,8 +496,9 @@ lua_apteryx_unindex (lua_State *L)
     luaL_checktype(L, 1, LUA_TSTRING);
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index))
+    if (!delete_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, (void *) ref))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
@@ -552,8 +553,9 @@ lua_apteryx_unwatch (lua_State *L)
     luaL_checktype(L, 1, LUA_TSTRING);
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch))
+    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, (void *) ref))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
@@ -613,8 +615,9 @@ lua_apteryx_unrefresh (lua_State *L)
     luaL_checktype(L, 1, LUA_TSTRING);
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh))
+    if (!delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, (void *) ref))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
@@ -675,8 +678,9 @@ lua_apteryx_unvalidate (lua_State *L)
     luaL_checktype(L, 1, LUA_TSTRING);
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate))
+    if (!delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, (void *) ref))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
@@ -736,8 +740,9 @@ lua_apteryx_unprovide (lua_State *L)
     luaL_checktype(L, 1, LUA_TSTRING);
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide))
+    if (!delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, (void *) ref))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
