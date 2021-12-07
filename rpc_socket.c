@@ -195,7 +195,7 @@ rpc_socket_recv (rpc_socket sock, rpc_id id, void **data, size_t *len, uint64_t 
 }
 
 rpc_socket
-rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
+rpc_socket_create (int fd, rpc_callback cb, rpc_server parent, int pid)
 {
     rpc_socket sock = g_malloc0 (sizeof(*sock));
     sock->refcount = 1;
@@ -206,6 +206,7 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent)
     sock->next_id = 1;
     sock->request_cb = cb;
     sock->parent = parent;
+    sock->pid = pid;
     pthread_mutex_init (&sock->in_lock, NULL);
     pthread_mutex_init (&sock->out_lock, NULL);
     pthread_mutex_init (&sock->lock, NULL);
