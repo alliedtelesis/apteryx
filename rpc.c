@@ -103,7 +103,7 @@ worker_func (gpointer a, gpointer b)
             usleep (rand() & RPC_TEST_DELAY_MASK);
 
         /* Process the callback */
-        DEBUG ("RPC[%d]: processing message\n", sock->sock);
+        DEBUG ("RPC[%d]: processing message from %d\n", sock->sock, sock->pid);
         if (!handler (msg))
         {
             ERROR ("RPC[%i]: handler failed\n", sock->sock);
