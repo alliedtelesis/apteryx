@@ -236,9 +236,10 @@ _db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
         }
 
         /* We interpret an empty string as removal, so anything else
-         * is a value to set.
+         * is a value to set. NULL values can be in the tree when
+         * doing a query.
          */
-        if (value[0])
+        if (value && value[0])
         {
             db_node->value = (unsigned char*)g_strdup(value);
             db_node->length = strlen(value) + 1;
@@ -474,6 +475,125 @@ db_get (const char *path, unsigned char **value, size_t *length)
     *length = node->length;
     pthread_rwlock_unlock (&db_lock);
     return true;
+}
+
+/* Add depth (-1 for all) layers of children from the database into the node n. */
+static void
+_db_add_children (GNode *n, struct database_node *parent, int depth)
+{
+    if (depth > 0)
+    {
+        if (depth-- == 0)
+        {
+            return;
+        }
+    }
+
+    GList *children = hashtree_children_get (&parent->hashtree_node);
+    if (children)
+    {
+        for (GList *iter = children; iter; iter = iter->next)
+        {
+            struct database_node *child = iter->data;
+            GNode *next = g_node_new(g_strdup((gchar*)child->hashtree_node.key));
+            g_node_prepend(n, next);
+            _db_add_children(next, child, depth);
+        }
+        g_list_free (children);
+    }
+    else if (parent->length)
+    {
+        GNode *next = g_node_new(g_strdup((gchar*)parent->value));
+        g_node_prepend(n, next);
+    }
+}
+
+GNode *
+db_get_all (const char *path)
+{
+    /* Move db_node along to match this new_node */
+    GNode *new_node = g_node_new(g_strdup(path));
+    pthread_rwlock_rdlock (&db_lock);
+    struct database_node *db_node = _db_align_nodes((struct database_node*)root, new_node, false);
+    if (!db_node)
+    {
+        pthread_rwlock_unlock (&db_lock);
+        return new_node;
+    }
+    _db_add_children(new_node, db_node, -1);
+    pthread_rwlock_unlock (&db_lock);
+    return new_node;
+}
+
+void
+_db_query_children (GNode *n, struct database_node *parent, GNode *query)
+{
+    if (parent->length)
+    {
+        g_node_prepend_data(n, g_strdup((char*)parent->value));
+        return;
+    }
+
+    for (GNode *query_element = g_node_first_child(query); query_element;
+         query_element = g_node_next_sibling(query_element))
+    {
+        if (strcmp(query_element->data, "*") == 0)
+        {
+            if (g_node_first_child(query_element) && g_node_first_child(query_element)->data)
+            {
+                /* This needs to pick up everything from this one directory and continue matching */
+                GList *children = hashtree_children_get(&parent->hashtree_node);
+                for (GList *iter = children; iter; iter = g_list_next (iter))
+                {
+                    struct database_node *child = iter->data;
+                    _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+                }
+                g_list_free (children);
+            }
+            else
+            {
+                /* This is a terminating * and needs to catch everything (db_get_all) */
+                _db_add_children(n, parent, -1);
+            }
+        }
+        else if (strcmp(query_element->data, "") == 0)
+        {
+            /* Directory match, add the next level and stop */
+            _db_add_children(n, parent, 1);
+        }
+        else
+        {
+            struct database_node *child = g_hash_table_lookup(parent->hashtree_node.children, query_element->data);
+            if (child)
+            {
+                _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+            }
+        }
+    }
+
+    if (g_node_first_child(n) == NULL)
+    {
+        g_free(n->data);
+        g_node_destroy(n);
+    }
+}
+
+GNode *
+db_query (GNode *query)
+{
+    /* Move db_node along as far as we can to match this new_node */
+    GNode *new_node = g_node_new(g_strdup(APTERYX_NAME(query)));
+
+    pthread_rwlock_rdlock (&db_lock);
+    struct database_node *db_node = _db_align_nodes((struct database_node*)root, new_node, false);
+    if (!db_node)
+    {
+        pthread_rwlock_unlock (&db_lock);
+        return new_node;
+    }
+    _db_query_children(new_node, db_node, query);
+    pthread_rwlock_unlock (&db_lock);
+    return new_node;
 }
 
 GList *
