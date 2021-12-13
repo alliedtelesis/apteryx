@@ -787,14 +787,60 @@ proxy_search (const char *path)
     return paths;
 }
 
+typedef struct {
+    GList *paths;
+    GList *values;
+} key_value_lists;
+
+static char *
+_node_to_path (GNode *node, char **buf)
+{
+    /* don't put a trailing / on */
+    char end = 0;
+    if (!*buf)
+    {
+        *buf = strdup ("");
+        end = 1;
+    }
+
+    if (node && node->parent)
+        _node_to_path (node->parent, buf);
+
+    char *tmp = NULL;
+    if (asprintf (&tmp, "%s%s%s", *buf ? : "",
+            node ? (char*)node->data : "/",
+            end ? "" : "/") >= 0)
+    {
+        free (*buf);
+        *buf = tmp;
+    }
+    return tmp;
+}
+
+static gboolean
+_gather_values (GNode *node, gpointer data)
+{
+    key_value_lists *lists = (key_value_lists *) data;
+    if (APTERYX_HAS_VALUE(node))
+    {
+        char *path = NULL;
+        /* Create the apteryx path for this node. */
+        _node_to_path (node, &path);
+        lists->paths = g_list_prepend (lists->paths, path);
+        lists->values = g_list_prepend (lists->values, g_strdup (APTERYX_VALUE (node)));
+    }
+    return FALSE;
+}
+
+
 static bool
 proxy_traverse (GList **paths, GList **values, const char *path)
 {
     rpc_client rpc_client;
-    rpc_message_t msg = {};
+    rpc_message_t msg = { 0 };
     const char *in_path = path;
-    int slen;
-    char *value;
+    key_value_lists lists = { NULL, NULL };
+    GNode *root = NULL;
 
     cb_info_t *proxy = NULL;
 
@@ -802,7 +848,6 @@ proxy_traverse (GList **paths, GList **values, const char *path)
     rpc_client = find_proxy (&path, &proxy);
     if (!rpc_client)
         return false;
-    slen = strlen (path);
 
     /* Do remote traverse */
     rpc_msg_encode_uint8 (&msg, MODE_TRAVERSE);
@@ -815,23 +860,24 @@ proxy_traverse (GList **paths, GList **values, const char *path)
         rpc_client_release (rpc, rpc_client, false);
         return false;
     }
-    path = rpc_msg_decode_string (&msg);
-    if (path)
+
+    root = rpc_msg_decode_tree (&msg);
+
+    /* Prepend this remote tree with our proxy path */
+    if (root)
     {
-        while (path)
-        {
-            value = rpc_msg_decode_string (&msg);
-            *paths = g_list_prepend (*paths, (gpointer) g_strconcat (in_path, path + slen, NULL));
-            *values = g_list_prepend (*values, (gpointer) g_strdup (value));
-            path = rpc_msg_decode_string (&msg);
-        }
+        gchar *new_root_key = g_strdup_printf("%.*s%s", (int)(path - in_path), in_path, APTERYX_NAME(root));
+        g_free(root->data);
+        root->data = new_root_key;
     }
-    else
-    {
-        DEBUG ("(P)  = (null)\n");
-    }
+
+    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
+    *paths = lists.paths;
+    *values = lists.values;
+
     rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, true);
+    apteryx_free_tree(root);
 
     return true;
 }
@@ -896,52 +942,6 @@ proxy_timestamp (const char *path)
     rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, true);
     return value;
-}
-
-typedef struct {
-    GList *paths;
-    GList *values;
-} key_value_lists;
-
-static char *
-_node_to_path (GNode *node, char **buf)
-{
-    /* don't put a trailing / on */
-    char end = 0;
-    if (!*buf)
-    {
-        *buf = strdup ("");
-        end = 1;
-    }
-
-    if (node && node->parent)
-        _node_to_path (node->parent, buf);
-
-    char *tmp = NULL;
-    if (asprintf (&tmp, "%s%s%s", *buf ? : "",
-            node ? (char*)node->data : "/",
-            end ? "" : "/") >= 0)
-    {
-        free (*buf);
-        *buf = tmp;
-    }
-    return tmp;
-}
-
-
-static gboolean
-_gather_values (GNode *node, gpointer data)
-{
-    key_value_lists *lists = (key_value_lists *) data;
-    if (APTERYX_HAS_VALUE(node))
-    {
-        char *path = NULL;
-        /* Create the apteryx path for this node. */
-        _node_to_path (node, &path);
-        lists->paths = g_list_prepend (lists->paths, path);
-        lists->values = g_list_prepend (lists->values, g_strdup (APTERYX_VALUE (node)));
-    }
-    return FALSE;
 }
 
 /* Removes a node and any hanging parents from a GNode tree */
@@ -1026,10 +1026,8 @@ handle_set (rpc_message msg, bool ack)
 {
     int result = 0;
     uint64_t ts = 0;
-    GList *paths = NULL;
     GList *ipath;
     const char *path;
-    GList *values = NULL;
     GList *ivalue;
     const char *value;
     GNode *root;
@@ -1057,22 +1055,19 @@ handle_set (rpc_message msg, bool ack)
         config_tree_has_watchers(root_path))
         {
             /* If we have to search for any proxies / validators / watchers then build a list
-             * of paths.+ values.
+             * of paths + values.
              */
             g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
         }
 
-    paths = g_list_reverse (lists.paths);
-    values = g_list_reverse (lists.values);
     INC_COUNTER (counters.set);
-
-    /* Proxy first */
-    ipath = g_list_first (paths);
-    ivalue = g_list_first (values);
 
     /* Don't bother with this loop if there are no proxies */
     if (config_tree_has_proxies(root_path))
     {
+        /* Proxy first */
+        ipath = g_list_first (lists.paths);
+        ivalue = g_list_first (lists.values);
         while (ipath && ivalue)
         {
             path = (const char *) ipath->data;
@@ -1097,13 +1092,15 @@ handle_set (rpc_message msg, bool ack)
                 root = remove_node(root, path);
 
                 /* Safely remove from both lists as we dont need to do any more processing */
-                  next = g_list_next (ipath);
-                  paths = g_list_delete_link (paths, ipath);
-                  ipath = next;
-                  next = g_list_next (ivalue);
-                  values = g_list_delete_link (values, ivalue);
-                  ivalue = next;
-                  continue;
+                g_free(ipath->data);
+                g_free(ivalue->data);
+                next = g_list_next (ipath);
+                lists.paths = g_list_delete_link (lists.paths, ipath);
+                ipath = next;
+                next = g_list_next (ivalue);
+                lists.values = g_list_delete_link (lists.values, ivalue);
+                ivalue = next;
+                continue;
               }
               else if (proxy_result < 0)
               {
@@ -1118,7 +1115,7 @@ handle_set (rpc_message msg, bool ack)
     /* Validate, if there are any present */
     if (config_tree_has_validators(root_path))
     {
-        for (ipath = g_list_first (paths), ivalue = g_list_first (values);
+        for (ipath = g_list_first (lists.paths), ivalue = g_list_first (lists.values);
              ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
         {
             path = (const char *) ipath->data;
@@ -1156,7 +1153,7 @@ exit:
         /* Notify watchers, if any are present */
         if (config_tree_has_watchers (root_path))
         {
-            notify_watchers (paths, values, ack);
+            notify_watchers (lists.paths, lists.values, ack);
         }
     }
 
@@ -1171,9 +1168,10 @@ exit:
     /* Send result */
     rpc_msg_reset (msg);
     rpc_msg_encode_uint64 (msg, result);
-    g_list_free (paths);
-    g_list_free (values);
+    g_list_free_full (lists.paths, g_free);
+    g_list_free_full (lists.values, g_free);
     g_free (root_path);
+    apteryx_free_tree (root);
     return true;
 }
 
@@ -1464,59 +1462,10 @@ _update_path_callbacks (const char *path, char cb_lookup)
 }
 
 static void
-_traverse_paths (GList **paths, GList **values, const char *path, char cb_lookup)
+_traverse_paths (GNode **root, const char *path, char cb_lookup)
 {
-    GList *children, *iter;
-    char *value = NULL;
-    size_t vsize;
-
-    /* Look for a value - db first */
-    if (!db_get (path, (unsigned char**)&value, &vsize) && (cb_lookup & cb_provide))
-    {
-        /* Provide next */
-        value = provide_get (path);
-    }
-
-    if (value)
-    {
-        *paths = g_list_prepend (*paths, (gpointer) g_strdup (path));
-        *values = g_list_prepend (*values, (gpointer) value);
-    }
-
-    /* Check for children - index first */
-    char *path_s = g_strdup_printf ("%s/", path);
-    if (!(cb_lookup & cb_index) || !index_get (path_s, &children))
-    {
-        /* Search database next */
-        children = db_search (path_s);
-        DEBUG (" Got %d entries from database...\n", g_list_length (children));
-        /* Append any provided or refreshed paths */
-        GList *callbacks = NULL;
-        if (cb_lookup & cb_provide)
-            callbacks = config_search_providers (path_s);
-
-        if (cb_lookup & cb_refresh)
-            callbacks = g_list_concat (config_search_refreshers (path_s), callbacks);
-
-        DEBUG (" Got %d entries from providers and refreshers...\n", g_list_length (callbacks));
-        for (iter = callbacks; iter; iter = iter->next)
-        {
-            char *p = (char*)iter->data;
-            if (!g_list_find_custom (children, p, (GCompareFunc)strcmp))
-                children = g_list_prepend (children, strdup (p));
-        }
-        g_list_free_full (callbacks, free);
-    }
-
-    cb_lookup = _update_path_callbacks (path_s, cb_lookup);
-
-    for (iter = children; iter; iter = g_list_next (iter))
-    {
-        DEBUG ("TRAVERSE: %s\n", (const char *) iter->data);
-        _traverse_paths (paths, values, (const char *) iter->data, cb_lookup);
-    }
-    g_list_free_full (children, g_free);
-    g_free (path_s);
+    /* Grab the entire content of the database below here */
+    *root = db_get_all(path);
 }
 
 static void
@@ -1562,15 +1511,141 @@ refreshers_traverse (const char *top_path, char cb_lookup)
     g_list_free_full (paths, g_free);
 }
 
+static GList *
+collect_indexed_provided_paths(gchar *path)
+{
+    GList *search_result;
+    GList *possible_providers;
+    GList *provided_paths = NULL;
+
+    if (!config_tree_has_providers(path))
+    {
+        printf("%s: nothing here - easy exit\n", __FUNCTION__);
+        return NULL;
+    }
+
+    /* Get the matches at this level */
+    search_result = config_get_providers(path);
+    if(g_list_length(search_result))
+    {
+        provided_paths = g_list_prepend(provided_paths, g_strdup(path));
+        g_list_free_full(search_result, (GDestroyNotify) cb_release);
+        search_result = NULL;
+    }
+
+    gchar *needle = g_strdup_printf("%s/", path);
+
+    GList *callbacks = NULL;
+    possible_providers = config_search_providers (needle);
+    for (GList *iter = possible_providers; iter; iter = iter->next)
+    {
+        provided_paths = g_list_concat(provided_paths, collect_indexed_provided_paths(iter->data));
+    }
+    callbacks = NULL;
+
+    callbacks = NULL;
+    index_get(needle, &callbacks);
+    callbacks = g_list_concat (callbacks, config_search_indexers (needle));
+    callbacks = g_list_concat (callbacks, config_search_providers (needle));
+    callbacks = g_list_concat(callbacks, db_search(needle));
+    g_free(needle);
+
+    /* We need to make these lists unique without iterating them over and over */
+    GHashTable *uniq_paths = g_hash_table_new (g_str_hash, g_str_equal);
+    for (GList *iter = callbacks; iter; iter = iter->next)
+    {
+        g_hash_table_insert(uniq_paths, iter->data, iter->data);
+    }
+    GHashTableIter uniq_iter;
+    gpointer key, value;
+    g_hash_table_iter_init (&uniq_iter, uniq_paths);
+    while (g_hash_table_iter_next (&uniq_iter, &key, &value))
+    {
+        /* do something with key and value */
+        provided_paths = g_list_concat(callbacks, collect_indexed_provided_paths(key));
+    }
+
+    g_hash_table_destroy(uniq_paths);
+
+    return provided_paths;
+}
+
+static GList *
+collect_provided_paths(const char *_path, GNode *root)
+{
+    gchar *path = _path ? g_strdup(_path) : apteryx_node_path(root);
+    GList *result = NULL;
+    GList *provided_paths = NULL;
+
+    if (!config_tree_has_providers(path))
+    {
+        goto exit;
+    }
+
+    /* Get the matches at this level */
+    GList *search_result = config_get_providers(path);
+    if(search_result)
+    {
+        provided_paths = g_list_prepend(provided_paths, g_strdup(path));
+        g_list_free_full (search_result, (GDestroyNotify) cb_release);
+    }
+
+    gchar *needle = g_strdup_printf("%s/", path);
+    index_get(needle, &result);
+    result = g_list_concat(result, config_search_providers(needle));
+    result = g_list_concat(result, config_search_indexers(needle));
+    result = g_list_concat(result, db_search(needle));
+    g_free(needle);
+
+    /* We need to make these lists unique without iterating them over and over */
+    GHashTable *uniq_paths = g_hash_table_new (g_str_hash, g_str_equal);
+    for (GList *iter = result; iter; iter = iter->next)
+    {
+        g_hash_table_insert(uniq_paths, iter->data, iter->data);
+    }
+    GHashTableIter uniq_iter;
+    gpointer key, value;
+    g_hash_table_iter_init (&uniq_iter, uniq_paths);
+    while (g_hash_table_iter_next (&uniq_iter, &key, &value))
+    {
+        /* Do something with key and value */
+        provided_paths = g_list_concat(provided_paths, collect_provided_paths(key, root));
+    }
+
+    /* Clean up temp structures */
+    g_hash_table_destroy(uniq_paths);
+    g_list_free_full(result, g_free);
+
+    /* Do all this for each node in the tree too. */
+    for (GNode *iter = g_node_first_child(root); iter; iter = g_node_next_sibling(iter))
+    {
+        provided_paths = g_list_concat(provided_paths, collect_provided_paths(NULL, iter));
+    }
+
+exit:
+    g_free(path);
+    return provided_paths;
+}
+
+void
+_collect_indexed_provided_paths (gpointer key, gpointer value, gpointer user_data)
+{
+    GList **provided_paths = user_data;
+    *provided_paths = collect_indexed_provided_paths(key);
+}
+
 static bool
 handle_traverse (rpc_message msg)
 {
     const char *path;
     const char *value;
+    char *p = NULL;
     GList *paths = NULL;
     GList *ipath;
     GList *values = NULL;
     GList *ivalue;
+    GNode *root = NULL;
+    GList *providers = NULL;
 
     /* Parse the parameters */
     path = rpc_msg_decode_string (msg);
@@ -1585,50 +1660,61 @@ handle_traverse (rpc_message msg)
 
     DEBUG ("TRAVERSE: %s\n", path);
 
+
+
     /* Call refreshers */
     refreshers_traverse (path, cb_all);
 
     /* Proxy first */
     if (!proxy_traverse (&paths, &values, path))
     {
-        /* Traverse (local) paths and make sure the database
-         * doesn't change while we're reading it. If there are
-         * providers or indexers we are unable to serve a tree
-         * from a single point in time, so don't bother with
-         * the locking.
-         * */
-        bool lock_possible = true;
-        GList *callbacks = NULL;
-        callbacks = config_search_providers (path);
-        if (!callbacks)
-            callbacks = config_search_indexers (path);
-        if (callbacks)
-        {
-            lock_possible = false;
-            g_list_free_full (callbacks, free);
-        }
-        if (lock_possible)
-            pthread_rwlock_rdlock (&db_lock);
-        _traverse_paths (&paths, &values, path, cb_all);
-        if (lock_possible)
-            pthread_rwlock_unlock (&db_lock);
+        /* Grab everything from the database */
+        _traverse_paths (&root, path, cb_all);
     }
+    else {
+        p = g_strdup(path);
+        root = APTERYX_NODE (NULL, p);
+    }
+
+    /* Build a list of provided paths by filling in any * nodes with values from
+     * either callbacks or the database
+     */
+    providers = collect_provided_paths(NULL, root);
+    for (GList *iter = providers; iter; iter = iter->next)
+    {
+        char *fetched_value = provide_get (iter->data);
+        if (fetched_value)
+        {
+            paths = g_list_prepend(paths, g_strdup(iter->data));
+            values = g_list_prepend(values, fetched_value);
+        }
+    }
+    g_list_free_full (providers, g_free);
+
     paths = g_list_reverse (paths);
     values = g_list_reverse (values);
 
     /* Send result */
-    rpc_msg_reset (msg);
-    for (ipath = g_list_first (paths), ivalue = g_list_first (values);
-         ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+    if (paths)
     {
-        path = (char *) ipath->data;
-        value = (char *) ivalue->data;
-        DEBUG ("  %s = %s\n", path, value);
-        rpc_msg_encode_string (msg, path);
-        rpc_msg_encode_string (msg, value);
+        for (ipath = g_list_first (paths), ivalue = g_list_first (values);
+            ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+        {
+            path = (char *) ipath->data;
+            value = (char *) ivalue->data;
+            apteryx_path_to_node (root, path, value);
+            DEBUG ("  %s = %s\n", path, value);
+        }
     }
+
+    rpc_msg_reset (msg);
+    if (g_node_first_child(root))
+        rpc_msg_encode_tree (msg, root);
+
+    /* Paths / values are freed with the tree */
     g_list_free_full (paths, g_free);
     g_list_free_full (values, g_free);
+    apteryx_free_tree (root);
 
     return true;
 }
@@ -1654,130 +1740,131 @@ _search_paths (GList **paths, const char *path)
     g_list_free_full (children, g_free);
 }
 
-static bool
-handle_query (rpc_message msg)
+static GNode *
+break_up_trunk(GNode *query)
 {
-    char *path;
-    char *value;
-    GList *paths = NULL;
-    GList *ipath;
-    GList *ivalue;
-    GList *value_matches = NULL;
-    GList *possible_matches = NULL;
+    if (strcmp(query->data, "") == 0)
+        return query;
+
+    gchar *broken_key = g_strdup(query->data);
+    GNode *old_root = query;
+    GNode *new_root = APTERYX_NODE (NULL, g_strdup(""));
+    query = new_root;
+    char *next = broken_key;
+    gchar *next_key;
+
+    do
+    {
+        next_key = g_strdup(next + 1);
+        if (strchr(next_key, '/'))
+            *strchr(next_key, '/') = '\0';
+        new_root = g_node_append_data(new_root, next_key);
+        next = strchr(next + 1, '/');
+    } while (next);
+
+    g_node_prepend(new_root->parent, old_root);
+    g_free(old_root->data);
+    old_root->data = next_key;
+    g_node_destroy(new_root);
+    g_free(broken_key);
+
+    return query;
+}
+
+GList *
+collect_provided_paths_query(GNode *query)
+{
     GList *matches = NULL;
-    GList *iter = NULL;
-    GList *iter2 = NULL;
-    char *tmp = NULL;
-    char *ptr = NULL;
-    char *chunk;
+    const char *match_key = query->data;
 
-    INC_COUNTER (counters.query);
+    if (query->data == NULL)
+        return NULL;
 
-    while ((path = rpc_msg_decode_string (msg)) != NULL)
+    if (strcmp(match_key, "") == 0)
     {
-        paths = g_list_prepend (paths, path);
-        DEBUG ("QUERY: %s\n", path);
+        // printf("TODO: add directory matches for probably {%s/} here\n", path);
     }
-    paths = g_list_reverse (paths);
-    for (iter2 = g_list_first (paths); iter2; iter2 = g_list_next (iter2))
+    else if (strcmp(match_key, "*") == 0)
     {
-        bool traverse = false;
-        bool one_level = false;
-
-        if (strchr (iter2->data, '*') == NULL)
+        if (APTERYX_HAS_VALUE(query))
         {
-            value = get_value ((char *) iter2->data);
-            if (value)
-            {
-                matches = g_list_prepend (matches, g_strdup ((char *) iter2->data));
-                value_matches = g_list_prepend (value_matches, g_strdup (value));
-            }
-            g_free (value);
+            /* Get everything from here down */
+            matches = collect_provided_paths(NULL, query->parent);
         }
         else
         {
-            /* Path contains a "*".
-             * Grab first level (from root) */
-            tmp = g_strdup (iter2->data);
-            if (tmp[strlen (tmp) - 1] == '*')
-            {
-                traverse = true;
-            }
-            else if (tmp[strlen (tmp) - 1] == '/')
-            {
-                one_level = true;
-            }
-            *strrchr (tmp, '*') = '\0';
-            chunk = strtok_r (tmp, "*", &ptr);
-            if (chunk)
-            {
-                possible_matches = search_path (chunk);
-            }
-            /* For each * do a search + add keys, then re-search */
-            while ((chunk = strtok_r (NULL, "*", &ptr)) != NULL)
-            {
-                GList *last_round = possible_matches;
-                possible_matches = NULL;
-                for (iter = g_list_first (last_round); iter; iter = g_list_next (iter))
-                {
-                    char *next_level = NULL;
-
-                    next_level = g_strdup_printf ("%s%s", (char *) iter->data, chunk);
-                    possible_matches =
-                        g_list_concat (search_path (next_level), possible_matches);
-                    g_free (next_level);
-                }
-                g_list_free_full (last_round, g_free);
-            }
-            if (traverse)
-            {
-                for (iter = g_list_first (possible_matches); iter;
-                     iter = g_list_next (iter))
-                {
-                    _traverse_paths (&matches, &value_matches, (char *) iter->data, cb_all);
-                }
-            }
-            else
-            {
-                /* Go through each path match and see if all keys match */
-                for (iter = g_list_first (possible_matches); iter;
-                     iter = g_list_next (iter))
-                {
-                    char *key = NULL;
-
-                    key = g_strdup_printf ("%s%s", (char *) iter->data,
-                                           strrchr (iter2->data, '*') + 1);
-                    if (one_level)
-                    {
-                        /* Remove the slash off the end of the string */
-                        key[strlen (key) - 1] = '\0';
-                    }
-                    value = get_value (key);
-                    if (value)
-                    {
-                        matches = g_list_prepend (matches, g_strdup (key));
-                        value_matches = g_list_prepend (value_matches, g_strdup (value));
-                    }
-                    g_free (value);
-                    g_free (key);
-                }
-            }
-            g_free (tmp);
-            g_list_free_full (possible_matches, g_free);
+           // printf("TODO: blowing the * into config_search / index_get and calling collect_provided_paths_query again x10\n");
         }
     }
+    else
+    {
+        for (GNode *iter = g_node_first_child(query); iter; iter = g_node_next_sibling(iter))
+        {
+            matches = g_list_concat(matches, collect_provided_paths_query(iter));
+        }
+    }
+
+    return matches;
+}
+
+static bool
+handle_query (rpc_message msg)
+{
+    GList *paths = NULL;
+    GList *providers, *values, *ipath, *ivalue;
+    gchar *path, *value;
+
+    GNode *root = NULL;
+    GNode *query;
+
+    INC_COUNTER (counters.query);
+
+    GNode *query_head = rpc_msg_decode_tree(msg);
+
+    /* Sometimes the branch has stars in it. Break it up for processing */
+    query_head = break_up_trunk(query_head);
+
+    root = db_query (query_head);
+
+    /* Grab all providers that match this tree */
+    query = g_node_first_child(query_head);
+
+    providers = collect_provided_paths_query(query);
+    paths = values = NULL;
+    for (GList *iter = providers; iter; iter = iter->next)
+    {
+        char *fetched_value = provide_get (iter->data);
+        if (fetched_value)
+        {
+            paths = g_list_prepend(paths, g_strdup(iter->data));
+            values = g_list_prepend(values, fetched_value);
+        }
+    }
+    g_list_free_full(providers, g_free);
+
+    /* Jam results into the tree to send - if they match the query */
+    if (paths)
+    {
+        for (ipath = g_list_first (paths), ivalue = g_list_first (values);
+            ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
+        {
+            path = (char *) ipath->data;
+            value = (char *) ivalue->data;
+            apteryx_path_to_node (root, path, value);
+	        DEBUG (" %s = %s\n", path, value);
+        }
+    }
+
     /* Send result */
     rpc_msg_reset (msg);
-    for (ipath = g_list_first (matches), ivalue = g_list_first (value_matches);
-         ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
-    {
-        DEBUG ("  %s = %s\n", (char *) ipath->data, (char *) ivalue->data);
-        rpc_msg_encode_string (msg, (char *) ipath->data);
-        rpc_msg_encode_string (msg, (char *) ivalue->data);
-    }
-    g_list_free_full (matches, g_free);
-    g_list_free_full (value_matches, g_free);
-    g_list_free (paths);
+    if (root)
+        rpc_msg_encode_tree(msg, root);
+
+    g_list_free_full (paths, g_free);
+    g_list_free_full (values, g_free);
+
+    apteryx_free_tree(query_head);
+    apteryx_free_tree(root);
 
     return true;
 }
@@ -2005,7 +2092,6 @@ main (int argc, char **argv)
     pthread_mutexattr_t callback_recursive;
     FILE *fp;
     int i;
-
     /* Parse options */
     while ((i = getopt (argc, argv, "hdbp:r:l:")) != -1)
     {

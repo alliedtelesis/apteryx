@@ -1189,7 +1189,7 @@ apteryx_path_to_node (GNode* root, const char *path, const char *value)
             for (node = g_node_first_child (root); node;
                     node = g_node_next_sibling (node))
             {
-                if (strcmp (APTERYX_NAME (node), name) == 0)
+                if (g_strcmp0 (APTERYX_NAME (node), name) == 0)
                 {
                     root = node;
                     free (name);
@@ -1210,12 +1210,9 @@ GNode*
 apteryx_get_tree (const char *path)
 {
     char *url = NULL;
-    const char *rpath = path;
     rpc_client rpc_client;
     rpc_message_t msg = {};
     GNode *root = NULL;
-    int slen = strlen (path);
-    char *value;
 
     ASSERT ((ref_count > 0), return NULL, "GET_TREE: Not initialised\n");
     ASSERT (path, return NULL, "GET_TREE: Invalid parameters\n");
@@ -1250,28 +1247,41 @@ apteryx_get_tree (const char *path)
         free (url);
         return NULL;
     }
-    path = rpc_msg_decode_string (&msg);
-    if (path && strcmp (path, rpath) == 0)
+
+    /* Read tree from client */
+    root = rpc_msg_decode_tree (&msg);
+
+    /* rpc_msg_decode_tree compresses the trunk of the tree to be as short as possible,
+     * reset the root node key here to match the request */
+    if (root &&
+        strlen(APTERYX_NAME(root)) > strlen(path) &&
+        strncmp(APTERYX_NAME(root), path, strlen(path)) == 0)
     {
-        root = g_node_new (strdup (rpath));
-        value = rpc_msg_decode_string (&msg);
-        DEBUG ("   = %s\n", value);
-        g_node_append_data (root, (gpointer) strdup (value));
-    }
-    else if (path)
-    {
-        root = g_node_new (strdup (rpath));
-        while (path)
+        char *ptr = NULL;
+        char *chunk;
+        char *broken_key = g_strdup(APTERYX_NAME(root) + strlen(path));
+        GNode *old_root = root;
+        GNode *new_root = APTERYX_NODE (NULL, g_strdup(path));
+        root = new_root;
+
+        chunk = strtok_r (broken_key, "/", &ptr);
+        while (chunk)
         {
-            value = rpc_msg_decode_string (&msg);
-            DEBUG ("  %s = %s\n", path + slen, value);
-            apteryx_path_to_node (root, path + slen, value);
-            path = rpc_msg_decode_string (&msg);
+            /* Got something left after this chunk - add an intermediate node */
+            if (strlen(ptr))
+            {
+                new_root = APTERYX_NODE (new_root, g_strdup(chunk));
+            }
+            else
+            {
+                /* Replace key in the old root (which now has parents) */
+                g_free(old_root->data);
+                old_root->data = g_strdup(chunk);
+                g_node_prepend(new_root, old_root);
+            }
+            chunk = strtok_r (NULL, "/", &ptr);
         }
-    }
-    else
-    {
-        DEBUG ("  = (null)\n");
+        g_free(broken_key);
     }
     rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, true);
@@ -1279,15 +1289,14 @@ apteryx_get_tree (const char *path)
     return root;
 }
 
+
 static gboolean
-_get_multi (GNode *node, gpointer data)
+add_null_data (GNode *node, gpointer data)
 {
-    rpc_message msg = (rpc_message) data;
-    char *path = apteryx_node_path (node);
-    DEBUG ("QUERY: %s\n", path);
-    rpc_msg_encode_string (msg, path);
-    free (path);
-    return FALSE;
+    /* This turns the end of this tree into leaves */
+    if (node->data)
+        g_node_prepend_data(node, NULL);
+    return false;
 }
 
 GNode *
@@ -1298,9 +1307,7 @@ apteryx_query (GNode *root)
     rpc_message_t msg = { };
     const char *path = NULL;
     char *old_root_name = NULL;
-    char *value = NULL;
     GNode *rroot = NULL;
-    int slen;
 
     ASSERT ((ref_count > 0), return NULL, "QUERY: Not initialised\n");
     ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
@@ -1324,7 +1331,6 @@ apteryx_query (GNode *root)
         assert (!apteryx_debug || strstr (path, "//") == NULL);
         return NULL;
     }
-    slen = strlen (path);
 
     /* IPC */
     rpc_client = rpc_client_connect (rpc, url);
@@ -1334,12 +1340,19 @@ apteryx_query (GNode *root)
         free (url);
         return NULL;
     }
-    /* Save sanitized root path (less URL) to root node */
+
+    /* Save sanitized root path (less URL) to query node */
     old_root_name = APTERYX_NAME (root);
     root->data = (char *) path;
 
+    /* the g_node tree that gets passed in here it's a legal apteryx tree - leaf
+     * nodes don't get created. We need them for the encode tree, so add them now
+     */
+    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, add_null_data, NULL);
+
     rpc_msg_encode_uint8 (&msg, MODE_QUERY);
-    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_LEAVES, -1, _get_multi, &msg);
+    rpc_msg_encode_tree (&msg, root);
+
     if (!rpc_msg_send (rpc_client, &msg))
     {
         ERROR ("QUERY: No response Path(%s)\n", path);
@@ -1348,30 +1361,42 @@ apteryx_query (GNode *root)
         free (url);
         return NULL;
     }
-    path = rpc_msg_decode_string (&msg);
-    if (path && strcmp (path, old_root_name) == 0)
+
+    rroot = rpc_msg_decode_tree(&msg);
+
+    /* Reset the root node to match the query. */
+    if (rroot &&
+        strlen(APTERYX_NAME(rroot)) > strlen(path) &&
+        strncmp(APTERYX_NAME(rroot), path, strlen(path)) == 0)
     {
-        rroot = g_node_new (strdup (old_root_name));
-        value = rpc_msg_decode_string (&msg);
-        DEBUG ("   = %s\n", value);
-        g_node_append_data (rroot, (gpointer) strdup (value));
-    }
-    else if (path)
-    {
-        rroot = g_node_new (strdup (old_root_name));
-        while (path)
+        char *ptr = NULL;
+        char *chunk;
+        char *broken_key = g_strdup(APTERYX_NAME(rroot) + strlen(path));
+        GNode *old_root = rroot;
+        GNode *new_root = APTERYX_NODE (NULL, g_strdup(path));
+        rroot = new_root;
+
+        chunk = strtok_r (broken_key, "/", &ptr);
+        while (chunk)
         {
-            value = rpc_msg_decode_string (&msg);
-            DEBUG ("  %s = %s\n", path, value);
-            apteryx_path_to_node (rroot, path + slen, value);
-            path = rpc_msg_decode_string (&msg);
+            /* Got something left after this chunk - add an intermediate node */
+            if (strlen(ptr))
+            {
+                new_root = APTERYX_NODE (new_root, g_strdup(chunk));
+            }
+            else
+            {
+                /* Replace key in the old root (which now has parents) */
+                g_free(old_root->data);
+                old_root->data = g_strdup(chunk);
+                g_node_prepend(new_root, old_root);
+            }
+            chunk = strtok_r (NULL, "/", &ptr);
         }
+        g_free(broken_key);
     }
-    else
-    {
-        DEBUG ("  = (null)\n");
-    }
-    /* Reinstate original root name */
+
+    /* Put the original root (query tree) name back */
     root->data = old_root_name;
 
     rpc_msg_reset (&msg);
