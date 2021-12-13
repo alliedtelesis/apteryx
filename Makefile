@@ -54,7 +54,7 @@ libapteryx.so: libapteryx.so.$(ABI_VERSION)
 	@echo "Compiling "$<""
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
-apteryxd: apteryxd.c hashtree.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o
+apteryxd: apteryxd.c hashtree.c database.c rpc.o rpc_transport.o rpc_socket.o config.o callbacks.o libapteryx.so
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
