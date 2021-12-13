@@ -215,7 +215,9 @@ cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const cha
         for (GList *iter = children; iter; iter = iter->next)
         {
             struct callback_node *child = iter->data;
-            if (g_list_length (child->exact) > 0 || !hashtree_empty (&child->hashtree_node))
+            if (g_list_length (child->exact) > 0 ||
+                g_list_length (child->directory) > 0 ||
+                !hashtree_empty (&child->hashtree_node))
             {
                 callbacks_so_far =
                     g_list_prepend (callbacks_so_far, g_strdup (child->hashtree_node.key));
