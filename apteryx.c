@@ -1150,6 +1150,23 @@ apteryx_path_to_node (GNode* root, const char *path, const char *value)
     const char *next;
     GNode *node = NULL;
     GNode *rnode = NULL;
+    const char *root_key = APTERYX_NAME(root);
+    if (strcmp(root_key, "/") == 0)
+        root_key = "";
+
+    /* This root node has a big chunk of the key in it... */
+    if (root_key[0] && strncmp(path, root_key, strlen(root_key)) == 0)
+    {
+        if (strcmp(path, root_key) == 0)
+        {
+            GNode *v = g_node_new(g_strdup(value));
+            g_node_prepend(root, v);
+        }
+        else
+        {
+            return apteryx_path_to_node (root, path + strlen(root_key), value);
+        }
+    }
 
     if (path && path[0] == '/')
     {
