@@ -758,15 +758,41 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
 
                     /* Actually create the root node. */
                     root = APTERYX_NODE (NULL, path);
+
+                    /* Add null value - this may be superceded later */
+                    g_node_prepend_data(root, NULL);
                 }
-                if (value[0])
+
+                if (value && value[0])
                 {
-                    node = APTERYX_LEAF (root, g_strdup (key), g_strdup (value));
+                    /* If we've got a value, remove the temp NULL entry */
+                    GNode *temp_leaf = g_node_first_child(root);
+                    if (temp_leaf && temp_leaf->data == NULL)
+                    {
+                        g_node_destroy(temp_leaf);
+                    }
+                    APTERYX_LEAF (root, g_strdup (key), g_strdup (value));
                     has_value = true;
+                }
+                else if (key)
+                {
+                    /* If we've got a node below, remove the temp NULL entry */
+                    GNode *temp_leaf = g_node_first_child(root);
+                    if (temp_leaf && temp_leaf->data == NULL)
+                    {
+                        g_node_destroy(temp_leaf);
+                    }
+
+                    /* Add this node, and a terminating leaf */
+                    node = g_node_prepend_data(root, g_strdup (key));
+                    g_node_prepend_data(node, NULL);
                 }
                 else
                 {
-                   node = APTERYX_NODE (root, g_strdup (key));
+                    /* If this is a short root, we don't need anything hanging off
+                     * below it.
+                     */
+                    node = root;
                 }
 
                 break;
@@ -779,9 +805,14 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
             default:
             case rpc_done:
                 /* This is a leaf being removed */
-                if (!has_children && !has_value && key && root)
+                if (!has_children && !has_value && root)
                 {
-                    node = APTERYX_LEAF (root, g_strdup (key), g_strdup (""));
+                    /* We've got to the end and it's not a leaf */
+                    if (!g_node_first_child(root))
+                    {
+                        printf("!!!!!!!!!! shouldn't be here?\n");
+                        g_node_prepend_data(root, g_strdup(""));
+                    }
                 }
                 return root;
         }
@@ -798,7 +829,8 @@ rpc_msg_decode_tree (rpc_message msg)
     /* We might have a tree with an exploded root - collapse it
      * as much as we can.
      */
-    while (!APTERYX_HAS_VALUE (root) &&
+    while (root &&
+           !APTERYX_HAS_VALUE (root) &&
            g_node_n_children (root) == 1)
     {
         /* This node has no value and only one child, so we can
