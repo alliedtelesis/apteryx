@@ -955,17 +955,28 @@ _indexer_writes (const char *d)
     return NULL;
 }
 
+static char*
+_provide_callback (const char *path)
+{
+    return strdup ("up");
+}
+
 void
 test_index_writes ()
 {
     char *path = TEST_PATH"/counters/*";
+    char *provide_path = TEST_PATH"/counters/*/something/else";
     GNode *root;
 
     CU_ASSERT (apteryx_index (path, _indexer_writes));
-    CU_ASSERT ((root = apteryx_get_tree (TEST_PATH"/counters")) == NULL);
+    /* There's no reason to call the indexer without a provider behind it. */
+    CU_ASSERT (apteryx_provide (provide_path, _provide_callback));
+    root = apteryx_get_tree (TEST_PATH"/counters");
     if (root)
         apteryx_free_tree (root);
+    CU_ASSERT (apteryx_get_int(TEST_PATH"/counters", "one") == 1);
     CU_ASSERT (apteryx_unindex (path, _indexer_writes));
+    CU_ASSERT (apteryx_unprovide (provide_path, _provide_callback));
     apteryx_prune (TEST_PATH"/counters");
     CU_ASSERT (assert_apteryx_empty ());
 }
