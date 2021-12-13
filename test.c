@@ -3655,13 +3655,13 @@ test_query_basic ()
     root = NULL;
 
     root = g_node_new (strdup ("/"));
-    path = strdup (TEST_PATH"/routing/ipv4/rib/1");
+    path = g_strdup (TEST_PATH"/routing/ipv4/rib/1");
     iroot = apteryx_path_to_node (root, path, NULL);
     APTERYX_NODE (iroot, strdup ("proto"));
     APTERYX_NODE (iroot, strdup ("ifname"));
     rroot = apteryx_query (root);
-    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
-    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 10);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 10);
 
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
@@ -3872,7 +3872,7 @@ test_query_multi_star_one_level ()
     apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*/", NULL);
     apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/fib/*", NULL);
     rroot = apteryx_query (root);
-    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
 
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
@@ -4034,6 +4034,12 @@ test_query_two_branches ()
     apteryx_prune (TEST2_PATH);
 }
 
+static char *
+dont_call_this(const char *_unused) {
+    CU_ASSERT_FALSE ("Never call me here!");
+    return NULL;
+}
+
 void
 test_query_provided ()
 {
@@ -4042,6 +4048,7 @@ test_query_provided ()
     GNode *rroot = NULL;
 
     CU_ASSERT (apteryx_provide (path, test_provide_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/forbidden", dont_call_this));
 
     root = APTERYX_NODE (NULL, TEST_PATH"/devices/unit1/interfaces/eth0");
     APTERYX_LEAF (root, "ifname", "eth0");
@@ -4061,6 +4068,7 @@ test_query_provided ()
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
 
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/forbidden", dont_call_this));
     CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
     apteryx_prune (TEST_PATH);
 }
@@ -4753,6 +4761,158 @@ test_get_tree_indexed_provided ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+static char*
+test_provide_callback_counters(const char *path)
+{
+    if (strstr(path, "rx/pkts"))
+        return strdup ("100");
+    if (strstr(path, "rx/bytes"))
+        return strdup ("1000");
+    if (strstr(path, "tx/pkts"))
+        return strdup ("1000");
+    if (strstr(path, "tx/bytes"))
+        return strdup ("100");
+    return strdup("");
+}
+
+void
+test_get_tree_indexed_provided_wildcards ()
+{
+    GNode *root, *node, *child;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/*/pkts", test_provide_callback_counters));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/*/bytes", test_provide_callback_counters));
+
+    root = apteryx_get_tree (TEST_PATH"/counters");
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    node = root ? g_node_first_child (root) : NULL;
+    while (node)
+    {
+        if (strcmp (APTERYX_NAME (node), "rx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else if (strcmp (APTERYX_NAME (node), "tx") == 0)
+        {
+            CU_ASSERT (g_node_n_children (node) == 2);
+            child = g_node_first_child (node);
+            while (child)
+            {
+                if (strcmp (APTERYX_NAME (child), "pkts") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "1000") == 0);
+                }
+                else if (strcmp (APTERYX_NAME (child), "bytes") == 0)
+                {
+                    CU_ASSERT (strcmp (APTERYX_VALUE (child), "100") == 0);
+                }
+                else
+                {
+                    CU_ASSERT (child == NULL);
+                }
+                child = child->next;
+            }
+        }
+        else
+        {
+            CU_ASSERT (node == NULL);
+        }
+        node = node->next;
+    }
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/*/pkts", test_provide_callback_counters));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/*/bytes", test_provide_callback_counters));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static GList *
+test_stack_index_cb(const char *path)
+{
+    GList *stack_members = NULL;
+    stack_members = g_list_prepend(stack_members, g_strdup_printf("%sstack1", path));
+    stack_members = g_list_prepend(stack_members, g_strdup_printf("%sstack2", path));
+    stack_members = g_list_prepend(stack_members, g_strdup_printf("%sstack3", path));
+    stack_members = g_list_prepend(stack_members, g_strdup_printf("%sstack4", path));
+    return stack_members;
+}
+
+static GList *
+test_stack_interfaces_index_cb(const char *path)
+{
+    GList *interfaces = NULL;
+    interfaces = g_list_prepend(interfaces, g_strdup_printf("%seth0", path));
+    interfaces = g_list_prepend(interfaces, g_strdup_printf("%seth1", path));
+    interfaces = g_list_prepend(interfaces, g_strdup_printf("%seth2", path));
+    interfaces = g_list_prepend(interfaces, g_strdup_printf("%seth3", path));
+    return interfaces;
+}
+
+static gchar *
+test_provide_callback_stack_interface_ifname(const char *path)
+{
+    const char *key[] = {"eth0", "eth1", "eth2", "eth3"};
+    for (int i = 0; i < 4; i++)
+        if (strstr(path, key[i]))
+            return strdup(key[i]);
+    return NULL;
+}
+
+static gchar *
+test_provide_callback_stack_interface_flags(const char *path)
+{
+    return strdup("0");
+}
+
+void
+test_get_tree_indexed_provided_two_levels ()
+{
+    GNode *root;
+
+    /* This should fill in /test/stack/ */
+    CU_ASSERT (apteryx_index (TEST_PATH"/stack/", test_stack_index_cb));
+    /* The above callback should get us past this star into calling indexer for
+     * /test/stack/stack[1|2|3|4]/interfaces/blarg
+     */
+    CU_ASSERT (apteryx_index (TEST_PATH"/stack/*/interfaces/", test_stack_interfaces_index_cb));
+    /* The above callback should fill in /test/stack/stack[1|2|3|4]/interfaces/eth[0|1|2|3]
+     * and get us all the way down to these ifname / flags callbacks
+     */
+    CU_ASSERT (apteryx_provide (TEST_PATH"/stack/*/*/*/ifname", test_provide_callback_stack_interface_ifname));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/stack/*/*/*/flags", test_provide_callback_stack_interface_flags));
+
+    root = apteryx_get_tree (TEST_PATH"/stack");
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 32);
+    if (root)
+        apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/stack/", test_stack_index_cb));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/stack/*/interfaces/", test_stack_interfaces_index_cb));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/stack/*/*/*/ifname", test_provide_callback_stack_interface_ifname));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/stack/*/*/*/flags", test_provide_callback_stack_interface_flags));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_perf_set_tree ()
 {
@@ -5012,30 +5172,81 @@ exit:
 }
 
 void
-test_perf_get_tree_50000 ()
+test_perf_get_tree_n (int n)
 {
-    const char *path = TEST_PATH"/interfaces/eth0";
+     const char *path = TEST_PATH"/interfaces/eth0";
     char value[32];
     GNode* root;
     uint64_t start, time;
-    int count = 50000;
+    int count = n/5;
     int i;
 
     for (i=0; i<count; i++)
     {
-        sprintf (value, "value%d", i);
-        CU_ASSERT (apteryx_set_string (path, value, value));
+        for (int j =0; j < 5; j++)
+        {
+            sprintf (value, "node%d/value%d", i,j);
+            CU_ASSERT (apteryx_set_string (path, value, value));
+        }
     }
     start = get_time_us ();
     CU_ASSERT ((root = apteryx_get_tree (path)) != NULL)
     if (!root)
         goto exit;
     time = (get_time_us () - start);
-    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/(n));
     apteryx_free_tree (root);
 exit:
     CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
+}
+
+
+void
+test_perf_get_tree_5000a ()
+{
+    test_perf_get_tree_n(5000);
+}
+
+void
+test_perf_get_tree_10000 ()
+{
+    test_perf_get_tree_n(10000);
+}
+void
+test_perf_get_tree_20000 ()
+{
+    test_perf_get_tree_n(20000);
+}
+void
+test_perf_get_tree_30000 ()
+{
+    test_perf_get_tree_n(30000);
+}
+void
+test_perf_get_tree_40000 ()
+{
+    test_perf_get_tree_n(40000);
+}
+void
+test_perf_get_tree_50000 ()
+{
+    test_perf_get_tree_n(50000);
+}
+void
+test_perf_get_tree_60000 ()
+{
+    test_perf_get_tree_n(60000);
+}
+void
+test_perf_get_tree_70000 ()
+{
+    test_perf_get_tree_n(70000);
+}
+void
+test_perf_get_tree_80000 ()
+{
+    test_perf_get_tree_n(80000);
 }
 
 void
@@ -5133,7 +5344,7 @@ test_proxy_tree_get ()
     if (root)
         apteryx_free_tree (root);
     else
-        printf("No tree in result");
+        printf("No tree in result\n");
 
     CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
     CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
@@ -6625,6 +6836,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree single node", test_get_tree_single_node },
     { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
+    { "get tree indexed/provided wildcards", test_get_tree_indexed_provided_wildcards },
+    { "get tree indexed/provided deeper", test_get_tree_indexed_provided_two_levels },
     { "get tree provided", test_get_tree_provided },
     { "get tree provider writes", test_get_tree_provider_write },
     { "get tree thrashing" , test_get_tree_while_thrashing },
@@ -6634,7 +6847,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query one star traverse", test_query_one_star_traverse},
     { "query multi star traverse", test_query_multi_star_traverse},
     { "query one star one level", test_query_one_star_one_level},
-    { "qeury multi star one level", test_query_multi_star_one_level},
+    { "query multi star one level", test_query_multi_star_one_level},
     { "query two star", test_query_two_star},
     { "query null values", test_query_null_values},
     { "query two branches", test_query_two_branches},
@@ -6678,27 +6891,34 @@ static CU_TestInfo tests_single_threaded[] = {
 };
 
 static CU_TestInfo tests_performance[] = {
-    { "dummy", test_perf_dummy },
-    { "set", test_perf_set },
-    { "set(tcp)", test_perf_tcp_set },
-    { "set tree (tcp)", test_perf_tcp_set_tree },
-    { "set(tcp6)", test_perf_tcp6_set },
-    { "set tree 50", test_perf_set_tree },
-    { "set tree 5000", test_perf_set_tree_5000 },
-    { "set tree 50000", test_perf_set_tree_50000 },
-    { "set tree real", test_perf_set_tree_real },
-    { "get", test_perf_get },
-    { "get(tcp)", test_perf_tcp_get },
-    { "get(tcp6)", test_perf_tcp6_get },
-    { "get tree 50", test_perf_get_tree },
-    { "get tree 5000", test_perf_get_tree_5000 },
-    { "get tree 50000", test_perf_get_tree_50000 },
-    { "get tree real", test_perf_get_tree_real },
-    { "get null", test_perf_get_null },
-    { "search", test_perf_search },
-    { "watch", test_perf_watch },
-    { "provide", test_perf_provide },
-    { "large prune (10000 level 1 nodes, 20000 level 2 nodes)", test_perf_prune },
+    { "performance: dummy", test_perf_dummy },
+    { "performance: set", test_perf_set },
+    { "performance: set(tcp)", test_perf_tcp_set },
+    { "performance: set tree (tcp)", test_perf_tcp_set_tree },
+    { "performance: set(tcp6)", test_perf_tcp6_set },
+    { "performance: set tree 50", test_perf_set_tree },
+    { "performance: set tree 5000", test_perf_set_tree_5000 },
+    { "performance: set tree 50000", test_perf_set_tree_50000 },
+    { "performance: set tree real", test_perf_set_tree_real },
+    { "performance: get", test_perf_get },
+    { "performance: get(tcp)", test_perf_tcp_get },
+    { "performance: get(tcp6)", test_perf_tcp6_get },
+    { "performance: get tree 50", test_perf_get_tree },
+    { "performance: get tree 5000a", test_perf_get_tree_5000a },
+    { "performance: get tree 10000", test_perf_get_tree_10000 },
+    { "performance: get tree 20000", test_perf_get_tree_20000 },
+    { "performance: get tree 30000", test_perf_get_tree_30000 },
+    { "performance: get tree 40000", test_perf_get_tree_40000 },
+    { "performance: get tree 50000", test_perf_get_tree_50000 },
+    { "performance: get tree 60000", test_perf_get_tree_60000 },
+    { "performance: get tree 70000", test_perf_get_tree_70000 },
+    { "performance: get tree 80000", test_perf_get_tree_80000 },
+    { "performance: get tree real", test_perf_get_tree_real },
+    { "performance: get null", test_perf_get_null },
+    { "performance: search", test_perf_search },
+    { "performance: watch", test_perf_watch },
+    { "performance: provide", test_perf_provide },
+    { "performance: large prune (10000 level 1 nodes, 20000 level 2 nodes)", test_perf_prune },
     CU_TEST_INFO_NULL,
 };
 
