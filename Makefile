@@ -37,7 +37,7 @@ endif
 ifneq ($(HAVE_TESTS),no)
 EXTRA_CSRC += test.c
 EXTRA_CFLAGS += -DTEST
-apteryx_LDFLAGS += -lcunit
+EXTRA_LDFLAGS += -lcunit
 endif
 
 all: libapteryx.so apteryx apteryxd
@@ -60,7 +60,7 @@ apteryxd: apteryxd.c hashtree.c database.c rpc.o rpc_transport.o rpc_socket.o co
 
 apteryx: apteryxc.c hashtree.c database.c callbacks.c libapteryx.so $(EXTRA_CSRC)
 	@echo "Building $@"
-	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) $(apteryx_LDFLAGS)
+	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS)
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
