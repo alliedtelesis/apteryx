@@ -730,8 +730,6 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
     char *key = NULL;
     const char *value = NULL;
     GNode *node = NULL;
-    bool has_children = false;
-    bool has_value = false;
 
     do
     {
@@ -772,7 +770,6 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
                         g_node_destroy(temp_leaf);
                     }
                     APTERYX_LEAF (root, g_strdup (key), g_strdup (value));
-                    has_value = true;
                 }
                 else if (key)
                 {
@@ -798,22 +795,11 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
                 break;
             case rpc_start_children:
                 /* This node has children (which are also a tree). */
-                has_children = true;
                 _rpc_msg_decode_tree (msg, node ?: root);
                 break;
             case rpc_end_children:
             default:
             case rpc_done:
-                /* This is a leaf being removed */
-                if (!has_children && !has_value && root)
-                {
-                    /* We've got to the end and it's not a leaf */
-                    if (!g_node_first_child(root))
-                    {
-                        printf("!!!!!!!!!! shouldn't be here?\n");
-                        g_node_prepend_data(root, g_strdup(""));
-                    }
-                }
                 return root;
         }
     } while (type != rpc_end_children);
