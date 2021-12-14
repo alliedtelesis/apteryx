@@ -946,7 +946,6 @@ test_index_and_provide ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-
 static GList *
 _indexer_writes (const char *d)
 {

@@ -1512,65 +1512,6 @@ refreshers_traverse (const char *top_path, char cb_lookup)
 }
 
 static GList *
-collect_indexed_provided_paths(gchar *path)
-{
-    GList *search_result;
-    GList *possible_providers;
-    GList *provided_paths = NULL;
-
-    if (!config_tree_has_providers(path))
-    {
-        printf("%s: nothing here - easy exit\n", __FUNCTION__);
-        return NULL;
-    }
-
-    /* Get the matches at this level */
-    search_result = config_get_providers(path);
-    if(g_list_length(search_result))
-    {
-        provided_paths = g_list_prepend(provided_paths, g_strdup(path));
-        g_list_free_full(search_result, (GDestroyNotify) cb_release);
-        search_result = NULL;
-    }
-
-    gchar *needle = g_strdup_printf("%s/", path);
-
-    GList *callbacks = NULL;
-    possible_providers = config_search_providers (needle);
-    for (GList *iter = possible_providers; iter; iter = iter->next)
-    {
-        provided_paths = g_list_concat(provided_paths, collect_indexed_provided_paths(iter->data));
-    }
-    callbacks = NULL;
-
-    callbacks = NULL;
-    index_get(needle, &callbacks);
-    callbacks = g_list_concat (callbacks, config_search_indexers (needle));
-    callbacks = g_list_concat (callbacks, config_search_providers (needle));
-    callbacks = g_list_concat(callbacks, db_search(needle));
-    g_free(needle);
-
-    /* We need to make these lists unique without iterating them over and over */
-    GHashTable *uniq_paths = g_hash_table_new (g_str_hash, g_str_equal);
-    for (GList *iter = callbacks; iter; iter = iter->next)
-    {
-        g_hash_table_insert(uniq_paths, iter->data, iter->data);
-    }
-    GHashTableIter uniq_iter;
-    gpointer key, value;
-    g_hash_table_iter_init (&uniq_iter, uniq_paths);
-    while (g_hash_table_iter_next (&uniq_iter, &key, &value))
-    {
-        /* do something with key and value */
-        provided_paths = g_list_concat(callbacks, collect_indexed_provided_paths(key));
-    }
-
-    g_hash_table_destroy(uniq_paths);
-
-    return provided_paths;
-}
-
-static GList *
 collect_provided_paths(const char *_path, GNode *root)
 {
     gchar *path = _path ? g_strdup(_path) : apteryx_node_path(root);
@@ -1625,13 +1566,6 @@ collect_provided_paths(const char *_path, GNode *root)
 exit:
     g_free(path);
     return provided_paths;
-}
-
-void
-_collect_indexed_provided_paths (gpointer key, gpointer value, gpointer user_data)
-{
-    GList **provided_paths = user_data;
-    *provided_paths = collect_indexed_provided_paths(key);
 }
 
 static bool
