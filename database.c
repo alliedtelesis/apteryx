@@ -483,7 +483,7 @@ _db_add_children (GNode *n, struct database_node *parent, int depth)
 {
     if (depth > 0)
     {
-        if (depth-- == 0)
+        if (--depth == 0)
         {
             return;
         }
@@ -559,7 +559,7 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
         else if (strcmp(query_element->data, "") == 0)
         {
             /* Directory match, add the next level and stop */
-            _db_add_children(n, parent, 1);
+            // _db_add_children(n, parent, 1);
         }
         else
         {
