@@ -5211,13 +5211,6 @@ exit:
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-
-void
-test_perf_get_tree_5000a ()
-{
-    test_perf_get_tree_n(5000);
-}
-
 void
 test_perf_get_tree_10000 ()
 {
@@ -6914,7 +6907,6 @@ static CU_TestInfo tests_performance[] = {
     { "performance: get(tcp)", test_perf_tcp_get },
     { "performance: get(tcp6)", test_perf_tcp6_get },
     { "performance: get tree 50", test_perf_get_tree },
-    { "performance: get tree 5000a", test_perf_get_tree_5000a },
     { "performance: get tree 10000", test_perf_get_tree_10000 },
     { "performance: get tree 20000", test_perf_get_tree_20000 },
     { "performance: get tree 30000", test_perf_get_tree_30000 },
