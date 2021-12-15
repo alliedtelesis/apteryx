@@ -5555,6 +5555,19 @@ test_memuse ()
     CU_ASSERT (apteryx_prune (TEST_PATH));
 }
 
+void
+test_path_to_node ()
+{
+    char *path = TEST_PATH"/path/to/node";
+    GNode *root = APTERYX_NODE (NULL, path);
+    GNode *node =  root ? apteryx_path_to_node (root, path, "test") : NULL;
+
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (node != NULL);
+    CU_ASSERT (g_strcmp0(node->data, "test") == 0);
+    g_node_destroy (root);
+}
+
 static bool
 test_deadlock_callback (const char *path, const char *value)
 {
@@ -6766,6 +6779,7 @@ static CU_TestInfo tests_api[] = {
     { "double fork", test_double_fork },
     { "timestamp", test_timestamp },
     { "memuse", test_memuse },
+    { "path to node", test_path_to_node },
     CU_TEST_INFO_NULL,
 };
 
