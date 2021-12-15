@@ -525,18 +525,20 @@ db_get_all (const char *path)
     return new_node;
 }
 
-void
+static GNode *
 _db_query_children (GNode *n, struct database_node *parent, GNode *query)
 {
     if (parent->length)
     {
         g_node_prepend_data(n, g_strdup((char*)parent->value));
-        return;
+        return n;
     }
 
     for (GNode *query_element = g_node_first_child(query); query_element;
          query_element = g_node_next_sibling(query_element))
     {
+        if (query_element->data == NULL)
+            continue;
         if (strcmp(query_element->data, "*") == 0)
         {
             if (g_node_first_child(query_element) && g_node_first_child(query_element)->data)
@@ -575,7 +577,9 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
     {
         g_free(n->data);
         g_node_destroy(n);
+        return NULL;
     }
+    return n;
 }
 
 GNode *
@@ -591,7 +595,7 @@ db_query (GNode *query)
         pthread_rwlock_unlock (&db_lock);
         return new_node;
     }
-    _db_query_children(new_node, db_node, query);
+    new_node = _db_query_children(new_node, db_node, query);
     pthread_rwlock_unlock (&db_lock);
     return new_node;
 }
