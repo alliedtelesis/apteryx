@@ -1415,7 +1415,7 @@ handle_find (rpc_message msg)
     DEBUG ("FIND: matches:\n");
     /* Prepare the results */
     rpc_msg_reset (msg);
-    if (g_list_length (matches) > 0)
+    if (matches)
     {
         for (iter = matches; iter; iter = g_list_next (iter))
         {
