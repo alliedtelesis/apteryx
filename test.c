@@ -3664,6 +3664,17 @@ test_query_basic ()
 
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
+
+    /* Nothing to be queried from this point */
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing");
+    rroot = apteryx_query(root);
+    CU_ASSERT (rroot == NULL);
+
+    apteryx_query (NULL);
+
+    if (root) g_node_destroy(root);
+    if (rroot) g_node_destroy(rroot);
+
     g_free (path);
 
     apteryx_prune (TEST_PATH);

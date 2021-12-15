@@ -1745,15 +1745,20 @@ static bool
 handle_query (rpc_message msg)
 {
     GList *paths = NULL;
-    GList *providers, *values, *ipath, *ivalue;
+    GList *providers, *ipath, *ivalue;
     gchar *path, *value;
-
     GNode *root = NULL;
     GNode *query;
+    GList *values = NULL;
 
     INC_COUNTER (counters.query);
 
     GNode *query_head = rpc_msg_decode_tree(msg);
+
+    if (!query_head)
+    {
+        goto done;
+    }
 
     /* Sometimes the branch has stars in it. Break it up for processing */
     query_head = break_up_trunk(query_head);
@@ -1790,6 +1795,7 @@ handle_query (rpc_message msg)
     }
 
     /* Send result */
+done:
     rpc_msg_reset (msg);
     if (root)
         rpc_msg_encode_tree(msg, root);
