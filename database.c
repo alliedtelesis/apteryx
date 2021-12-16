@@ -558,11 +558,6 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
                 _db_add_children(n, parent, -1);
             }
         }
-        else if (strcmp(query_element->data, "") == 0)
-        {
-            /* Directory match, add the next level and stop */
-            // _db_add_children(n, parent, 1);
-        }
         else
         {
             struct database_node *child = g_hash_table_lookup(parent->hashtree_node.children, query_element->data);
