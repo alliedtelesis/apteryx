@@ -208,7 +208,7 @@ handle_watch (rpc_message msg)
             if (value[0] == '\0')
                 value = NULL;
             if (data)
-                ((void*(*)(const char*, const char*, void*)) fn) (path, value, data);
+                ((void*(*)(const char*, void*)) fn) (path, data);
             else
                 ((void*(*)(const char*, const char*)) fn) (path, value);
             path = rpc_msg_decode_string (msg);
@@ -1732,6 +1732,18 @@ bool
 apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 {
     return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, NULL);
+}
+
+bool
+apteryx_watch_id (const char *path, apteryx_watch_callback_id cb, void *id)
+{
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, false, id, 1);
+}
+
+bool
+apteryx_unwatch_id (const char *path, apteryx_watch_callback_id cb, void *id)
+{
+    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, id);
 }
 
 bool

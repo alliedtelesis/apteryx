@@ -537,6 +537,30 @@ bool apteryx_watch (const char *path, apteryx_watch_callback cb);
 bool apteryx_unwatch (const char *path, apteryx_watch_callback cb);
 
 /**
+ * Callback function to be called when a
+ * watched value changes.
+ * @param path path to the watched value
+ * @param id identifier for the specific watching object
+ * @return true on success
+ */
+typedef bool (*apteryx_watch_callback_id) (const char *path, void *id);
+
+/**
+ * Watch for changes in the path
+ * Supports *(wildcard) at the end of path for all children under this path
+ * Supports /(level) at the end of path for children only under this current path (one level down)
+ * Whenever a change occurs in a watched path, cb is called with the changed
+ * path and given id
+ * @param path path to the value to be watched
+ * @param cb function to call when the value changes
+ * @param id identifier for the watching object
+ * @return true on successful registration
+ */
+bool apteryx_watch_id (const char *path, apteryx_watch_callback_id cb, void *id);
+/** UnWatch for changes in the path */
+bool apteryx_unwatch_id (const char *path, apteryx_watch_callback_id cb, void *id);
+
+/**
  * Callback function to be called when a watched tree changes.
  * @param root pointer to the N-ary tree of nodes representing the changed data
  * @return true on success
