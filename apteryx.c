@@ -1363,17 +1363,23 @@ apteryx_query (GNode *root)
     }
 
     rroot = rpc_msg_decode_tree(&msg);
+    char *chopped_path = g_strdup(path ?: "");
+    char *first_asterisk = strstr(chopped_path, "/*");
+    if (first_asterisk)
+    {
+        *first_asterisk = '\0';
+    }
 
     /* Reset the root node to match the query. */
     if (rroot &&
-        strlen(APTERYX_NAME(rroot)) > strlen(path) &&
-        strncmp(APTERYX_NAME(rroot), path, strlen(path)) == 0)
+        strlen(APTERYX_NAME(rroot)) > strlen(chopped_path) &&
+        strncmp(APTERYX_NAME(rroot), chopped_path, strlen(chopped_path)) == 0)
     {
         char *ptr = NULL;
         char *chunk;
-        char *broken_key = g_strdup(APTERYX_NAME(rroot) + strlen(path));
+        char *broken_key = g_strdup(APTERYX_NAME(rroot) + strlen(chopped_path));
         GNode *old_root = rroot;
-        GNode *new_root = APTERYX_NODE (NULL, g_strdup(path));
+        GNode *new_root = APTERYX_NODE (NULL, g_strdup(chopped_path));
         rroot = new_root;
 
         chunk = strtok_r (broken_key, "/", &ptr);
@@ -1398,6 +1404,7 @@ apteryx_query (GNode *root)
 
     /* Put the original root (query tree) name back */
     root->data = old_root_name;
+    g_free(chopped_path);
 
     rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, true);
