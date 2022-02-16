@@ -4084,10 +4084,37 @@ test_query_provided ()
     CU_ASSERT (apteryx_provide (TEST_PATH"/one/provide/lower", test_provide_cb));
     root = g_node_new(strdup(TEST_PATH"/one/provide/*"));
     rroot = apteryx_query(root);
+    CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/one/provide", APTERYX_NAME(rroot)) == 0);
     CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
     CU_ASSERT (apteryx_unprovide (TEST_PATH"/one/provide/lower", test_provide_cb));
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_query_long_root()
+{
+    const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+
+    apteryx_set(path, "up");
+
+    root = g_node_new(strdup(TEST_PATH"/devices/*"));
+    rroot = apteryx_query(root);
+    CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/devices", APTERYX_NAME(rroot)) == 0);
+    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    root = g_node_new(strdup(TEST_PATH"/devices/*/interfaces/*"));
+    rroot = apteryx_query(root);
+    CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/devices", APTERYX_NAME(rroot)) == 0);
+    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
 
     apteryx_prune (TEST_PATH);
 }
@@ -6936,6 +6963,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query null values", test_query_null_values},
     { "query two branches", test_query_two_branches},
     { "query provided", test_query_provided},
+    { "query root length", test_query_long_root},
     { "cas tree", test_cas_tree},
     { "cas tree detailed", test_cas_tree_detailed},
     { "tree atomic", test_tree_atomic},

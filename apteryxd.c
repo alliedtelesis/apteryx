@@ -1594,8 +1594,6 @@ handle_traverse (rpc_message msg)
 
     DEBUG ("TRAVERSE: %s\n", path);
 
-
-
     /* Call refreshers */
     refreshers_traverse (path, cb_all);
 
@@ -1790,7 +1788,7 @@ handle_query (rpc_message msg)
          */
         if (!root)
         {
-	    root = APTERYX_NODE (NULL, g_strdup (APTERYX_NAME (query_head)));
+            root = APTERYX_NODE (NULL, g_strdup (APTERYX_NAME (query_head)));
         }
 
         for (ipath = g_list_first (paths), ivalue = g_list_first (values);
