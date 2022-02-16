@@ -4080,6 +4080,14 @@ test_query_provided ()
 
     CU_ASSERT (apteryx_unprovide (TEST_PATH"/forbidden", dont_call_this));
     CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/one/provide/lower", test_provide_cb));
+    root = g_node_new(strdup(TEST_PATH"/one/provide/*"));
+    rroot = apteryx_query(root);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/one/provide/lower", test_provide_cb));
+
     apteryx_prune (TEST_PATH);
 }
 

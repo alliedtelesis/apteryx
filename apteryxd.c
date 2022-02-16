@@ -1784,6 +1784,15 @@ handle_query (rpc_message msg)
     /* Jam results into the tree to send - if they match the query */
     if (paths)
     {
+        /* In the case where the query returned nothing we need a root
+         * node here to add the provided values, but not prior to this
+         * if statement.
+         */
+        if (!root)
+        {
+	    root = APTERYX_NODE (NULL, g_strdup (APTERYX_NAME (query_head)));
+        }
+
         for (ipath = g_list_first (paths), ivalue = g_list_first (values);
             ipath && ivalue; ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
         {
