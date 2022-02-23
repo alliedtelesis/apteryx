@@ -4053,6 +4053,48 @@ dont_call_this(const char *_unused) {
 void
 test_query_provided ()
 {
+    const char *path = TEST_PATH"/system/state";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, path, NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 5);
+
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+}
+
+void
+test_query_provided_wildcard ()
+{
+    const char *path = TEST_PATH"/system/state";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, TEST_PATH"/system/*", NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 5);
+
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+}
+
+void
+test_query_provided_wildcards ()
+{
     const char *path = TEST_PATH"/devices/*/interfaces/*/state";
     GNode *root = NULL;
     GNode *rroot = NULL;
@@ -6963,6 +7005,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "query null values", test_query_null_values},
     { "query two branches", test_query_two_branches},
     { "query provided", test_query_provided},
+    { "query provided wildcard",  test_query_provided_wildcard},
+    { "query provided wildcards", test_query_provided_wildcards},
     { "query root length", test_query_long_root},
     { "cas tree", test_cas_tree},
     { "cas tree detailed", test_cas_tree_detailed},

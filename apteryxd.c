@@ -54,6 +54,7 @@ index_get (const char *path, GList **result)
     GList *iter = NULL;
     uint64_t start, duration;
     bool res;
+    const char *rpath;
 
     /* Retrieve a list of providers for this path */
     indexers = config_get_indexers (path);
@@ -110,9 +111,9 @@ index_get (const char *path, GList **result)
             INC_COUNTER (counters.indexed_timeout);
             continue;
         }
-        while ((path = rpc_msg_decode_string (&msg)) != NULL)
+        while ((rpath = rpc_msg_decode_string (&msg)) != NULL)
         {
-            results = g_list_prepend (results, (gpointer) strdup (path));
+            results = g_list_prepend (results, (gpointer) strdup (rpath));
         }
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, true);
@@ -1730,9 +1731,16 @@ collect_provided_paths_query(GNode *query)
     }
     else
     {
-        for (GNode *iter = g_node_first_child(query); iter; iter = g_node_next_sibling(iter))
+        if (APTERYX_HAS_VALUE(query))
         {
-            matches = g_list_concat(matches, collect_provided_paths_query(iter));
+            matches = collect_provided_paths(NULL, query);
+        }
+        else
+        {
+            for (GNode *iter = g_node_first_child(query); iter; iter = g_node_next_sibling(iter))
+            {
+                matches = g_list_concat(matches, collect_provided_paths_query(iter));
+            }
         }
     }
 
@@ -1749,10 +1757,10 @@ handle_query (rpc_message msg)
     GNode *query;
     GList *values = NULL;
 
+    DEBUG ("QUERY\n");
     INC_COUNTER (counters.query);
 
     GNode *query_head = rpc_msg_decode_tree(msg);
-
     if (!query_head)
     {
         goto done;
@@ -1797,7 +1805,7 @@ handle_query (rpc_message msg)
             path = (char *) ipath->data;
             value = (char *) ivalue->data;
             apteryx_path_to_node (root, path, value);
-	        DEBUG (" %s = %s\n", path, value);
+            DEBUG (" %s = %s\n", path, value);
         }
     }
 
