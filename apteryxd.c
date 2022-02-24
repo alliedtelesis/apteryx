@@ -1758,6 +1758,14 @@ handle_query (rpc_message msg)
         goto done;
     }
 
+    /* Call refreshers */
+    char *root_path = apteryx_node_path(query_head);
+    char *wildcard = strstr(root_path, "/*");
+    if (wildcard)
+        *wildcard = '\0';
+    refreshers_traverse (root_path, cb_all);
+    free(root_path);
+
     /* Sometimes the branch has stars in it. Break it up for processing */
     query_head = break_up_trunk(query_head);
 
@@ -1788,7 +1796,7 @@ handle_query (rpc_message msg)
          */
         if (!root)
         {
-            root = APTERYX_NODE (NULL, g_strdup (APTERYX_NAME (query_head)));
+	    root = APTERYX_NODE (NULL, g_strdup (APTERYX_NAME (query_head)));
         }
 
         for (ipath = g_list_first (paths), ivalue = g_list_first (values);
