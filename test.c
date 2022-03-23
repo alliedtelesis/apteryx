@@ -5656,6 +5656,75 @@ test_timestamp ()
 }
 
 void
+test_timestamp_refreshed ()
+{
+    const char *path = TEST_PATH"/timestamp/refreshed";
+    uint64_t ts, ts1;
+    char *value;
+
+    _cb_timeout = 1000000;
+    apteryx_refresh(path, test_refresh_callback);
+
+    ts = apteryx_timestamp (path);
+    CU_ASSERT (ts != 0);
+
+    value = apteryx_get(path);
+    ts1 = apteryx_timestamp (path);
+
+    CU_ASSERT(ts1 != 0);
+    CU_ASSERT(ts != ts1);
+
+    ts = apteryx_timestamp (path);
+    CU_ASSERT(ts == ts1);
+
+    free (value);
+    apteryx_unrefresh(path, test_refresh_callback);
+    apteryx_prune(path);
+    _cb_count = 0;
+}
+
+void
+test_timestamp_provided ()
+{
+    const char *path = TEST_PATH"/timestamp/provided";
+    const char *provide;
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_provide (path, _provide_callback));
+    ts = apteryx_timestamp (path);
+    CU_ASSERT (ts != 0);
+    CU_ASSERT (apteryx_unprovide (path, _provide_callback));
+
+    provide = TEST_PATH"/timestamp/*";
+    CU_ASSERT (apteryx_provide (provide, _provide_callback));
+    ts = apteryx_timestamp (TEST_PATH"/timestamp");
+    CU_ASSERT (ts != 0);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value");
+    CU_ASSERT (ts != 0);
+    CU_ASSERT (apteryx_unprovide (provide, _provide_callback));
+
+    provide = TEST_PATH"/timestamp/*/deeper";
+    CU_ASSERT (apteryx_provide (provide, _provide_callback));
+    ts = apteryx_timestamp (TEST_PATH"/timestamp");
+    CU_ASSERT (ts != 0);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value");
+    CU_ASSERT (ts != 0);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value/deeper");
+    CU_ASSERT (ts != 0);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value/not_provided");
+    CU_ASSERT (ts == 0);
+    CU_ASSERT (apteryx_unprovide (provide, _provide_callback));
+
+    provide = TEST_PATH"/timestamp/";
+    CU_ASSERT (apteryx_provide (provide, _provide_callback));
+    ts = apteryx_timestamp (TEST_PATH"/timestamp");
+    CU_ASSERT (ts != 0);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value");
+    CU_ASSERT (ts != 0);
+    CU_ASSERT (apteryx_unprovide (provide, _provide_callback));
+}
+
+void
 test_memuse ()
 {
     const char *path = TEST_PATH"/memuse";
@@ -6894,6 +6963,8 @@ static CU_TestInfo tests_api[] = {
     { "remote path contains colon", test_remote_path_colon },
     { "double fork", test_double_fork },
     { "timestamp", test_timestamp },
+    { "timestamp refreshed", test_timestamp_refreshed },
+    { "timestamp provided", test_timestamp_provided },
     { "memuse", test_memuse },
     { "path to node", test_path_to_node },
     CU_TEST_INFO_NULL,

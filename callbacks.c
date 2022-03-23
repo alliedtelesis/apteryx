@@ -403,8 +403,8 @@ _cb_exists (struct callback_node *node, const char *path)
         return true;
     }
 
-    /* Terminating condition */
-    if (strlen (path) == 0 || !strchr (path + 1, '/'))
+    /* Got only one node left, check here for directory and terminal wildcard */
+    if (path[0] != '\0' && !strchr (path + 1, '/'))
     {
         if (node->directory)
         {
@@ -417,19 +417,24 @@ _cb_exists (struct callback_node *node, const char *path)
         {
             return true;
         }
+    }
 
-        if (!hashtree_empty (&node->hashtree_node))
+    /* Down to the final possible node */
+    if (path[0] == '\0')
+    {
+        /* We got to the end of the path, but it has something else below it. */
+        if(!hashtree_empty (&node->hashtree_node))
         {
             return true;
         }
 
-        node = (struct callback_node *) hashtree_path_to_node (&node->hashtree_node, path);
-        if (node && node->exact)
+        /* Got an exact match */
+        if (node->exact || node->directory)
         {
             return true;
         }
 
-        return false;
+	    return false;
     }
 
     char *tmp = strdup (path + 1);
