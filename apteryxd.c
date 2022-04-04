@@ -428,19 +428,20 @@ calculate_timestamp (void)
     return micros;
 }
 
-static void
-call_refreshers (const char *path)
+static bool
+call_refreshers (const char *path, bool dry_run)
 {
     GList *refreshers = NULL;
     GList *iter = NULL;
     uint64_t timestamp;
     uint64_t now;
     uint64_t timeout = 0;
+    bool refresh_due = false;
 
     /* Retrieve a list of refreshers for this path */
     refreshers = config_get_refreshers (path);
     if (!refreshers)
-        return;
+        return false;
 
     /* Get the time of the request */
     now = calculate_timestamp ();
@@ -491,51 +492,59 @@ call_refreshers (const char *path)
                 path, refresher->path, refresher->id, refresher->ref, refresher->uri);
 
         /* IPC */
-        rpc_client = rpc_client_connect (rpc, refresher->uri);
-        if (!rpc_client)
+        if (!dry_run)
         {
-            /* Throw away the no good validator */
-            ERROR ("Invalid REFRESH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
-                   refresher->path, refresher->id, refresher->ref);
-            cb_disable (refresher);
-            INC_COUNTER (counters.refreshed_no_handler);
-            goto unlock;
-        }
-        rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
-        rpc_msg_encode_uint64 (&msg, refresher->ref);
-        rpc_msg_encode_string (&msg, path);
-        start = get_time_us ();
-        res = rpc_msg_send (rpc_client, &msg);
-        duration = get_time_us () - start;
-        if (!res)
-        {
-            INC_COUNTER (counters.refreshed_timeout);
-            ERROR ("Failed to notify refresher for path \"%s\"\n", (char *) path);
-            rpc_client_release (rpc, rpc_client, false);
+            rpc_client = rpc_client_connect (rpc, refresher->uri);
+            if (!rpc_client)
+            {
+                /* Throw away the no good validator */
+                ERROR ("Invalid REFRESH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                    refresher->path, refresher->id, refresher->ref);
+                cb_disable (refresher);
+                INC_COUNTER (counters.refreshed_no_handler);
+                goto unlock;
+            }
+            rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
+            rpc_msg_encode_uint64 (&msg, refresher->ref);
+            rpc_msg_encode_string (&msg, path);
+            start = get_time_us ();
+            res = rpc_msg_send (rpc_client, &msg);
+            duration = get_time_us () - start;
+            if (!res)
+            {
+                INC_COUNTER (counters.refreshed_timeout);
+                ERROR ("Failed to notify refresher for path \"%s\"\n", (char *) path);
+                rpc_client_release (rpc, rpc_client, false);
+            }
+            else
+            {
+                rpc_client_release (rpc, rpc_client, true);
+                timeout = rpc_msg_decode_uint64 (&msg);
+                DEBUG ("REFRESH again in %"PRIu64"us\n", timeout);
+                if (refresher->timeout == 0 || timeout < refresher->timeout)
+                    refresher->timeout = timeout;
+                /* Make sure the DB has up to date timestamps */
+                db_update_timestamps (path, now);
+            }
+            rpc_msg_reset (&msg);
+
+            INC_COUNTER (counters.refreshed);
+            if (!GET_COUNTER (refresher->min) || duration < GET_COUNTER (refresher->min))
+                SET_COUNTER (refresher->min, duration);
+            if (duration > GET_COUNTER (refresher->max))
+                SET_COUNTER (refresher->max, duration);
+            ADD_COUNTER (refresher->total, duration);
+            INC_COUNTER (refresher->count);
         }
         else
         {
-            rpc_client_release (rpc, rpc_client, true);
-            timeout = rpc_msg_decode_uint64 (&msg);
-            DEBUG ("REFRESH again in %"PRIu64"us\n", timeout);
-            if (refresher->timeout == 0 || timeout < refresher->timeout)
-                refresher->timeout = timeout;
-            /* Make sure the DB has up to date timestamps */
-            db_update_timestamps (path, now);
+            refresh_due = true;
         }
-        rpc_msg_reset (&msg);
-
-        INC_COUNTER (counters.refreshed);
-        if (!GET_COUNTER (refresher->min) || duration < GET_COUNTER (refresher->min))
-            SET_COUNTER (refresher->min, duration);
-        if (duration > GET_COUNTER (refresher->max))
-            SET_COUNTER (refresher->max, duration);
-        ADD_COUNTER (refresher->total, duration);
-        INC_COUNTER (refresher->count);
     unlock:
         pthread_mutex_unlock (&refresher->lock);
     }
     g_list_free_full (refreshers, (GDestroyNotify) cb_release);
+    return refresh_due;
 }
 
 static char *
@@ -1186,7 +1195,7 @@ get_value (const char *path)
     if ((value = proxy_get (path)) == NULL)
     {
         /* Call refreshers */
-        call_refreshers (path);
+        call_refreshers (path, false);
 
         /* Database second */
         if (!db_get (path, (unsigned char**)&value, &vsize))
@@ -1253,7 +1262,7 @@ search_path (const char *path)
         else
         {
             /* Call refreshers */
-            call_refreshers (path);
+            call_refreshers (path, false);
 
             /* Search database next */
             results = db_search (path);
@@ -1475,7 +1484,7 @@ refreshers_traverse (const char *top_path, char cb_lookup)
     GList *iter, *paths = NULL;
     gchar *needle = g_strdup_printf("%s/", top_path);
 
-    call_refreshers (needle);
+    call_refreshers (needle, false);
 
     if (!config_tree_has_refreshers (top_path))
     {
@@ -1501,7 +1510,7 @@ refreshers_traverse (const char *top_path, char cb_lookup)
     }
     paths = g_list_concat (db_search (needle), paths);
 
-    cb_lookup = _update_path_callbacks (needle, cb_lookup);
+    cb_lookup = _update_path_callbacks (top_path, cb_lookup);
     free (needle);
 
     for (iter = paths; iter; iter = g_list_next (iter))
@@ -1956,7 +1965,14 @@ handle_timestamp (rpc_message msg)
     if ((value = proxy_timestamp (path)) == 0)
     {
         /* Lookup value */
-        value = db_timestamp (path);
+        if (call_refreshers (path, true))
+        {
+            value = calculate_timestamp ();
+        }
+        else
+        {
+            value = db_timestamp (path);
+        }
     }
 
     /* Send result */
