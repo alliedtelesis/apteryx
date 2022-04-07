@@ -1151,7 +1151,7 @@ handle_set (rpc_message msg, bool ack)
     db_result = db_update_no_lock (root, ts);
     if (!db_result)
     {
-        DEBUG ("SET: tree rejected by DB (%ld)\n", ts);
+        DEBUG ("SET: tree rejected by DB (%" PRIu64 ")\n", ts);
         result = -EBUSY;
     }
     pthread_rwlock_unlock (&db_lock);
