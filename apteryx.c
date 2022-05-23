@@ -133,10 +133,13 @@ validate_path (const char *path, char **url)
             return NULL;
         }
         path = tmp + 1;
-        tmp = strstr (*url + 6, ":/");
-        if (tmp)
+        if (url)
         {
-            tmp[0] = '\0';
+            tmp = strstr (*url + 6, ":/");
+            if (tmp != NULL)
+            {
+                tmp[0] = '\0';
+            }
         }
         return path;
     }
@@ -1565,7 +1568,7 @@ apteryx_find (const char *path, const char *value)
     }
 
     /* Remove the trailing key */
-    tmp_path = strdup (path);
+    tmp_path = g_strdup (path);
     if (strrchr (tmp_path, '*'))
         *strrchr (tmp_path, '*') = '\0';
 
@@ -1686,7 +1689,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     ASSERT (fn, return false, "ADD_CB: Invalid callback\n");
 
     pthread_mutex_lock (&lock);
-    cb = calloc (1, sizeof (cb_t));
+    cb = g_malloc0 (sizeof (cb_t));
     cb->ref = next_ref++;
     cb->path = strdup (path);
     cb->fn = fn;

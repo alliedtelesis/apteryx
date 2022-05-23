@@ -170,7 +170,7 @@ test_set_get_large_value ()
     char *svalue, *gvalue;
     int len = 1024*1024;
 
-    svalue = calloc (1, len);
+    svalue = g_malloc0 (len);
     memset (svalue, 'a', len-1);
     CU_ASSERT (apteryx_set (path, svalue));
     CU_ASSERT ((gvalue = apteryx_get (path)) != NULL);
@@ -3296,9 +3296,9 @@ test_tree_find_children ()
     CU_ASSERT ((node = apteryx_find_child (root, "duplex")) != NULL);
     CU_ASSERT ((node = apteryx_find_child (root, "speed")) != NULL);
     CU_ASSERT ((node = apteryx_find_child (root, "state")) != NULL);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "state"), "up") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "speed"), "1000") == 0);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (root, "duplex"), "full") == 0);
+    CU_ASSERT (g_strcmp0 (APTERYX_CHILD_VALUE (root, "state"), "up") == 0);
+    CU_ASSERT (g_strcmp0 (APTERYX_CHILD_VALUE (root, "speed"), "1000") == 0);
+    CU_ASSERT (g_strcmp0 (APTERYX_CHILD_VALUE (root, "duplex"), "full") == 0);
     g_node_destroy (root);
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -3611,7 +3611,7 @@ test_get_tree_while_thrashing ()
             sprintf (k, "%d", i);
             GNode *child = apteryx_find_child (root, k);
             CU_ASSERT (child != NULL);
-            value = atoi (APTERYX_VALUE (child));
+            value = atoi (child ? APTERYX_VALUE (child) : "0");
             if (found_value)
             {
                 CU_ASSERT (found_value == value);
@@ -4505,7 +4505,7 @@ test_watch_tree_prune ()
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (watch_tree_root != NULL);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, TEST_PATH"/entity/zones/private")) != NULL);
-    CU_ASSERT (strcmp (APTERYX_CHILD_VALUE (node, "state"), "") == 0);
+    CU_ASSERT (g_strcmp0 (APTERYX_CHILD_VALUE (node, "state"), "") == 0);
     CU_ASSERT (_cb_count == 1);
     CU_ASSERT (apteryx_unwatch_tree (TEST_PATH"/entity/*", test_watch_tree_callback));
     _watch_tree_cleanup ();
@@ -5708,7 +5708,10 @@ test_path_to_node ()
 
     CU_ASSERT (root != NULL);
     CU_ASSERT (node != NULL);
-    CU_ASSERT (g_strcmp0(node->data, "test") == 0);
+    if (node != NULL)
+    {
+        CU_ASSERT (g_strcmp0(node->data, "test") == 0);
+    }
     g_node_destroy (root);
 }
 
