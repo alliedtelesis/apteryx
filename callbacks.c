@@ -32,13 +32,6 @@ struct callback_node
     GList *following;
 };
 
-struct callback_node *watch_list = NULL;
-struct callback_node *validation_list = NULL;
-struct callback_node *refresh_list = NULL;
-struct callback_node *provide_list = NULL;
-struct callback_node *index_list = NULL;
-struct callback_node *proxy_list = NULL;
-
 static pthread_mutex_t tree_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
@@ -576,111 +569,111 @@ test_cb_match ()
     GList *matches = NULL;
     cb_info_t *cb = NULL;
     /* Wildcard in path */
-    struct callback_node *watch_list = cb_init ();
-    cb = cb_create (watch_list, "tester", "/firewall/rules/*/app", 1, 0);
+    struct callback_node *watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/*/app", 1, 0);
     cb_release (cb);
-    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    matches = cb_match (watches_list, "/firewall/rules/10/app");
     CU_ASSERT (matches != NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
 
-    matches = cb_match (watch_list, "/firewall/rules/10");
+    matches = cb_match (watches_list, "/firewall/rules/10");
     CU_ASSERT (matches == NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
-    cb_shutdown (watch_list);
+    cb_shutdown (watches_list);
 
     /* directory */
-    watch_list = cb_init ();
-    cb = cb_create (watch_list, "tester", "/firewall/rules/10/", 2, 0);
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/10/", 2, 0);
     cb_release (cb);
 
-    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    matches = cb_match (watches_list, "/firewall/rules/10/app");
     CU_ASSERT (matches != NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
 
-    matches = cb_match (watch_list, "/firewall/rules/10");
+    matches = cb_match (watches_list, "/firewall/rules/10");
     CU_ASSERT (matches == NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
-    cb_shutdown (watch_list);
+    cb_shutdown (watches_list);
 
-    watch_list = cb_init ();
-    cb = cb_create (watch_list, "tester", "/firewall/rules/10/app", 3, 0);
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/10/app", 3, 0);
     cb_release (cb);
-    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    matches = cb_match (watches_list, "/firewall/rules/10/app");
     CU_ASSERT (matches != NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
 
-    matches = cb_match (watch_list, "/firewall/rules/10");
+    matches = cb_match (watches_list, "/firewall/rules/10");
     CU_ASSERT (matches == NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
-    cb_shutdown (watch_list);
+    cb_shutdown (watches_list);
 
-    watch_list = cb_init ();
-    cb = cb_create (watch_list, "tester", "/firewall/rules/10", 4, 0);
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/10", 4, 0);
     cb_release (cb);
 
-    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    matches = cb_match (watches_list, "/firewall/rules/10/app");
     CU_ASSERT (matches == NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
-    matches = cb_match (watch_list, "/firewall/rules/10");
+    matches = cb_match (watches_list, "/firewall/rules/10");
     CU_ASSERT (matches != NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
-    cb_shutdown (watch_list);
+    cb_shutdown (watches_list);
 
-    watch_list = cb_init ();
-    cb = cb_create (watch_list, "tester", "/firewall/rules/*", 5, 0);
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/*", 5, 0);
     cb_release (cb);
 
-    matches = cb_match (watch_list, "/firewall/rules/10/app");
+    matches = cb_match (watches_list, "/firewall/rules/10/app");
     CU_ASSERT (matches != NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
 
-    matches = cb_match (watch_list, "/firewall/rules/10");
+    matches = cb_match (watches_list, "/firewall/rules/10");
     CU_ASSERT (matches != NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
 
-    matches = cb_match (watch_list, "/firewall/rules");
+    matches = cb_match (watches_list, "/firewall/rules");
     CU_ASSERT (matches == NULL);
     g_list_foreach (matches, (GFunc) cb_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_release);
 
-    cb_shutdown (watch_list);
+    cb_shutdown (watches_list);
 }
 
 void
 test_cb_release ()
 {
     cb_info_t *cb;
-    struct callback_node *watch_list = cb_init ();
-    cb = cb_create (watch_list, "abc", "/test", 1, 0);
+    struct callback_node *watches_list = cb_init ();
+    cb = cb_create (watches_list, "abc", "/test", 1, 0);
     cb_release (cb);
     CU_ASSERT (g_atomic_int_get (&cb->refcnt) == 1);
     cb_release (cb);
-    CU_ASSERT (hashtree_empty (&watch_list->hashtree_node));
-    cb_shutdown (watch_list);
+    CU_ASSERT (hashtree_empty (&watches_list->hashtree_node));
+    cb_shutdown (watches_list);
 }
 
 void
 test_cb_disable ()
 {
     cb_info_t *cb;
-    struct callback_node *watch_list = cb_init ();
-    cb = cb_create (watch_list, "abc", "/test", 1, 0);
+    struct callback_node *watches_list = cb_init ();
+    cb = cb_create (watches_list, "abc", "/test", 1, 0);
 
     cb_disable (cb);
-    CU_ASSERT (!hashtree_empty (&watch_list->hashtree_node));
+    CU_ASSERT (!hashtree_empty (&watches_list->hashtree_node));
     cb_release (cb);
     cb_release (cb);
 
-    CU_ASSERT (hashtree_empty (&watch_list->hashtree_node));
-    cb_shutdown (watch_list);
+    CU_ASSERT (hashtree_empty (&watches_list->hashtree_node));
+    cb_shutdown (watches_list);
 }
 
 typedef enum
@@ -699,15 +692,15 @@ match_perf_test (PERF_TEST_INDEX index)
     uint64_t start;
     int i;
 
-    struct callback_node *watch_list = cb_init ();
+    struct callback_node *watches_list = cb_init ();
     for (i = 0; i < TEST_CB_MAX_ENTRIES; i++)
     {
         sprintf (path, "/database/test%d/test%d", i, i);
         sprintf (guid, "%zX", (size_t) g_str_hash (path));
-        cb = cb_create (watch_list, guid, path, 1, 0);
+        cb = cb_create (watches_list, guid, path, 1, 0);
         cb_release (cb);
     }
-    CU_ASSERT (!hashtree_empty (&watch_list->hashtree_node));
+    CU_ASSERT (!hashtree_empty (&watches_list->hashtree_node));
 
     start = get_time_us ();
     for (i = 0; i < TEST_CB_MAX_ITERATIONS; i++)
@@ -717,7 +710,7 @@ match_perf_test (PERF_TEST_INDEX index)
             (index == INDEX_LAST ? (TEST_CB_MAX_ENTRIES - 1) :
              random () % TEST_CB_MAX_ENTRIES);
         sprintf (path, "/database/test%d/test%d", test, test);
-        matches = cb_match (watch_list, path);
+        matches = cb_match (watches_list, path);
         if (g_list_length (matches) != 1)
             goto exit;
         g_list_free_full (matches, (GDestroyNotify) cb_release);
@@ -725,7 +718,7 @@ match_perf_test (PERF_TEST_INDEX index)
     printf ("%" PRIu64 "us ... ", (get_time_us () - start) / TEST_CB_MAX_ITERATIONS);
     ret = true;
   exit:
-    cb_shutdown (watch_list);
+    cb_shutdown (watches_list);
     return ret;
 }
 

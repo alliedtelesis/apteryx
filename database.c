@@ -1049,8 +1049,8 @@ test_db_update ()
 {
     size_t length = 0;
     char *value = NULL;
-    GNode *root = APTERYX_NODE (NULL, "");
-    GNode *node = APTERYX_NODE (root, "test");
+    GNode *root_node = APTERYX_NODE (NULL, "");
+    GNode *node = APTERYX_NODE (root_node, "test");
     node = APTERYX_NODE (node, "eth0");
     GNode *node2 = APTERYX_NODE (node, "statistics");
     node = APTERYX_LEAF (node2, "rx_count", "10");
@@ -1066,7 +1066,7 @@ test_db_update ()
     CU_ASSERT (db_add ("/test/eth0/statistics/changed", (const unsigned char *) "unchanged", strlen ("unchanged") + 1, UINT64_MAX));
 
     pthread_rwlock_rdlock (&db_lock);
-    CU_ASSERT (db_update_no_lock (root, UINT64_MAX));
+    CU_ASSERT (db_update_no_lock (root_node, UINT64_MAX));
 
     CU_ASSERT (db_get ("/test/eth0/statistics/rx_count", (unsigned char**)&value, &length) == true);
     CU_ASSERT (value != NULL);
@@ -1085,7 +1085,7 @@ test_db_update ()
 
     pthread_rwlock_unlock (&db_lock);
 
-    g_node_destroy(root);
+    g_node_destroy(root_node);
 
     db_prune ("/test");
 
