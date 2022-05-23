@@ -399,11 +399,11 @@ notify_watchers (GList *paths, GList *values, bool ack)
                         cb (path, value);
                     continue;
                 }
-                GList *paths = g_list_append(NULL, (void *) path);
-                GList *values = g_list_append(NULL, (void *) value);
-                send_watch_notification (watcher, paths, values, ack);
-                g_list_free (paths);
-                g_list_free (values);
+                GList *watch_paths = g_list_append(NULL, (void *) path);
+                GList *watch_values = g_list_append(NULL, (void *) value);
+                send_watch_notification (watcher, watch_paths, watch_values, ack);
+                g_list_free (watch_paths);
+                g_list_free (watch_values);
             }
             g_list_free_full (watchers, (GDestroyNotify) cb_release);
         }
