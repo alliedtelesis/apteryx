@@ -225,13 +225,16 @@ handle_proxies_set (const char *path, const char *value)
         }
         path = strrchr (value, ':') + 1;
         cb = update_callback (proxy_list, guid, path);
-        if (cb->uri)
+        if (cb != NULL)
         {
-            g_free ((void *) cb->uri);
+            if (cb->uri)
+            {
+                g_free ((void *) cb->uri);
+            }
+            cb->uri = g_strndup (value, strlen (value) - strlen (path) - 1);
+            strcpy ((char*)cb->path, path);
+            DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
         }
-        cb->uri = g_strndup (value, strlen (value) - strlen (path) - 1);
-        strcpy ((char*)cb->path, path);
-        DEBUG ("CFG-Proxy: %s to %s\n", cb->path, cb->uri);
     }
     else
     {

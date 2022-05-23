@@ -57,7 +57,7 @@ cb_create (struct callback_node *tree_root, const char *guid, const char *path,
     g_atomic_int_inc (&cb->refcnt);
     cb->type = cb->path[strlen (cb->path) - 1];
 
-    char *tmp = strdup (path);
+    char *tmp = g_strdup (path);
 
     pthread_mutex_lock (&tree_lock);
     if (cb->type == '/')
@@ -310,7 +310,7 @@ cb_gather (struct callback_node *node, GList *callbacks_so_far, const char *path
         return callbacks_so_far;
     }
 
-    char *tmp = strdup (path + 1);
+    char *tmp = g_strdup (path + 1);
     if (strchr (tmp, '/'))
     {
         *strchr (tmp, '/') = '\0';
@@ -437,7 +437,7 @@ _cb_exists (struct callback_node *node, const char *path)
         return false;
     }
 
-    char *tmp = strdup (path + 1);
+    char *tmp = g_strdup (path + 1);
     if (strchr (tmp, '/'))
     {
         *strchr (tmp, '/') = '\0';

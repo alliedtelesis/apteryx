@@ -432,7 +432,7 @@ db_delete_no_lock (const char *path, uint64_t ts)
                 if (hashtree_empty (parent) &&
                     ((struct database_node *) parent)->length == 0)
                 {
-                    char *parent_path = strdup (path);
+                    char *parent_path = g_strdup (path);
                     if (strchr (parent_path, '/'))
                     {
                         *strrchr (parent_path, '/') = '\0';
