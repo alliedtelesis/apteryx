@@ -879,9 +879,9 @@ proxy_traverse (GList **paths, GList **values, const char *path)
         gchar *new_root_key = g_strdup_printf("%.*s%s", (int)(path - in_path), in_path, APTERYX_NAME(root));
         g_free(root->data);
         root->data = new_root_key;
+        g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
     }
 
-    g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
     *paths = lists.paths;
     *values = lists.values;
 
