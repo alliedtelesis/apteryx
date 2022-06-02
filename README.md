@@ -116,17 +116,22 @@ make test
 
 ## Client
 ```
-Usage: apteryx [-h] [-s|-g|-f|-t|-w|-p|-x|-l] [<path>] [<value>]
+Usage: apteryx [-h] [-s|-g|-f|-q|-t|-r|-w|-p|-x|-l|-m|-c|-u<filter>] [<path>] [<value>]
   -h   show this help
   -d   debug
-  -s   set <path>=<value>
+  -s   set <path> to <value>
   -g   get <path>
   -f   find <path>
+  -q   query <path>?<query>
   -t   traverse database from <path>
+  -r   prune <path>
   -w   watch changes to the path <path>
   -p   provide <value> for <path>
   -x   proxy <path> via url <value>
   -l   last change <path>
+  -m   display memory usage for <path>
+  -c   display counters and statistics
+  -u   run unit tests (optionally match only tests with <filter>)
 
   Internal settings
     /apteryx/debug
