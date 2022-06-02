@@ -3602,6 +3602,38 @@ test_get_tree_provided ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_get_tree_provided_plus_set ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *path2 = TEST_PATH"/interfaces/eth0/admin-status";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+    CU_ASSERT (apteryx_set (path2, "up"));
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && !APTERYX_HAS_VALUE (root));
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 2);
+    node = node ? g_node_first_child (node) : NULL;
+    if (node && (strcmp (APTERYX_NAME (node), "state") == 0 || strcmp (APTERYX_NAME (node), "admin-status") == 0))
+    {
+        CU_ASSERT (node && g_node_n_children (node) == 1);
+    }
+    else
+    {
+        CU_ASSERT (false);
+    }
+
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+    CU_ASSERT (apteryx_set (path2, NULL));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 /* Writing to the database during a provide is a bit cruel and nasty,
  * but we need to be sure that we don't get dead locked while trying
  * to traverse the tree.
@@ -7267,6 +7299,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree indexed/provided wildcards", test_get_tree_indexed_provided_wildcards },
     { "get tree indexed/provided deeper", test_get_tree_indexed_provided_two_levels },
     { "get tree provided", test_get_tree_provided },
+    { "get tree provided + set", test_get_tree_provided_plus_set },
     { "get tree provider writes", test_get_tree_provider_write },
     { "get tree thrashing" , test_get_tree_while_thrashing },
     { "query2node invalid" , test_query2node_invalid },
