@@ -44,15 +44,16 @@ void
 usage ()
 {
 #ifdef TEST
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m|-c|-u<filter>] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-q|-t|-r|-w|-p|-x|-l|-m|-c|-u<filter>] [<path>] [<value>]\n"
 #else
-    printf ("Usage: apteryx [-h] [-s|-g|-f|-t|-r|-w|-p|-x|-l|-m|-c] [<path>] [<value>]\n"
+    printf ("Usage: apteryx [-h] [-s|-g|-f|-q|-t|-r|-w|-p|-x|-l|-m|-c] [<path>] [<value>]\n"
 #endif
             "  -h   show this help\n"
             "  -d   debug\n"
             "  -s   set <path> to <value>\n"
             "  -g   get <path>\n"
             "  -f   find <path>\n"
+            "  -q   query <path>?<query>\n"
             "  -t   traverse database from <path>\n"
             "  -r   prune <path>\n"
             "  -w   watch changes to the path <path>\n"
@@ -221,7 +222,7 @@ main (int argc, char **argv)
     uint64_t value;
 
     /* Parse options */
-    while ((c = getopt (argc, argv, "hdsgftrwpxlmcu::")) != -1)
+    while ((c = getopt (argc, argv, "hdsgfqtrwpxlmcu::")) != -1)
     {
         switch (c)
         {
@@ -236,6 +237,9 @@ main (int argc, char **argv)
             break;
         case 'f':
             mode = MODE_FIND;
+            break;
+        case 'q':
+            mode = MODE_QUERY;
             break;
         case 't':
             mode = MODE_TRAVERSE;
@@ -339,6 +343,37 @@ main (int argc, char **argv)
         g_list_free_full (paths, free);
         apteryx_shutdown ();
         break;
+    case MODE_QUERY:
+    {
+        if (!path || param)
+        {
+            usage ();
+            return 0;
+        }
+        apteryx_init (apteryx_debug);
+        char *fields = strchr (path, '?');
+        if (fields)
+        {
+            *fields = '\0';
+            fields++;
+        }
+        GNode *query = g_node_new (g_strdup (path));
+        if (fields && !apteryx_query_to_node (query, fields))
+        {
+            printf ("Invalid query \"%s\"\n", fields);
+            apteryx_free_tree (query);
+            return 0;
+        }
+        GNode *tree = apteryx_query (query);
+        if (tree)
+        {
+            apteryx_print_tree (tree, stdout);
+            apteryx_free_tree (tree);
+        }
+        apteryx_free_tree (query);
+        apteryx_shutdown ();
+        break;
+    }
     case MODE_TRAVERSE:
         if (param)
         {

@@ -394,6 +394,26 @@ void apteryx_print_tree (GNode *root, FILE *fp);
 GNode *apteryx_path_to_node (GNode *root, const char *path, const char *value);
 
 /**
+ * Convert a query into a full N-ary tree.
+ * Supports RFC8040 like query fields.
+ * @param parent Pointer to an existing node to attach to
+ * @param query query to convert into the tree
+ * @return true on a successful conversion
+ * @return false on failure
+ * Example:
+     GNode *root = g_node_new ("/system/time");
+     apteryx_query_to_node (root, "time(minutes;seconds);date(month;day)");
+     system
+       time
+         minutes
+         seconds
+       date
+         month
+         day
+ */
+bool apteryx_query_to_node (GNode *parent, const char *query);
+
+/**
  * Find a list of paths that match this tree below the root path given
  * @param root pointer to the N-ary tree of nodes with a wildcard root path
  * @return GList of paths where this tree can be found

@@ -1164,12 +1164,6 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     return result == 0;
 }
 
-typedef struct _traverse_data_t
-{
-    GNode* root;
-    bool done;
-} traverse_data_t;
-
 GNode*
 apteryx_path_to_node (GNode* root, const char *path, const char *value)
 {
@@ -1230,6 +1224,113 @@ apteryx_path_to_node (GNode* root, const char *path, const char *value)
         }
     }
     return rnode;
+}
+
+static GNode *
+parse_field (const char *path)
+{
+    GNode *rnode = NULL;
+    GNode *child = NULL;
+    const char *next = NULL;
+    const char *sublist = NULL;
+    char *name;
+
+    /* Find name */
+    sublist = strchr (path, '(');
+    next = strchr (path, '/');
+    if (sublist && (!next || sublist < next))
+        name = strndup (path, sublist - path);
+    else if (next)
+        name = strndup (path, next - path);
+    else
+        name = strdup (path);
+
+    /* Create the node */
+    rnode = APTERYX_NODE (NULL, name);
+
+    /* Process subpath */
+    if (next)
+    {
+        child = parse_field (next + 1);
+        if (!child)
+        {
+            free ((void *)rnode->data);
+            g_node_destroy (rnode);
+            return NULL;
+        }
+        g_node_prepend (rnode, child);
+    }
+    else if (sublist)
+    {
+        char *fields = g_strndup (sublist + 1, strlen (sublist) - 2);
+        if (!apteryx_query_to_node (rnode, fields))
+        {
+            free ((void *)rnode->data);
+            g_node_destroy (rnode);
+            free (fields);
+            return false;
+        }
+        free (fields);
+    }
+
+    return rnode;
+}
+
+static void
+merge_node_into_parent (GNode *parent, GNode *node)
+{
+    for (GNode *pchild = parent->children; pchild; pchild = pchild->next)
+    {
+        if (g_strcmp0 (pchild->data, node->data) == 0)
+        {
+            /* Unlink all the children and add to the original parent */
+            GList *children = NULL;
+            for (GNode *nchild = node->children; nchild; nchild = nchild->next)
+            {
+                children = g_list_append (children, nchild);
+            }
+            for (GList *nchild = children; nchild; nchild = nchild->next)
+            {
+                g_node_unlink (nchild->data);
+                merge_node_into_parent (pchild, nchild->data);
+            }
+            g_list_free (children);
+            node->children = NULL;
+            free ((void *)node->data);
+            g_node_destroy (node);
+            return;
+        }
+    }
+    g_node_prepend (parent, node);
+}
+
+bool
+apteryx_query_to_node (GNode *root, const char *query)
+{
+    const char *h, *t;
+    bool skip = false;
+
+    h = t = query;
+    while (*h)
+    {
+        if (*(h + 1) == '(')
+            skip = true;
+        else if (*(h + 1) == '\0' || (!skip && *(h + 1) == ';'))
+        {
+            char *field = strndup (t, (h - t + 1));
+            GNode *node = parse_field (field);
+            free (field);
+            if (!node)
+                return false;
+            merge_node_into_parent (root, node);
+            t = h + 2;
+        }
+        else if (*(h + 1) == ')')
+            skip = false;
+
+        h++;
+    }
+    return true;
 }
 
 GNode*
