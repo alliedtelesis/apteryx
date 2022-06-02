@@ -3631,6 +3631,124 @@ test_get_tree_while_thrashing ()
 }
 
 void
+test_query2node_invalid ()
+{
+    char *queries[] = {
+        "die",
+        "die=",
+        "die=now",
+        "die=now&=counter",
+        "counter&die=now",
+        "&",
+        "&&,",
+    };
+    for (int i=0; i < sizeof(queries) / sizeof (const char *); i++)
+    {
+        GNode *root = g_node_new (g_strdup ("/"));
+        CU_ASSERT (apteryx_query_to_node (root, queries[i]));
+        apteryx_free_tree (root);
+    }
+}
+
+void
+test_query2node_single_field ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time"));
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    GNode *node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "time") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 0);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_double_field ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time;date"));
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    GNode *child;
+    CU_ASSERT ((child = apteryx_find_child (root, "time")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "date")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_single_field_path ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time/seconds"));
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    GNode *node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "time") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "seconds") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 0);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_double_field_path ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time/seconds;date/day"));
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    GNode *child;
+    CU_ASSERT ((child = apteryx_find_child (root, "time")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 1);
+    CU_ASSERT ((child = apteryx_find_child (child, "seconds")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "date")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 1);
+    CU_ASSERT ((child = apteryx_find_child (child, "day")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_one_path_two_nodes ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time(minutes;seconds)"));
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    GNode *node;
+    CU_ASSERT ((node = apteryx_find_child (root, "time")) != NULL);
+    CU_ASSERT (node && g_node_n_children (node) == 2);
+    GNode *child;
+    CU_ASSERT ((child = apteryx_find_child (node, "seconds")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "minutes")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_two_path_two_nodes ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time(minutes;seconds);date(month;day)"));
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    GNode *parent, *child;
+    CU_ASSERT ((parent = apteryx_find_child (root, "time")) != NULL);
+    CU_ASSERT (parent && g_node_n_children (parent) == 2);
+    CU_ASSERT ((child = apteryx_find_child (parent, "seconds")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (parent, "minutes")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((parent = apteryx_find_child (root, "date")) != NULL);
+    CU_ASSERT (parent && g_node_n_children (parent) == 2);
+    CU_ASSERT ((child = apteryx_find_child (parent, "month")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (parent, "day")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    apteryx_free_tree (root);
+}
+
+void
 test_query_basic ()
 {
     GNode *root = NULL;
@@ -7064,6 +7182,13 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree provided", test_get_tree_provided },
     { "get tree provider writes", test_get_tree_provider_write },
     { "get tree thrashing" , test_get_tree_while_thrashing },
+    { "query2node invalid" , test_query2node_invalid },
+    { "query2node single field", test_query2node_single_field },
+    { "query2node double field", test_query2node_double_field },
+    { "query2node single field path", test_query2node_single_field_path },
+    { "query2node double field path", test_query2node_double_field_path },
+    { "query2node one path two nodes", test_query2node_one_path_two_nodes },
+    { "query2node two paths two nodes", test_query2node_two_path_two_nodes },
     { "query basic", test_query_basic},
     { "query subtree root", test_query_subtree_root},
     { "query one star", test_query_one_star},
