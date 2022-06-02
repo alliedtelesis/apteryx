@@ -50,6 +50,8 @@
 #define TEST_SCHEMA_PATH    "/etc/apteryx/schema:."
 #define TEST_SCHEMA_FILE    "./test.xml"
 
+static int _cb_count = 0;
+
 static bool
 assert_apteryx_empty (void)
 {
@@ -947,6 +949,90 @@ test_index_and_provide ()
 }
 
 static GList *
+test_index_get_tree_cb(const char *path)
+{
+    gchar *tmp = g_strdup(path);
+    char *token = NULL;
+    char *saveptr = NULL;
+    int count = 0;
+    GList *paths = NULL;
+
+    token = tmp;
+    while ((token = strtok_r(token, "/", &saveptr)) != NULL)
+    {
+        count++;
+        token = NULL;
+    }
+
+    switch(count)
+    {
+        case 2:
+            for (int i = 0; i < 3; i++)
+                paths = g_list_append(paths, g_strdup_printf(TEST_PATH"/counters/eth%d", i));
+            break;
+        case 3:
+            paths = g_list_append(paths, g_strdup_printf("%s%s", path, "rx"));
+            paths = g_list_append(paths, g_strdup_printf("%s%s", path, "tx"));
+            break;
+        case 4:
+            paths = g_list_append(paths, g_strdup_printf("%s%s", path, "pkts"));
+            paths = g_list_append(paths, g_strdup_printf("%s%s", path, "bytes"));
+        default:
+            break;
+    }
+
+    g_free(tmp);
+    return paths;
+}
+
+static char *
+test_provide_get_tree_cb(const char *path)
+{
+    if (strstr(path, "rx/pkts"))
+    {
+        _cb_count++;
+        return strdup("100");
+    }
+    if (strstr(path, "rx/bytes"))
+    {
+        _cb_count++;
+        return strdup("200");
+    }
+    if (strstr(path, "tx/pkts"))
+    {
+        _cb_count++;
+        return strdup("300");
+    }
+    if (strstr(path, "tx/bytes"))
+    {
+        _cb_count++;
+        return strdup("400");
+    }
+    return NULL;
+}
+
+void
+test_index_and_provide_get_tree ()
+{
+    char *path = TEST_PATH"/counters/*";
+    GNode *root = NULL;
+    _cb_count = 0;
+    CU_ASSERT (apteryx_provide (path, test_provide_get_tree_cb));
+    CU_ASSERT (apteryx_index (path, test_index_get_tree_cb));
+    apteryx_set(TEST_PATH"/counters/eth4/name", "eth3");
+    CU_ASSERT ((root = apteryx_get_tree (TEST_PATH"/counters")) != NULL);
+    if (root)
+        apteryx_free_tree (root);
+    /* eth0-3 * rx/tx * bytes/packets = 16 counters */
+    CU_ASSERT (_cb_count == 16);
+    CU_ASSERT (apteryx_unprovide (path, test_provide_get_tree_cb));
+    CU_ASSERT (apteryx_unindex (path, test_index_get_tree_cb));
+    apteryx_prune(TEST_PATH"/counters");
+    CU_ASSERT (assert_apteryx_empty ());
+    _cb_count = 0;
+}
+
+static GList *
 _indexer_writes (const char *d)
 {
     apteryx_set_string (d, "one", "1");
@@ -1226,7 +1312,7 @@ test_bitmap ()
 
 static char *_path = NULL;
 static char *_value = NULL;
-static int _cb_count = 0;
+
 static bool
 test_watch_callback (const char *path, const char *value)
 {
@@ -6939,6 +7025,7 @@ static CU_TestInfo tests_api_index[] = {
     { "index no handler", test_index_no_handler },
     { "index remove handler", test_index_remove_handler },
     { "index x/* with provide x/*", test_index_and_provide },
+    { "index x/* with provide x/* and get tree", test_index_and_provide_get_tree },
     { "indexer writes to database", test_index_writes },
     { "index path ends with /", test_index_always_ends_with_slash },
     CU_TEST_INFO_NULL,
