@@ -1567,12 +1567,6 @@ collect_provided_paths(const char *_path, GNode *root)
     g_hash_table_destroy(uniq_paths);
     g_list_free_full(result, g_free);
 
-    /* Do all this for each node in the tree too. */
-    for (GNode *iter = g_node_first_child(root); iter; iter = g_node_next_sibling(iter))
-    {
-        provided_paths = g_list_concat(provided_paths, collect_provided_paths(NULL, iter));
-    }
-
 exit:
     g_free(path);
     return provided_paths;
