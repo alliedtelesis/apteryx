@@ -378,6 +378,8 @@ void apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char
 char *apteryx_node_path (GNode *node);
 /** Descend down the given N-ary tree to find the child at the end of the given path */
 GNode *apteryx_path_node (GNode *node, const char *path);
+/** Print a tree to fp */
+void apteryx_print_tree (GNode *root, FILE *fp);
 
 /**
  * Convert a path into a full N-ary tree. Each node is separated by a slash.

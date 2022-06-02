@@ -1053,6 +1053,29 @@ apteryx_path_node (GNode *node, const char *path)
     return found;
 }
 
+static void
+_apteryx_print_tree (GNode *node, FILE *fp, int depth)
+{
+    if (node)
+    {
+        const char *name = APTERYX_NAME (node);
+        if (depth == 0 && name[0] == '/')
+            fprintf (fp, "%s\n", name + 1);
+        else
+            fprintf (fp, "%*s%s\n", depth * 2, " ", name);
+        for (GNode *child = node->children; child; child = child->next)
+        {
+            _apteryx_print_tree (child, fp, depth + 1);
+        }
+    }
+}
+
+void
+apteryx_print_tree (GNode *root, FILE *fp)
+{
+    _apteryx_print_tree (root, fp, 0);
+}
+
 static gboolean
 _set_multi (GNode *node, gpointer data)
 {
