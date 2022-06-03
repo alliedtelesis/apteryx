@@ -45,6 +45,28 @@ counters_t counters = {};
 /* Synchronise validation */
 static pthread_mutex_t validating;
 
+static bool
+check_indexed_path (const char *indexed, const char *path, int path_length)
+{
+    /* Indexed paths must be longer than the path we searched for. */
+    if (strlen (indexed) <= path_length)
+    {
+        return false;
+    }
+    /* Indexed paths must start with the search path. */
+    if (strncmp (path, indexed, path_length))
+    {
+        return false;
+    }
+    /* Indexed paths must only fill in one directory below. */
+    if (strchr (indexed + path_length, '/'))
+    {
+        return false;
+    }
+
+    return true;
+}
+
 /* This function returns true if indexers were called (list may still be NULL) */
 static bool
 index_get (const char *path, GList **result)
@@ -55,6 +77,7 @@ index_get (const char *path, GList **result)
     uint64_t start, duration;
     bool res;
     const char *rpath;
+    int path_length = strlen (path);
 
     /* Retrieve a list of providers for this path */
     indexers = config_get_indexers (path);
@@ -113,7 +136,10 @@ index_get (const char *path, GList **result)
         }
         while ((rpath = rpc_msg_decode_string (&msg)) != NULL)
         {
-            results = g_list_prepend (results, (gpointer) strdup (rpath));
+            if (check_indexed_path(rpath, path, path_length))
+            {
+                results = g_list_prepend (results, (gpointer) strdup (rpath));
+            }
         }
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, true);

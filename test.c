@@ -1066,6 +1066,38 @@ test_index_writes ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static GList *
+_indexer_recurses(const char *path)
+{
+    GList *paths = g_list_append(NULL, g_strdup_printf(TEST_PATH"/counters/eth0"));
+    paths = g_list_append(paths, g_strdup_printf(TEST_PATH"/counters/eth1"));
+    paths = g_list_append(paths, g_strdup_printf(TEST_PATH"/counters/eth2"));
+    paths = g_list_append(paths, g_strdup_printf(TEST_PATH"/counters/eth2/something/else"));
+    return paths;
+}
+
+void
+test_index_recursive ()
+{
+    char *path = TEST_PATH"/counters/*";
+    char *provide_path = TEST_PATH"/counters/*/something/else";
+    GNode *root;
+
+    /* This indexer is poorly behaved - indexers must return paths that
+     * extend the search path - this one returns the same set of paths
+     * each time it's called. We need code in apteryxd to ignore paths
+     * that are obviously wrong.
+     */
+    CU_ASSERT (apteryx_index (path, _indexer_recurses));
+    /* There's no reason to call the indexer without a provider behind it. */
+    CU_ASSERT (apteryx_provide (provide_path, _provide_callback));
+    root = apteryx_get_tree (TEST_PATH"/counters");
+    if (root)
+        apteryx_free_tree (root);
+    CU_ASSERT (apteryx_unindex (path, _indexer_recurses));
+    CU_ASSERT (apteryx_unprovide (provide_path, _provide_callback));
+    CU_ASSERT (assert_apteryx_empty ());
+}
 
 void
 test_prune ()
@@ -7178,6 +7210,7 @@ static CU_TestInfo tests_api_index[] = {
     { "index x/* with provide x/* and get tree", test_index_and_provide_get_tree },
     { "indexer writes to database", test_index_writes },
     { "index path ends with /", test_index_always_ends_with_slash },
+    { "index returns earlier path", test_index_recursive },
     CU_TEST_INFO_NULL,
 };
 
