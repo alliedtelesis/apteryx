@@ -195,7 +195,9 @@ handle_watch (rpc_message msg)
     if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
     {
         DEBUG ("WATCH[%"PRIu64"]: cb not found\n", ref);
-        return false;
+        /* Not much we can do but pretend we completed the callback */
+        rpc_msg_reset (msg);
+        return true;
     }
 
     pthread_mutex_lock (&pending_watches_lock);
