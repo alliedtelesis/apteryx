@@ -1,0 +1,22 @@
+name: Run unit tests
+
+on:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: sudo apt install -y libcunit1-dev
+
+    - name: Build
+      run: make
+
+    - name: Run tests
+      run: make test
