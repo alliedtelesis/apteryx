@@ -5981,6 +5981,13 @@ test_path_to_node ()
         CU_ASSERT (g_strcmp0(node->data, "test") == 0);
     }
     g_node_destroy (root);
+
+    path = "/system";
+    root = APTERYX_NODE (NULL, path);
+    apteryx_path_to_node (root, "/system/system-name", "awplus");
+    node = root->children;
+    CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system-name") == 0);
+    g_node_destroy (root);
 }
 
 static bool
