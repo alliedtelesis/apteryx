@@ -4301,6 +4301,10 @@ test_query_two_branches ()
     APTERYX_NODE (iroot, strdup ("proto"));
     APTERYX_NODE (iroot, strdup ("ifname"));
     rroot = apteryx_query (root);
+    CU_ASSERT (rroot && strcmp (APTERYX_NAME (rroot), "/") == 0);
+    char *p = apteryx_node_path(rroot);
+    CU_ASSERT (strstr(p, "//") == NULL);
+    g_free (p);
     CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 4);
 
     apteryx_free_tree (rroot);
