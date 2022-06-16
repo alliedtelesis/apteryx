@@ -528,7 +528,11 @@ db_get_all (const char *path)
 static GNode *
 _db_query_children (GNode *n, struct database_node *parent, GNode *query)
 {
-    if (parent->length)
+    /* This check doesn't need a * match - they get picked up with the
+     * _db_add_children below.
+     */
+    if (parent->length &&
+        (((char*)query->data)[0] == '\0' || strcmp (query->data, parent->hashtree_node.key) == 0))
     {
         g_node_prepend_data(n, g_strdup((char*)parent->value));
         return n;
@@ -543,7 +547,7 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
         {
             if (g_node_first_child(query_element) && g_node_first_child(query_element)->data)
             {
-                /* This needs to pick up everything from this one directory and continue matching */
+                /* This needs to continue matching down all children. */
                 GList *children = hashtree_children_get(&parent->hashtree_node);
                 for (GList *iter = children; iter; iter = g_list_next (iter))
                 {
@@ -557,6 +561,17 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
                 /* This is a terminating * and needs to catch everything (db_get_all) */
                 _db_add_children(n, parent, -1);
             }
+        }
+        else if (strcmp(query_element->data, "") == 0)
+        {
+            /* Got to a directory match */
+            GList *children = hashtree_children_get(&parent->hashtree_node);
+            for (GList *iter = children; iter; iter = g_list_next (iter))
+            {
+                struct database_node *child = iter->data;
+                _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+            }
+            g_list_free (children);
         }
         else
         {

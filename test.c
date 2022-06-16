@@ -4115,7 +4115,7 @@ test_query_one_star_one_level ()
     path = strdup (TEST_PATH"/routing/ipv4/rib/*/");
     apteryx_path_to_node (root, path, NULL);
     rroot = apteryx_query (root);
-    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
 
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
@@ -4150,7 +4150,7 @@ test_query_multi_star_one_level ()
     apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*/", NULL);
     apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/fib/*", NULL);
     rroot = apteryx_query (root);
-    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
 
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
@@ -4327,12 +4327,90 @@ test_query_provided ()
 
     CU_ASSERT (apteryx_provide (path, test_provide_cb));
 
+    /* Direct query of provided value */
     root = g_node_new (strdup ("/"));
     apteryx_path_to_node (root, path, NULL);
     rroot = apteryx_query (root);
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
     CU_ASSERT (rroot && g_node_max_height (rroot) == 5);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
 
+    /* Directory level query of provided value */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, TEST_PATH"/system/", NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 5);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+}
+
+static uint64_t
+test_refresh_cb(const char *path)
+{
+    apteryx_set (TEST_PATH"/system/ram/size", "1000");
+    return 1000000;
+}
+
+void
+test_query_provided_refreshed ()
+{
+    const char *path = TEST_PATH"/system";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/system/flash/size", test_provide_cb));
+    CU_ASSERT (apteryx_refresh (TEST_PATH"/system/ram/size", test_refresh_cb));
+
+    /* Direct query of value on the tree (no value) */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, path, NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (!rroot);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Full depth query of tree */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, TEST_PATH"/system/*", NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 6);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Directory level query of provided + refreshed value */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, TEST_PATH"/system/ram/", NULL);
+    apteryx_path_to_node (root, TEST_PATH"/system/flash/", NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 6);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/system/flash/size", test_provide_cb));
+    CU_ASSERT (apteryx_unrefresh (TEST_PATH"/system/ram/size", test_refresh_cb));
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_query_trunk_provided ()
+{
+    const char *path = TEST_PATH"/system/state";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+
+    /* Query of an intermediate node should return nothing */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, TEST_PATH"/system", NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot == NULL);
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
 
@@ -7360,6 +7438,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "query null values", test_query_null_values},
     { "query two branches", test_query_two_branches},
     { "query provided", test_query_provided},
+    { "query provided and refreshed", test_query_provided_refreshed},
+    { "query provided trunk request", test_query_trunk_provided},
     { "query provided wildcard",  test_query_provided_wildcard},
     { "query provided wildcards", test_query_provided_wildcards},
     { "query refreshed", test_query_refreshed},

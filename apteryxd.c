@@ -1738,13 +1738,17 @@ collect_provided_paths_query(GNode *query)
 {
     GList *matches = NULL;
     const char *match_key = query->data;
+    char *path = apteryx_node_path (query);
 
     if (query->data == NULL)
+    {
+        free(path);
         return NULL;
+    }
 
     if (strcmp(match_key, "") == 0)
     {
-        // printf("TODO: add directory matches for probably {%s/} here\n", path);
+        matches = g_list_concat (matches, config_search_providers (path));
     }
     else if (strcmp(match_key, "*") == 0)
     {
@@ -1755,24 +1759,54 @@ collect_provided_paths_query(GNode *query)
         }
         else
         {
-           // printf("TODO: blowing the * into config_search / index_get and calling collect_provided_paths_query again x10\n");
+            GList *result = NULL;
+            gchar *needle = g_strdup_printf ("%s/", apteryx_node_path (query->parent));
+
+            /* Look to see what this path could expand to */
+            index_get (needle, &result);
+            result = g_list_concat (result, config_search_providers (needle));
+            g_free (needle);
+
+            /* Free the wildcard key before we reuse this node in the next loop. */
+            g_free (query->data);
+
+            /* Call down the tree with the wildcard node replaced with the possible
+             * values found via the indexer callbacks and searching the providers.
+             */
+            for (GList *iter = result; iter; iter = iter->next)
+            {
+                query->data = iter->data + strlen (path) - 1;
+                for (GNode *child = g_node_first_child (query); child; child = g_node_next_sibling (child))
+                {
+                    matches = g_list_concat (matches, collect_provided_paths_query (child));
+                }
+            }
+            g_list_free_full (result, g_free);
+
+            /* Put the wildcard key back. */
+            query->data = g_strdup ("*");
         }
     }
     else
     {
-        if (APTERYX_HAS_VALUE(query))
-        {
-            matches = collect_provided_paths(NULL, query);
-        }
-        else
+        if (g_node_first_child(query))
         {
             for (GNode *iter = g_node_first_child(query); iter; iter = g_node_next_sibling(iter))
             {
-                matches = g_list_concat(matches, collect_provided_paths_query(iter));
+                /* Got to a leaf, we now need to search for providers that match. */
+                if (iter->data == NULL)
+                {
+                    matches = g_list_concat (matches, config_search_providers (path));
+                    break;
+                }
+                else
+                {
+                    matches = g_list_concat (matches, collect_provided_paths_query (iter));
+                }
             }
         }
     }
-
+    g_free (path);
     return matches;
 }
 
