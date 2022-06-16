@@ -1533,6 +1533,12 @@ apteryx_query (GNode *root)
         g_free(broken_key);
     }
 
+    if (rroot && ((char *)rroot->data)[0] == '\0')
+    {
+        g_free (rroot->data);
+        rroot->data = g_strdup ("/");
+    }
+
     /* Put the original root (query tree) name back */
     root->data = old_root_name;
     g_free(chopped_path);
