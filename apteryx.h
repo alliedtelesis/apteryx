@@ -453,6 +453,15 @@ GNode *apteryx_get_tree (const char *path);
 
 /**
  * Get a tree of multiple values from Apteryx that match this tree below the root path given.
+ *
+ * This tree may be set up with full paths to given values to be fetched, with intermediate wildcard
+ * nodes indicated by key of "*" that will match all paths that can be found at that level, leaf
+ * nodes with "*" that will match the full tree below that path, and /
+ * or with leaf nodes with empty keys "" that will match values at exactly that level.
+ *
+ * This matching is the same as apteryx_watch, provide, index and refresh when the tree
+ * is set up with apteryx_path_to_node.
+ *
  * @param root pointer to the N-ary tree of nodes.
  * @return N-ary tree of nodes.
  * Example: Create a tree and get the n-ary tree with the values for the given nodes
