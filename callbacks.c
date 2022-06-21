@@ -201,7 +201,16 @@ cb_release (cb_info_t *cb)
 static GList *
 cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const char *path)
 {
-    /* Terminating condition */
+    /* If we are down to a directory match then the possible matches below here
+     * are:
+     *    - any nodes with more children under them
+     *    - terminal nodes with directory or exact matches
+     *
+     * Complicating things a little bit is we can get here with an empty string
+     * (usually at the start of searching a tree) - in that case we need to
+     * do the same sort of checking to traverse lower in the tree with subsequent
+     * calls.
+     */
     if (strlen (path) == 0 || strcmp (path, "/") == 0)
     {
         GList *children = hashtree_children_get (&node->hashtree_node);
@@ -232,6 +241,7 @@ cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const cha
         *strchr (tmp, '/') = '\0';
     }
 
+    /* If this callback tree has a wildcard node we need to follow down that branch. */
     struct hashtree_node *next_stage = hashtree_path_to_node (&node->hashtree_node, "/*");
     if (next_stage)
     {
@@ -244,6 +254,7 @@ cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const cha
     if (asprintf (&with_leading_slash, "/%s", tmp) < 0)
         return callbacks_so_far;
 
+    /* Find the next piece and move down. */
     next_stage = hashtree_path_to_node (&node->hashtree_node, with_leading_slash);
     if (next_stage)
     {
