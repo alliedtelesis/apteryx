@@ -6070,6 +6070,33 @@ test_path_to_node ()
     node = root->children;
     CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system-name") == 0);
     g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, "/");
+    apteryx_path_to_node (root, "/system/system-name", "awplus");
+    node = root->children;
+    path = apteryx_node_path(node);
+    CU_ASSERT (path && strcmp (path, "/system") == 0);
+    g_free (path);
+    CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system") == 0);
+    node = node->children;
+    path = apteryx_node_path(node);
+    CU_ASSERT (path && strcmp (path, "/system/system-name") == 0);
+    g_free (path);
+    CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system-name") == 0);
+    node = node->children;
+    CU_ASSERT (node && strcmp(APTERYX_NAME(node), "awplus") == 0);
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, "/system");
+    apteryx_path_to_node (root, "/system/system-name", "awplus");
+    node = root->children;
+    path = apteryx_node_path(node);
+    CU_ASSERT (path && strcmp (path, "/system/system-name") == 0);
+    g_free (path);
+    CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system-name") == 0);
+    node = node->children;
+    CU_ASSERT (node && strcmp(APTERYX_NAME(node), "awplus") == 0);
+    g_node_destroy (root);
 }
 
 static bool

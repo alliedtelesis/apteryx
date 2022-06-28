@@ -963,8 +963,13 @@ _node_to_path (GNode *node, char **buf)
         _node_to_path (node->parent, buf);
 
     char *tmp = NULL;
+
+    char *key = node ? node->data : "";
+    if (key[0] == '/' && key[1] == '\0')
+        key++;
+
     if (asprintf (&tmp, "%s%s%s", *buf ? : "",
-            node ? (char*)node->data : "/",
+            key,
             end ? "" : "/") >= 0)
     {
         free (*buf);
