@@ -701,6 +701,60 @@ test_search_paths_root ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+
+static char *
+_dummy_provide(const char *d)
+{
+    return NULL;
+}
+
+void
+test_search_of_provide ()
+{
+    GList *paths = NULL;
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/interfaces/eth0/status", _dummy_provide));
+
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/")) != NULL);
+    CU_ASSERT (paths && strcmp(paths->data, TEST_PATH"/interfaces/eth0/status") == 0);
+    g_list_free_full(paths, g_free);
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/interfaces/eth0/status/", _dummy_provide));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/interfaces/eth0/status/*", _dummy_provide));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/status/")) == NULL)
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/interfaces/eth0/status/lower-directory/", _dummy_provide));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/status/")) != NULL);
+    CU_ASSERT (paths && strcmp(paths->data, TEST_PATH"/interfaces/eth0/status/lower-directory") == 0);
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/interfaces/eth0/status/lower-directory/", _dummy_provide));
+    g_list_free_full(paths, g_free);
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/interfaces/eth0/status/lower-exact", _dummy_provide));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/status/")) != NULL);
+    CU_ASSERT (paths && strcmp(paths->data, TEST_PATH"/interfaces/eth0/status/lower-exact") == 0);
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/interfaces/eth0/status/lower-exact", _dummy_provide));
+    g_list_free_full(paths, g_free);
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/interfaces/eth0/status/lower-wildcard/*", _dummy_provide));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/status/")) != NULL);
+    CU_ASSERT (paths && strcmp(paths->data, TEST_PATH"/interfaces/eth0/status/lower-wildcard") == 0);
+    g_list_free_full(paths, g_free);
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/interfaces/eth0/status/lower-wildcard/*/and-below", _dummy_provide));
+    CU_ASSERT ((paths = apteryx_search (TEST_PATH"/interfaces/eth0/status/lower-wildcard/")) == NULL);
+    CU_ASSERT (paths == NULL);
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/interfaces/eth0/status/lower-wildcard/*/and-below", _dummy_provide));
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/interfaces/eth0/status/lower-wildcard/*", _dummy_provide));
+
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/interfaces/eth0/status", _dummy_provide));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/interfaces/eth0/status/", _dummy_provide));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/interfaces/eth0/status/*", _dummy_provide));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+
 void
 test_perf_search ()
 {
@@ -921,12 +975,6 @@ test_index_always_ends_with_slash ()
     CU_ASSERT (apteryx_unindex (path, test_index_cb_always_slash));
     CU_ASSERT (apteryx_unprovide (path, test_index_cb_always_slash_provide));
     CU_ASSERT (assert_apteryx_empty ());
-}
-
-static char *
-_dummy_provide(const char *d)
-{
-    return NULL;
 }
 
 static GList *
@@ -7414,6 +7462,7 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide after db", test_provide_after_db },
     { "provider wildcard", test_provider_wildcard },
     { "provider wildcard internal", test_provider_wildcard_internal },
+    { "wip: search exact provide", test_search_of_provide },
     CU_TEST_INFO_NULL,
 };
 

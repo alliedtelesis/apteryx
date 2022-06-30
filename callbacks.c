@@ -201,35 +201,43 @@ cb_release (cb_info_t *cb)
 static GList *
 cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const char *path)
 {
-    /* If we are down to a directory match then the possible matches below here
-     * are:
-     *    - any nodes with more children under them
-     *    - terminal nodes with directory or exact matches
-     *
-     * Complicating things a little bit is we can get here with an empty string
-     * (usually at the start of searching a tree) - in that case we need to
-     * do the same sort of checking to traverse lower in the tree with subsequent
-     * calls.
+    /* If we have got to the end of the search path then exact matches,
+     * or nodes with children with directory / lower matches need to
+     * be returned.
      */
-    if (strlen (path) == 0 || strcmp (path, "/") == 0)
+    if (strlen (path) == 0)
     {
-        GList *children = hashtree_children_get (&node->hashtree_node);
-        if (g_list_length (children) == 0)
+        if (node->exact)
         {
-            if (node->exact)
-            {
-                callbacks_so_far = g_list_prepend (callbacks_so_far, g_strdup (""));
-            }
+            callbacks_so_far = g_list_prepend (callbacks_so_far, g_strdup (""));
         }
+
+        GList *children = hashtree_children_get (&node->hashtree_node);
         for (GList *iter = children; iter; iter = iter->next)
         {
             struct callback_node *child = iter->data;
-            if (child->exact || child->directory ||
+            if (child->directory ||
                 !hashtree_empty (&child->hashtree_node))
             {
                 callbacks_so_far =
                     g_list_prepend (callbacks_so_far, g_strdup (child->hashtree_node.key));
             }
+        }
+        g_list_free (children);
+        return callbacks_so_far;
+    }
+
+    /* If we get down to a trailing slash we need the children of this node,
+     * but not the node itself.
+     */
+    if (strcmp (path, "/") == 0)
+    {
+        GList *children = hashtree_children_get (&node->hashtree_node);
+        for (GList *iter = children; iter; iter = iter->next)
+        {
+            struct callback_node *child = iter->data;
+            callbacks_so_far =
+                g_list_prepend (callbacks_so_far, g_strdup (child->hashtree_node.key));
         }
         g_list_free (children);
         return callbacks_so_far;
