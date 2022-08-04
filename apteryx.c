@@ -108,6 +108,33 @@ call_callback (uint64_t ref, const char *path, const char *value)
         return ((void*(*)(const char*)) fn) (path);
 }
 
+/**
+ * 32 Bit systems won't return uint64_t correctly via a callback cast to void *
+ */
+static uint64_t
+call_uint64_callback (uint64_t ref, const char *path, const char *value)
+{
+    void *fn = NULL;
+    void *data = NULL;
+    bool val = false;
+    uint32_t flags = 0;
+
+    if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
+    {
+        DEBUG ("CB[%"PRIu64"]: not found\n", ref);
+        return 0;
+    }
+
+    if (val && data)
+        return ((uint64_t(*)(const char*, const char*, void*)) fn) (path, value, data);
+    else if (val)
+        return ((uint64_t(*)(const char*, const char*)) fn) (path, value);
+    else if (data)
+        return ((uint64_t(*)(const char*, void*)) fn) (path, data);
+    else
+        return ((uint64_t(*)(const char*)) fn) (path);
+}
+
 static const char *
 validate_path (const char *path, char **url)
 {
@@ -294,7 +321,7 @@ handle_refresh (rpc_message msg)
     DEBUG ("REFRESH CB: \"%s\" (0x%"PRIx64")\n", path, ref);
 
     /* Process callback */
-    timeout = (uint64_t) (size_t) call_callback (ref, path, NULL);
+    timeout = call_uint64_callback (ref, path, NULL);
     rpc_msg_reset (msg);
     rpc_msg_encode_uint64 (msg, timeout);
     return true;
