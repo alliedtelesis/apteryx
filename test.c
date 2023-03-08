@@ -3669,6 +3669,29 @@ test_get_tree ()
 }
 
 void
+test_get_tree_value_on_branch ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_set_string (path, "state", "up"));
+    CU_ASSERT (apteryx_set_string (path, "duplex", "full"));
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/interfaces", "eth0", "eth0"));
+    /* get_tree only returns values on leaf nodes */
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), TEST_PATH"/interfaces") == 0);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "eth0") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 2);
+    CU_ASSERT (apteryx_prune (path));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_get_tree_single_node ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/state";
@@ -4583,6 +4606,60 @@ test_query_long_root()
     CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/devices", APTERYX_NAME(rroot)) == 0);
     CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
     apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_query_too_long()
+{
+    GNode *query = NULL;
+
+    apteryx_set (TEST_PATH"/routing/ipv4/rib", "rib");
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/routing/ipv4/rib/1/ifname", NULL);
+    CU_ASSERT (apteryx_query (query) == NULL);
+    apteryx_free_tree (query);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_query_value_on_branch()
+{
+    GNode *root = NULL;
+    GNode *query = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    apteryx_set (TEST_PATH"/routing/ipv4/rib", "rib");
+
+    query = g_node_new (strdup (TEST_PATH"/routing/ipv4/rib/*"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && g_node_n_children (root) == 2);
+    CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAVES) == 6);
+    apteryx_free_tree (query);
+    apteryx_free_tree (root);
+
+    query = g_node_new (strdup (TEST_PATH"/routing/ipv4/rib/1/ifname"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && APTERYX_HAS_VALUE (root));
+    CU_ASSERT (root && strcmp (APTERYX_VALUE (root), "eth0") == 0);
+    apteryx_free_tree (query);
     apteryx_free_tree (root);
 
     apteryx_prune (TEST_PATH);
@@ -6129,26 +6206,25 @@ test_memuse ()
 void
 test_path_to_node ()
 {
-    char *path = TEST_PATH"/path/to/node";
-    GNode *root = APTERYX_NODE (NULL, path);
-    GNode *node =  root ? apteryx_path_to_node (root, path, "test") : NULL;
+    char *path;
+    GNode *root;
+    GNode *node;
 
+    path = TEST_PATH"/path/to/node";
+    root = APTERYX_NODE (NULL, strdup (path));
+    node = apteryx_path_to_node (root, path, "test");
     CU_ASSERT (root != NULL);
     CU_ASSERT (node != NULL);
-    if (node != NULL)
-    {
-        CU_ASSERT (g_strcmp0(node->data, "test") == 0);
-    }
-    g_node_destroy (root);
+    CU_ASSERT (node && g_strcmp0(node->data, "test") == 0);
+    apteryx_free_tree (root);
 
-    path = "/system";
-    root = APTERYX_NODE (NULL, path);
+    root = APTERYX_NODE (NULL, strdup ("/system"));
     apteryx_path_to_node (root, "/system/system-name", "awplus");
     node = root->children;
     CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system-name") == 0);
-    g_node_destroy (root);
+    apteryx_free_tree (root);
 
-    root = APTERYX_NODE (NULL, "/");
+    root = APTERYX_NODE (NULL, strdup ("/"));
     apteryx_path_to_node (root, "/system/system-name", "awplus");
     node = root->children;
     path = apteryx_node_path(node);
@@ -6162,9 +6238,9 @@ test_path_to_node ()
     CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system-name") == 0);
     node = node->children;
     CU_ASSERT (node && strcmp(APTERYX_NAME(node), "awplus") == 0);
-    g_node_destroy (root);
+    apteryx_free_tree (root);
 
-    root = APTERYX_NODE (NULL, "/system");
+    root = APTERYX_NODE (NULL, strdup ("/system"));
     apteryx_path_to_node (root, "/system/system-name", "awplus");
     node = root->children;
     path = apteryx_node_path(node);
@@ -6173,7 +6249,7 @@ test_path_to_node ()
     CU_ASSERT (node && strcmp(APTERYX_NAME(node), "system-name") == 0);
     node = node->children;
     CU_ASSERT (node && strcmp(APTERYX_NAME(node), "awplus") == 0);
-    g_node_destroy (root);
+    apteryx_free_tree (root);
 }
 
 static bool
@@ -7526,6 +7602,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "set tree", test_set_tree },
     { "get tree", test_get_tree },
     { "get tree single node", test_get_tree_single_node },
+    { "get tree value on_branch", test_get_tree_value_on_branch },
     { "get tree null", test_get_tree_null },
     { "get tree indexed/provided", test_get_tree_indexed_provided },
     { "get tree indexed/provided wildcards", test_get_tree_indexed_provided_wildcards },
@@ -7558,6 +7635,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "query provided wildcards", test_query_provided_wildcards},
     { "query refreshed", test_query_refreshed},
     { "query root length", test_query_long_root},
+    { "query too long", test_query_too_long},
+    { "query value on branch", test_query_value_on_branch},
     { "cas tree", test_cas_tree},
     { "cas tree detailed", test_cas_tree_detailed},
     { "tree atomic", test_tree_atomic},
