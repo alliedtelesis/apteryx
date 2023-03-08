@@ -528,14 +528,18 @@ db_get_all (const char *path)
 static GNode *
 _db_query_children (GNode *n, struct database_node *parent, GNode *query)
 {
-    /* This check doesn't need a * match - they get picked up with the
-     * _db_add_children below.
-     */
-    if (parent->length && !(g_node_first_child(query) && g_node_first_child(query)->data) &&
-        (((char*)query->data)[0] == '\0' || strcmp (query->data, parent->hashtree_node.key) == 0))
+    /* We only need to look for values on leaves of a query */
+    if (!g_node_first_child (query) || !g_node_first_child (query)->data)
     {
-        g_node_prepend_data(n, g_strdup((char*)parent->value));
-        return n;
+        /* This check doesn't need a * match - they get picked up with the
+         * _db_add_children below.
+         */
+        if (parent->length &&
+            (((char*)query->data)[0] == '\0' || strcmp (query->data, parent->hashtree_node.key) == 0))
+        {
+            g_node_prepend_data(n, g_strdup((char*)parent->value));
+            return n;
+        }
     }
 
     for (GNode *query_element = g_node_first_child(query); query_element;
