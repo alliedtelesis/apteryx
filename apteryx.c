@@ -1140,6 +1140,9 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     ASSERT (root, return false, "SET_TREE: Invalid parameters\n");
 
     DEBUG ("SET_TREE: %d paths\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
+    if (apteryx_debug) {
+        apteryx_print_tree (root, stdout);
+    }
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
@@ -1449,6 +1452,11 @@ apteryx_get_tree (const char *path)
     rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, true);
     free (url);
+
+    if (apteryx_debug) {
+        DEBUG ("GET_TREE RESULT\n");
+        apteryx_print_tree (root, stdout);
+    }
     return root;
 }
 
@@ -1476,6 +1484,9 @@ apteryx_query (GNode *root)
     ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
 
     DEBUG ("QUERY\n");
+    if (apteryx_debug) {
+        apteryx_print_tree (root, stdout);
+    }
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
@@ -1574,6 +1585,11 @@ apteryx_query (GNode *root)
     /* Put the original root (query tree) name back */
     root->data = old_root_name;
     g_free(chopped_path);
+
+    if (apteryx_debug) {
+        DEBUG ("QUERY RESULT\n");
+        apteryx_print_tree (rroot, stdout);
+    }
 
     rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, true);

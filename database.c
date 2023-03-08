@@ -531,7 +531,7 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
     /* This check doesn't need a * match - they get picked up with the
      * _db_add_children below.
      */
-    if (parent->length &&
+    if (parent->length && !(g_node_first_child(query) && g_node_first_child(query)->data) &&
         (((char*)query->data)[0] == '\0' || strcmp (query->data, parent->hashtree_node.key) == 0))
     {
         g_node_prepend_data(n, g_strdup((char*)parent->value));
@@ -575,7 +575,9 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
         }
         else
         {
-            struct database_node *child = g_hash_table_lookup(parent->hashtree_node.children, query_element->data);
+            struct database_node *child = parent->hashtree_node.children ?
+                                          g_hash_table_lookup(parent->hashtree_node.children, query_element->data) :
+                                          NULL;
             if (child)
             {
                 _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
@@ -1107,6 +1109,119 @@ test_db_update ()
     db_shutdown ();
 }
 
+void
+test_db_get_all ()
+{
+    GNode *root, *node, *child;
+
+    db_init ();
+
+    /* NOTE: GNode does not support values on non-leaf nodes */
+    CU_ASSERT (db_add ("/database/test", (const unsigned char *) "test", 5, UINT64_MAX));
+    CU_ASSERT (db_add ("/database/test/a", (const unsigned char *) "a", 2, UINT64_MAX));
+    CU_ASSERT (db_add ("/database/test/b", (const unsigned char *) "b", 2, UINT64_MAX));
+    CU_ASSERT (db_add ("/database/test/c/d", (const unsigned char *) "d", 2, UINT64_MAX));
+
+    CU_ASSERT ((root = db_get_all ("/database/test/a")) != NULL);
+    CU_ASSERT (root && APTERYX_HAS_VALUE (root) && strcmp (APTERYX_VALUE (root), "a") == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT ((root = db_get_all ("/database/test/c")) != NULL);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    child = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (child && strcmp (APTERYX_NAME (child), "d") == 0);
+    CU_ASSERT (child && APTERYX_HAS_VALUE (child) && strcmp (APTERYX_VALUE (child), "d") == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT ((root = db_get_all ("/database")) != NULL);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "test") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 3);
+    CU_ASSERT ((child = apteryx_find_child (node, "a")) != NULL);
+    CU_ASSERT (child && APTERYX_HAS_VALUE (child) && strcmp (APTERYX_VALUE (child), "a") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "b")) != NULL);
+    CU_ASSERT (child && APTERYX_HAS_VALUE (child) && strcmp (APTERYX_VALUE (child), "b") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "c")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 1);
+    child = child ? g_node_first_child (child) : NULL;
+    CU_ASSERT (child && APTERYX_HAS_VALUE (child) && strcmp (APTERYX_VALUE (child), "d") == 0);
+    apteryx_free_tree (root);
+
+    db_prune ("/database");
+    db_shutdown ();
+}
+
+void
+test_db_query ()
+{
+    GNode *query, *root, *node, *child;
+
+    db_init ();
+
+    /* NOTE: GNode does not support values on non-leaf nodes */
+    CU_ASSERT (db_add ("/database/test", (const unsigned char *) "test", 5, UINT64_MAX));
+    CU_ASSERT (db_add ("/database/test/a", (const unsigned char *) "a", 2, UINT64_MAX));
+    CU_ASSERT (db_add ("/database/test/b", (const unsigned char *) "b", 2, UINT64_MAX));
+    CU_ASSERT (db_add ("/database/test/c/d", (const unsigned char *) "d", 2, UINT64_MAX));
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, "/database/test/a", NULL);
+    CU_ASSERT ((root = db_query (query)) != NULL);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "database") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "test") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "a") == 0);
+    CU_ASSERT (node && APTERYX_HAS_VALUE (node) && strcmp (APTERYX_VALUE (node), "a") == 0);
+    apteryx_free_tree (query);
+    apteryx_free_tree (root);
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, "/database/*", NULL);
+    CU_ASSERT ((root = db_query (query)) != NULL);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "database") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "test") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 3);
+    CU_ASSERT ((child = apteryx_find_child (node, "a")) != NULL);
+    CU_ASSERT (child && APTERYX_HAS_VALUE (child) && strcmp (APTERYX_VALUE (child), "a") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "b")) != NULL);
+    CU_ASSERT (child && APTERYX_HAS_VALUE (child) && strcmp (APTERYX_VALUE (child), "b") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "c")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 1);
+    child = child ? g_node_first_child (child) : NULL;
+    CU_ASSERT (child && APTERYX_HAS_VALUE (child) && strcmp (APTERYX_VALUE (child), "d") == 0);
+    apteryx_free_tree (query);
+    apteryx_free_tree (root);
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, "/database/*/a", NULL);
+    CU_ASSERT ((root = db_query (query)) != NULL);
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "database") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "test") == 0);
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "a") == 0);
+    CU_ASSERT (node && APTERYX_HAS_VALUE (node) && strcmp (APTERYX_VALUE (node), "a") == 0);
+    apteryx_free_tree (query);
+    apteryx_free_tree (root);
+
+    db_prune ("/database");
+    db_shutdown ();
+}
+
 CU_TestInfo tests_database[] = {
     { "database: add/delete", test_db_add_delete },
     { "database: add/delete performance", test_db_add_delete_perf },
@@ -1121,6 +1236,8 @@ CU_TestInfo tests_database[] = {
     { "database: search performance", test_db_search_perf },
     { "database: timestamping", test_db_timestamping },
     { "database: update simple", test_db_update },
+    { "database: get_all", test_db_get_all },
+    { "database: db_query", test_db_query },
     CU_TEST_INFO_NULL,
 };
 #endif
