@@ -456,8 +456,8 @@ GNode *apteryx_get_tree (const char *path);
  *
  * This tree may be set up with full paths to given values to be fetched, with intermediate wildcard
  * nodes indicated by key of "*" that will match all paths that can be found at that level, leaf
- * nodes with "*" that will match the full tree below that path, and /
- * or with leaf nodes with empty keys "" that will match values at exactly that level.
+ * nodes with "*" that will match the full tree below that path, and/or with leaf nodes
+ * with empty keys "" that will match values at exactly that level.
  *
  * This matching is the same as apteryx_watch, provide, index and refresh when the tree
  * is set up with apteryx_path_to_node.
