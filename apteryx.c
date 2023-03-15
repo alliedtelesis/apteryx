@@ -1049,7 +1049,6 @@ apteryx_path_node (GNode *node, const char *path)
     char *node_name;
     size_t node_name_len;
 
-    ASSERT ((ref_count > 0), return false, "PATH_NODE: Not initialised\n");
     ASSERT (node != NULL && path != NULL, return false, "PATH_NODE: Invalid parameters\n");
 
     /* Check path */
@@ -1071,7 +1070,7 @@ apteryx_path_node (GNode *node, const char *path)
         }
 
         node_name_len = strlen (node_name);
-        if (strncmp (node_name, path, node_name_len - 1) == 0)
+        if (strncmp (node_name, path, node_name_len) == 0)
         {
             if (path[node_name_len] == '\0')
             {
@@ -1496,8 +1495,7 @@ apteryx_query (GNode *root)
     }
     else if (!path ||
              ((strlen (path) > 0) &&
-              ((path[strlen (path) - 1] == '/') || path[0] != '/' ||
-               strstr (path, "//") != NULL)))
+              (path[0] != '/' || strstr (path, "//") != NULL)))
     {
         free (url);
         ERROR ("QUERY: invalid root (%s)!\n", path);
