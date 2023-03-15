@@ -4083,6 +4083,42 @@ test_query_subtree_root ()
 }
 
 void
+test_query_one_level ()
+{
+    GNode *query = NULL;
+    GNode *rroot = NULL;
+
+    apteryx_set_string (TEST_PATH"/interfaces/eth0", "description", "our lan");
+    apteryx_set_string (TEST_PATH"/interfaces/eth0", "state", "up");
+    apteryx_set_string (TEST_PATH"/interfaces/eth0/counters", "pkts", "10");
+
+    /* Full tree query */
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/interfaces/eth0/", NULL);
+    rroot = apteryx_query (query);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (query);
+
+    /* Root node path and empty child node */
+    query = g_node_new (strdup (TEST_PATH"/interfaces/eth0"));
+    APTERYX_NODE (query, strdup (""));
+    rroot = apteryx_query (query);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (query);
+
+    /* Full query in root node */
+    query = g_node_new (strdup (TEST_PATH"/interfaces/eth0/"));
+    rroot = apteryx_query (query);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (query);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
 test_query_one_star ()
 {
     GNode *root = NULL;
@@ -4215,7 +4251,7 @@ test_query_one_star_one_level ()
     path = strdup (TEST_PATH"/routing/ipv4/rib/*/");
     apteryx_path_to_node (root, path, NULL);
     rroot = apteryx_query (root);
-    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
 
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
@@ -5978,6 +6014,99 @@ test_proxy_tree_get ()
 }
 
 void
+test_proxy_tree_query ()
+{
+    GNode *query = NULL;
+    GNode *root = NULL;
+
+    /* Query should ignore non-leaf values */
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo", "dog"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu1", "spam"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu2", "eggsandspam"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu3", "eggspamspamandeggs"))
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/bar/menu4", "spamspameggsspamspamspameggsandspam"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu5/part1", "part1"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/foo/menu5/part2", "part2"));
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+
+    /* Test local tree */
+    query = g_node_new (strdup (TEST_PATH"/local/*"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_NON_LEAVES) == 10);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 6);
+    apteryx_free_tree (root);
+    apteryx_free_tree (query);
+
+    /* Test same tree via proxy */
+    query = g_node_new (strdup (TEST_PATH"/remote"TEST_PATH"/local/*"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && strcmp (root->data, TEST_PATH"/remote"TEST_PATH"/local") == 0);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_NON_LEAVES) == 10);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 6);
+    apteryx_free_tree (root);
+    apteryx_free_tree (query);
+
+    /* Query tree */
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/remote"TEST_PATH"/local/*", NULL);
+    root = apteryx_query (query);
+    CU_ASSERT (root && strcmp (root->data, "/") == 0);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_NON_LEAVES) == 14);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 6);
+    apteryx_free_tree (root);
+    apteryx_free_tree (query);
+
+    /* Sub-tree */
+    query = g_node_new (strdup (TEST_PATH"/remote"TEST_PATH"/local/foo/*"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && strcmp (root->data, TEST_PATH"/remote"TEST_PATH"/local/foo") == 0);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_NON_LEAVES) == 6);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 4);
+    apteryx_free_tree (root);
+    apteryx_free_tree (query);
+
+    /* Sub-tree - one level */
+    query = g_node_new (strdup (TEST_PATH"/remote"TEST_PATH"/local/foo/"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && strcmp (root->data, TEST_PATH"/remote"TEST_PATH"/local/foo") == 0);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_NON_LEAVES) == 3);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 2);
+    apteryx_free_tree (root);
+    apteryx_free_tree (query);
+
+    /* Non-leaf value */
+    query = g_node_new (strdup (TEST_PATH"/remote"TEST_PATH"/local/foo"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && strcmp (root->data, TEST_PATH"/remote"TEST_PATH"/local/foo") == 0);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_NON_LEAVES) == 1);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 1);
+    CU_ASSERT (root && strcmp (g_node_first_child (root)->data, "dog") == 0);
+    apteryx_free_tree (root);
+    apteryx_free_tree (query);
+
+    /* Miss */
+    query = g_node_new (strdup (TEST_PATH"/remote"TEST_PATH"/local/cat"));
+    root = apteryx_query (query);
+    CU_ASSERT (root == NULL);
+    apteryx_free_tree (query);
+
+    /* End node */
+    query = g_node_new (strdup (TEST_PATH"/remote"TEST_PATH"/local/foo/menu1"));
+    root = apteryx_query (query);
+    CU_ASSERT (root && strcmp (root->data, TEST_PATH"/remote"TEST_PATH"/local/foo/menu1") == 0);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_NON_LEAVES) == 1);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_LEAFS) == 1);
+    apteryx_free_tree (root);
+    apteryx_free_tree (query);
+
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/local"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_proxy_set ()
 {
     const char *value = NULL;
@@ -6124,7 +6253,6 @@ test_proxy_cas ()
     char *value = NULL;
     uint64_t ts;
 
-    printf("%d: doing %s\n", getpid(), __FUNCTION__);
     CU_ASSERT (apteryx_bind (TEST_TCP_URL));
     CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
 
@@ -7579,6 +7707,7 @@ static CU_TestInfo tests_api_provide[] = {
 static CU_TestInfo tests_api_proxy[] = {
     { "proxy get", test_proxy_get },
     { "proxy tree get", test_proxy_tree_get },
+    { "proxy tree query", test_proxy_tree_query },
     { "proxy set", test_proxy_set },
     { "proxy not listening", test_proxy_not_listening },
     { "proxy before db get", test_proxy_before_db_get },
@@ -7620,6 +7749,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query2node two paths two nodes", test_query2node_two_path_two_nodes },
     { "query basic", test_query_basic},
     { "query subtree root", test_query_subtree_root},
+    { "query one level", test_query_one_level},
     { "query one star", test_query_one_star},
     { "query one star traverse", test_query_one_star_traverse},
     { "query multi star traverse", test_query_multi_star_traverse},

@@ -923,6 +923,74 @@ proxy_traverse (GList **paths, GList **values, const char *path)
     return true;
 }
 
+static GNode *
+proxy_query (GNode *query, const char *path)
+{
+    rpc_client rpc_client;
+    rpc_message_t msg = {};
+    cb_info_t *proxy = NULL;
+    GNode *node = NULL;
+    GNode *pnode = NULL;
+    GNode *pquery = NULL;
+    GNode *root = NULL;
+
+    /* Find and connect to a proxied instance */
+    rpc_client = find_proxy (&path, &proxy);
+    if (!rpc_client) {
+        return NULL;
+    }
+
+    /* Need to trim off root of the query tree, up until the proxied node */
+    int len = strlen (proxy->path);
+    if (proxy->path[len-1] == '*')
+        len -= 1;
+    if (proxy->path[len-1] == '/')
+        len -= 1;
+    char *local_path = g_malloc0 (len + 1);
+    strncpy (local_path, proxy->path, len);
+
+    /* Create a temp query without the proxy path */
+    node = apteryx_path_node (query->children, local_path);
+    pnode = g_node_first_child (node);
+    g_node_unlink (pnode);
+    pquery = APTERYX_NODE (NULL, "");
+    g_node_prepend (pquery, pnode);
+
+    /* Do remote query */
+    rpc_msg_encode_uint8 (&msg, MODE_QUERY);
+    rpc_msg_encode_tree (&msg, pquery);
+
+    /* Restore the original query */
+    g_node_unlink (pnode);
+    g_node_destroy (pquery);
+    g_node_prepend (node, pnode);
+
+    if (!rpc_msg_send (rpc_client, &msg))
+    {
+        INC_COUNTER (counters.proxied_timeout);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        rpc_client_release (rpc, rpc_client, false);
+        g_free (local_path);
+        return NULL;
+    }
+
+    root = rpc_msg_decode_tree (&msg);
+
+    /* Prepend this remote tree with our proxy path */
+    if (root)
+    {
+        gchar *new_root_key = g_strdup_printf("%s%s", local_path, APTERYX_NAME(root));
+        g_free(root->data);
+        root->data = new_root_key;
+    }
+    g_free (local_path);
+
+    rpc_msg_reset (&msg);
+    rpc_client_release (rpc, rpc_client, true);
+
+    return root;
+}
+
 static int32_t
 proxy_prune (const char *path)
 {
@@ -1765,7 +1833,9 @@ collect_provided_paths_query(GNode *query)
         else
         {
             GList *result = NULL;
-            gchar *needle = g_strdup_printf ("%s/", apteryx_node_path (query->parent));
+            gchar *ppath = apteryx_node_path (query->parent);
+            gchar *needle = g_strdup_printf ("%s/", ppath);
+            g_free (ppath);
 
             /* Look to see what this path could expand to */
             index_get (needle, &result);
@@ -1834,16 +1904,27 @@ handle_query (rpc_message msg)
         goto done;
     }
 
-    /* Call refreshers */
+    /* Get root path */
     char *root_path = apteryx_node_path(query_head);
     char *wildcard = strstr(root_path, "/*");
     if (wildcard)
         *wildcard = '\0';
-    refreshers_traverse (root_path, cb_all);
-    free(root_path);
 
     /* Sometimes the branch has stars in it. Break it up for processing */
     query_head = break_up_trunk(query_head);
+
+    /* Proxy first */
+    root = proxy_query (query_head, root_path);
+    if (root)
+    {
+        /* Return result */
+        free (root_path);
+        goto done;
+    }
+
+    /* Call refreshers */
+    refreshers_traverse (root_path, cb_all);
+    free (root_path);
 
     root = db_query (query_head);
 
