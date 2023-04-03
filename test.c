@@ -3626,6 +3626,14 @@ test_set_tree ()
 }
 
 void
+test_set_tree_empty ()
+{
+    GNode *root = g_node_new ("/");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+}
+
+void
 test_get_tree ()
 {
     const char *path = TEST_PATH"/interfaces/eth0";
@@ -3996,6 +4004,14 @@ test_query2node_two_path_two_nodes ()
     CU_ASSERT ((child = apteryx_find_child (parent, "day")) != NULL);
     CU_ASSERT (child && g_node_n_children (child) == 0);
     apteryx_free_tree (root);
+}
+
+void
+test_query_empty ()
+{
+    GNode *query = g_node_new ("/");
+    CU_ASSERT (apteryx_query (query) == NULL);
+    g_node_destroy (query);
 }
 
 void
@@ -5231,6 +5247,14 @@ test_find_tree_one_star()
     g_node_destroy (root);
 
     apteryx_prune (TEST_PATH);
+}
+
+void
+test_find_empty ()
+{
+    GNode* root = APTERYX_NODE (NULL, "/");
+    CU_ASSERT (apteryx_find_tree (root) == NULL);
+    g_node_destroy (root);
 }
 
 void
@@ -7729,6 +7753,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree find node", test_tree_path_node },
     { "tree sort children", test_tree_sort_children },
     { "set tree", test_set_tree },
+    { "set tree empty", test_set_tree_empty },
     { "get tree", test_get_tree },
     { "get tree single node", test_get_tree_single_node },
     { "get tree value on_branch", test_get_tree_value_on_branch },
@@ -7747,6 +7772,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query2node double field path", test_query2node_double_field_path },
     { "query2node one path two nodes", test_query2node_one_path_two_nodes },
     { "query2node two paths two nodes", test_query2node_two_path_two_nodes },
+    { "query empty", test_query_empty },
     { "query basic", test_query_basic},
     { "query subtree root", test_query_subtree_root},
     { "query one level", test_query_one_level},
@@ -7783,10 +7809,11 @@ static CU_TestInfo tests_api_tree[] = {
 };
 
 static CU_TestInfo tests_find[] = {
-    { "simple find", test_find_one_star },
-    { "multi * find", test_find_two_star },
-    { "simple tree find", test_find_tree_one_star },
-    { "multi * tree find", test_find_tree_two_star },
+    { "find simple", test_find_one_star },
+    { "find multi *", test_find_two_star },
+    { "find simple tree", test_find_tree_one_star },
+    { "find empty tree", test_find_empty },
+    { "find multi * tree", test_find_tree_two_star },
     { "find with null entry", test_find_tree_null_values },
     CU_TEST_INFO_NULL,
 };

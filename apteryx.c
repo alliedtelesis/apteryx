@@ -991,7 +991,7 @@ _node_to_path (GNode *node, char **buf)
 
     char *tmp = NULL;
 
-    char *key = node ? node->data : "";
+    char *key = node && node->data ? node->data : "";
     if (key[0] == '/' && key[1] == '\0')
         key++;
 
