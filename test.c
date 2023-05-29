@@ -3743,6 +3743,29 @@ test_get_tree_provided ()
 }
 
 void
+test_get_tree_provided_after_db ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+    CU_ASSERT (apteryx_set (path, "up"));
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root != NULL);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "up") == 0);
+
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_get_tree_provided_plus_set ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/state";
@@ -4501,6 +4524,47 @@ test_query_provided ()
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
 
+    CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
+}
+
+void
+test_query_provided_after_db ()
+{
+    const char *path = TEST_PATH"/system/state";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+    GNode *node;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_cb));
+    CU_ASSERT (apteryx_set (path, "up"));
+
+    /* Direct query of provided value */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, path, NULL);
+    rroot = apteryx_query (root);
+    node = rroot ? g_node_first_child (rroot) : NULL;
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "up") == 0);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Directory level query of provided value */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, TEST_PATH"/system/", NULL);
+    rroot = apteryx_query (root);
+    node = rroot ? g_node_first_child (rroot) : NULL;
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && g_node_n_children (node) == 1);
+    node = node ? g_node_first_child (node) : NULL;
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "up") == 0);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
 }
 
@@ -7762,6 +7826,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree indexed/provided wildcards", test_get_tree_indexed_provided_wildcards },
     { "get tree indexed/provided deeper", test_get_tree_indexed_provided_two_levels },
     { "get tree provided", test_get_tree_provided },
+    { "get tree provided after db", test_get_tree_provided_after_db },
     { "get tree provided + set", test_get_tree_provided_plus_set },
     { "get tree provider writes", test_get_tree_provider_write },
     { "get tree thrashing" , test_get_tree_while_thrashing },
@@ -7785,6 +7850,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query null values", test_query_null_values},
     { "query two branches", test_query_two_branches},
     { "query provided", test_query_provided},
+    { "query provided after db", test_query_provided_after_db},
     { "query provided and refreshed", test_query_provided_refreshed},
     { "query provided trunk request", test_query_trunk_provided},
     { "query provided wildcard",  test_query_provided_wildcard},

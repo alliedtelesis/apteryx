@@ -1738,8 +1738,12 @@ handle_traverse (rpc_message msg)
             path = (char *) ipath->data;
             value = (char *) ivalue->data;
             apteryx_path_to_node (root, path, value);
-            DEBUG ("  %s = %s\n", path, value);
         }
+    }
+
+    if (apteryx_debug && root) {
+        DEBUG ("TRAVERSE RESULT\n");
+        apteryx_print_tree (root, stdout);
     }
 
     rpc_msg_reset (msg);
@@ -1903,6 +1907,10 @@ handle_query (rpc_message msg)
     {
         goto done;
     }
+    if (apteryx_debug)
+    {
+        apteryx_print_tree (query_head, stdout);
+    }
 
     /* Get root path */
     char *root_path = apteryx_node_path(query_head);
@@ -1962,8 +1970,13 @@ handle_query (rpc_message msg)
             path = (char *) ipath->data;
             value = (char *) ivalue->data;
             apteryx_path_to_node (root, path, value);
-            DEBUG (" %s = %s\n", path, value);
         }
+    }
+
+    if (apteryx_debug && root)
+    {
+        DEBUG ("QUERY RESULT");
+        apteryx_print_tree (root, stdout);
     }
 
     /* Send result */
