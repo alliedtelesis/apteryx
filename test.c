@@ -3258,7 +3258,7 @@ test_provide_search_root ()
 char *
 test_provide_cb(const char *path)
 {
-    return strdup("tmp");
+    return strdup("provided");
 }
 
 void
@@ -3308,7 +3308,7 @@ test_provide_search_db ()
 }
 
 void
-test_provide_after_db ()
+test_provide_before_db ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/state";
     const char *value = NULL;
@@ -3316,7 +3316,7 @@ test_provide_after_db ()
     CU_ASSERT (apteryx_set (path, "down"));
     CU_ASSERT (apteryx_provide (path, test_provide_callback_up));
     CU_ASSERT (( value = apteryx_get (path)) != NULL);
-    CU_ASSERT (value && strcmp (value, "down") == 0);
+    CU_ASSERT (value && strcmp (value, "up") == 0);
     if (value)
         free ((void *) value);
     apteryx_unprovide (path, test_provide_callback_up);
@@ -3743,7 +3743,7 @@ test_get_tree_provided ()
 }
 
 void
-test_get_tree_provided_after_db ()
+test_get_tree_provided_before_db ()
 {
     const char *path = TEST_PATH"/interfaces/eth0/state";
     GNode *root = NULL;
@@ -3757,7 +3757,7 @@ test_get_tree_provided_after_db ()
     CU_ASSERT (node && g_node_n_children (node) == 1);
     node = node ? g_node_first_child (node) : NULL;
     CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
-    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "up") == 0);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "provided") == 0);
 
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (apteryx_unprovide (path, test_provide_cb));
@@ -3805,7 +3805,7 @@ char *
 test_provide_writes_cb (const char *path)
 {
     apteryx_set (TEST_PATH"/unimportant", NULL);
-    return strdup ("tmp");
+    return strdup ("provided");
 }
 
 void
@@ -4528,7 +4528,7 @@ test_query_provided ()
 }
 
 void
-test_query_provided_after_db ()
+test_query_provided_before_db ()
 {
     const char *path = TEST_PATH"/system/state";
     GNode *root = NULL;
@@ -4547,7 +4547,7 @@ test_query_provided_after_db ()
     CU_ASSERT (node && g_node_n_children (node) == 1);
     node = node ? g_node_first_child (node) : NULL;
     CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
-    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "up") == 0);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "provided") == 0);
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
 
@@ -4560,7 +4560,7 @@ test_query_provided_after_db ()
     CU_ASSERT (node && g_node_n_children (node) == 1);
     node = node ? g_node_first_child (node) : NULL;
     CU_ASSERT (node && strcmp (APTERYX_NAME (node), "state") == 0);
-    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "up") == 0);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "provided") == 0);
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
 
@@ -7780,7 +7780,7 @@ static CU_TestInfo tests_api_provide[] = {
     { "provide search root", test_provide_search_root },
     { "provide wildcard + search", test_provider_wildcard_search },
     { "provide and db search", test_provide_search_db },
-    { "provide after db", test_provide_after_db },
+    { "provide before db", test_provide_before_db },
     { "provider wildcard", test_provider_wildcard },
     { "provider wildcard internal", test_provider_wildcard_internal },
     { "provider search exact provide", test_search_of_provide },
@@ -7826,7 +7826,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree indexed/provided wildcards", test_get_tree_indexed_provided_wildcards },
     { "get tree indexed/provided deeper", test_get_tree_indexed_provided_two_levels },
     { "get tree provided", test_get_tree_provided },
-    { "get tree provided after db", test_get_tree_provided_after_db },
+    { "get tree provided before db", test_get_tree_provided_before_db },
     { "get tree provided + set", test_get_tree_provided_plus_set },
     { "get tree provider writes", test_get_tree_provider_write },
     { "get tree thrashing" , test_get_tree_while_thrashing },
@@ -7850,7 +7850,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query null values", test_query_null_values},
     { "query two branches", test_query_two_branches},
     { "query provided", test_query_provided},
-    { "query provided after db", test_query_provided_after_db},
+    { "query provided before db", test_query_provided_before_db},
     { "query provided and refreshed", test_query_provided_refreshed},
     { "query provided trunk request", test_query_trunk_provided},
     { "query provided wildcard",  test_query_provided_wildcard},
