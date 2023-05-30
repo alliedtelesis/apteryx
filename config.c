@@ -239,6 +239,7 @@ handle_proxies_set (const char *path, const char *value)
     else
     {
         cb = find_callback (guid);
+        cb_disable (cb);
     }
     cb_release (cb);
     return true;
