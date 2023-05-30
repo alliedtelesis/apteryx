@@ -1156,6 +1156,10 @@ handle_set (rpc_message msg, bool ack)
         ERROR ("SET: Failed to decode message\n");
         return false;
     }
+    if (apteryx_debug && root) {
+        DEBUG ("SET:\n");
+        apteryx_print_tree (root, stdout);
+    }
 
     /* Figure out if we need the lists for checking callbacks */
     _node_to_path(root, &root_path);
@@ -1296,11 +1300,11 @@ get_value (const char *path)
         /* Call refreshers */
         call_refreshers (path, false);
 
-        /* Database second */
-        if (!db_get (path, (unsigned char**)&value, &vsize))
+        /* Provide second */
+        if ((value = provide_get (path)) == NULL)
         {
-            /* Provide third */
-            if ((value = provide_get (path)) == NULL)
+            /* Database third */
+            if (!db_get (path, (unsigned char**)&value, &vsize))
             {
                 DEBUG ("GET: not in database or provided or proxied\n");
             }
@@ -1737,6 +1741,7 @@ handle_traverse (rpc_message msg)
         {
             path = (char *) ipath->data;
             value = (char *) ivalue->data;
+            /* Overwrite any database values with those from provide */
             apteryx_path_to_node (root, path, value);
         }
     }
@@ -1969,6 +1974,7 @@ handle_query (rpc_message msg)
         {
             path = (char *) ipath->data;
             value = (char *) ivalue->data;
+            /* Overwrite any database values with those from provide */
             apteryx_path_to_node (root, path, value);
         }
     }

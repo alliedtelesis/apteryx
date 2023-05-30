@@ -1232,11 +1232,18 @@ apteryx_path_to_node (GNode* root, const char *path, const char *value)
         next = strchr (path, '/');
         if (!next)
         {
-            if (value)
+            rnode = apteryx_find_child (root, path);
+            if (rnode && value)
+            {
+                /* We already have this leaf - replace the value */
+                free (g_node_first_child (rnode)->data);
+                g_node_first_child (rnode)->data = strdup (value);
+            }
+            else if (value)
             {
                 rnode = APTERYX_LEAF (root, strdup (path), strdup (value));
             }
-            else
+            else if (!rnode)
             {
                 rnode = APTERYX_NODE (root, strdup (path));
             }
