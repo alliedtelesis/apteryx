@@ -565,7 +565,7 @@ lua_apteryx_unwatch (lua_State *L)
     return 1;
 }
 
-static int
+static uint64_t
 lua_do_refresh (const char *path, size_t ref)
 {
     int res = 0;
@@ -573,7 +573,7 @@ lua_do_refresh (const char *path, size_t ref)
 
     ASSERT (L, return 0, "Refresh: LUA is not multi-threaded (use apteryx.process)\n");
     int ssize = lua_gettop (L);
-    int timeout = 0;
+    uint64_t timeout = 0;
     if (!push_callback (L, ref))
         return 0;
     lua_pushstring (L, path);
