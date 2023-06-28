@@ -565,7 +565,7 @@ lua_apteryx_unwatch (lua_State *L)
     return 1;
 }
 
-static int
+static uint64_t
 lua_do_refresh (const char *path, size_t ref)
 {
     int res = 0;
