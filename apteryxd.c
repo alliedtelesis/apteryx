@@ -455,9 +455,9 @@ calculate_timestamp (void)
 }
 
 static bool
-call_refreshers (const char *path, bool dry_run)
+call_refreshers (const char *path, bool dry_run, GList *_refreshers)
 {
-    GList *refreshers = NULL;
+    GList *refreshers = _refreshers;
     GList *iter = NULL;
     uint64_t timestamp;
     uint64_t now;
@@ -465,7 +465,8 @@ call_refreshers (const char *path, bool dry_run)
     bool refresh_due = false;
 
     /* Retrieve a list of refreshers for this path */
-    refreshers = config_get_refreshers (path);
+    if (!refreshers)
+        refreshers = config_get_refreshers (path);
     if (!refreshers)
         return false;
 
@@ -569,7 +570,8 @@ call_refreshers (const char *path, bool dry_run)
     unlock:
         pthread_mutex_unlock (&refresher->lock);
     }
-    g_list_free_full (refreshers, (GDestroyNotify) cb_release);
+    if (!_refreshers)
+        g_list_free_full (refreshers, (GDestroyNotify) cb_release);
     return refresh_due;
 }
 
@@ -1298,7 +1300,7 @@ get_value (const char *path)
     if ((value = proxy_get (path)) == NULL)
     {
         /* Call refreshers */
-        call_refreshers (path, false);
+        call_refreshers (path, false, NULL);
 
         /* Provide second */
         if ((value = provide_get (path)) == NULL)
@@ -1365,7 +1367,7 @@ search_path (const char *path)
         else
         {
             /* Call refreshers */
-            call_refreshers (path, false);
+            call_refreshers (path, false, NULL);
 
             /* Search database next */
             results = db_search (path);
@@ -1584,44 +1586,56 @@ _traverse_paths (GNode **root, const char *path, char cb_lookup)
 static void
 refreshers_traverse (const char *top_path, char cb_lookup)
 {
-    GList *iter, *paths = NULL;
+    GList *refreshers, *iter, *paths = NULL;
     gchar *needle = g_strdup_printf("%s/", top_path);
 
-    call_refreshers (needle, false);
+    /* Find possible refreshers for this path */
+    refreshers = config_get_refreshers (needle);
 
-    if (!config_tree_has_refreshers (top_path))
+    /* Process these refreshers */
+    if (refreshers)
     {
-        free (needle);
-        return;
+        call_refreshers (top_path, false, refreshers);
+
+        //TODO config_tree_has_refreshers does not check active
+
+        /* Disable the refreshers we have already actioned so they are
+           not run again in this transaction */
+        for (GList *iter = refreshers; iter; iter = iter->next)
+            ((cb_info_t *) iter->data)->active = false;
     }
 
-    if (cb_lookup & cb_index)
-    {
-        index_get (top_path, &paths);
-        paths = g_list_concat (config_search_indexers (needle), paths);
-    }
-
-    /* We might be able to find our way down to a refresher */
-    if (cb_lookup & cb_refresh)
-    {
-        paths = g_list_concat (config_search_refreshers (needle), paths);
-    }
-
-    if (cb_lookup & cb_provide)
-    {
-        paths = g_list_concat (config_search_providers (needle), paths);
-    }
-    paths = g_list_concat (db_search (needle), paths);
-
+    /* Update the "are we needed" flags */
     cb_lookup = _update_path_callbacks (top_path, cb_lookup);
-    free (needle);
-
-    for (iter = paths; iter; iter = g_list_next (iter))
+    if (cb_lookup)
     {
-        const char *path = (const char *) iter->data;
-        refreshers_traverse (path, cb_lookup);
+        if (cb_lookup & cb_index)
+        {
+            index_get (needle, &paths);
+            paths = g_list_concat (config_search_indexers (needle), paths);
+        }
+        if (cb_lookup & cb_provide)
+        {
+            paths = g_list_concat (config_search_providers (needle), paths);
+        }
+        if (cb_lookup & cb_refresh)
+        {
+            paths = g_list_concat (config_search_refreshers (needle), paths);
+        }
+        paths = g_list_concat (db_search (needle), paths);
+        for (iter = paths; iter; iter = g_list_next (iter))
+        {
+            const char *path = (const char *) iter->data;
+            refreshers_traverse (path, cb_lookup);
+        }
+        g_list_free_full (paths, g_free);
     }
-    g_list_free_full (paths, g_free);
+
+    /* Enable any refreshers we disable above*/
+    for (GList *iter = refreshers; iter; iter = iter->next)
+        ((cb_info_t *) iter->data)->active = true;
+    g_list_free_full (refreshers, (GDestroyNotify) cb_release);
+    free (needle);
 }
 
 static GList *
@@ -2124,7 +2138,7 @@ handle_timestamp (rpc_message msg)
     if ((value = proxy_timestamp (path)) == 0)
     {
         /* Lookup value */
-        if (call_refreshers (path, true))
+        if (call_refreshers (path, true, NULL))
         {
             value = calculate_timestamp ();
         }
