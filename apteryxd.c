@@ -2124,7 +2124,7 @@ handle_timestamp (rpc_message msg)
     if ((value = proxy_timestamp (path)) == 0)
     {
         /* Lookup value */
-        if (call_refreshers (path, true))
+        if (call_refreshers (path, true) || config_tree_has_providers (path))
         {
             value = calculate_timestamp ();
         }

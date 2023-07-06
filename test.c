@@ -6403,6 +6403,27 @@ test_timestamp_refreshed ()
     _cb_count = 0;
 }
 
+static char*
+test_provide_timestamp (const char *path)
+{
+    return strdup ("timestamp");
+}
+
+void
+test_timestamp_provider ()
+{
+    const char *path = TEST_PATH"/timestamp";
+    uint64_t ts;
+
+    CU_ASSERT (apteryx_provide (path, test_provide_timestamp));
+    ts = apteryx_timestamp (path);
+    CU_ASSERT(ts != 0);
+
+    apteryx_prune(path);
+    apteryx_unprovide (path, test_provide_timestamp);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_memuse ()
 {
@@ -7679,6 +7700,7 @@ static CU_TestInfo tests_api[] = {
     { "double fork", test_double_fork },
     { "timestamp", test_timestamp },
     { "timestamp refreshed", test_timestamp_refreshed },
+    { "timestamp provider", test_timestamp_provider },
     { "memuse", test_memuse },
     { "path to node", test_path_to_node },
     CU_TEST_INFO_NULL,
