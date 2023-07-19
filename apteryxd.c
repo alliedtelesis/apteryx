@@ -1947,8 +1947,22 @@ handle_query (rpc_message msg)
         goto done;
     }
 
-    /* Call refreshers */
-    refreshers_traverse (root_path, cb_all);
+    /* Call refreshers - handle multiple root paths */
+    if (root_path[0] == '\0')
+    {
+        GNode *child = g_node_first_child(query_head);
+        while (child)
+        {
+            path = g_strdup_printf ("/%s", (char *)child->data);
+            refreshers_traverse (path, cb_all);
+            free (path);
+            child = child->next;
+        }
+    }
+    else
+    {
+        refreshers_traverse (root_path, cb_all);
+    }
     free (root_path);
 
     root = db_query (query_head);
