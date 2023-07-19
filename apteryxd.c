@@ -1584,7 +1584,7 @@ _traverse_paths (GNode **root, const char *path, char cb_lookup)
 static void
 refreshers_traverse (const char *top_path, char cb_lookup)
 {
-    GList *iter, *paths = NULL;
+    GList *iter, *db, *paths = NULL;
     gchar *needle = g_strdup_printf("%s/", top_path);
 
     call_refreshers (needle, false);
@@ -1611,7 +1611,19 @@ refreshers_traverse (const char *top_path, char cb_lookup)
     {
         paths = g_list_concat (config_search_providers (needle), paths);
     }
-    paths = g_list_concat (db_search (needle), paths);
+
+    db = db_search (needle);
+    if (db)
+    {
+        for (iter = db; iter; iter = g_list_next (iter))
+        {
+            if (!g_list_find_custom (paths, iter->data, (GCompareFunc) strcmp))
+            {
+                paths = g_list_prepend (paths, g_strdup (iter->data));
+            }
+        }
+        g_list_free_full (db, g_free);
+    }
 
     cb_lookup = _update_path_callbacks (top_path, cb_lookup);
     free (needle);
