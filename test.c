@@ -55,21 +55,15 @@ static int _cb_count = 0;
 static bool
 assert_apteryx_empty (void)
 {
-    GList *paths = apteryx_search ("/");
-    GList *iter;
-    bool ret = true;
-    for (iter = paths; iter; iter = g_list_next (iter))
+    GNode *tree = apteryx_get_tree (TEST_PATH);
+    if (tree)
     {
-        char *path = (char *) (iter->data);
-        if (strncmp (TEST_PATH, path, strlen (TEST_PATH)) == 0)
-        {
-            if (ret) fprintf (stderr, "\n");
-            fprintf (stderr, "ERROR: Node still set: %s\n", path);
-            ret = false;
-        }
+        fprintf (stderr, "\nERROR: Nodes still set:\n");
+        apteryx_print_tree (tree, stdout);
+        apteryx_free_tree (tree);
+        return false;
     }
-    g_list_free_full (paths, free);
-    return ret;
+    return true;
 }
 
 void
@@ -1409,7 +1403,10 @@ test_bitmap ()
     {
         pthread_create (&writers[i], NULL, (void *) &_bitmap_thread, (void *) i);
     }
-    usleep (TEST_SLEEP_TIMEOUT);
+    for (i = 0; i < bitmap_bits/2; i++)
+    {
+        pthread_join (writers[i], NULL);
+    }
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && sscanf (value, "%"PRIx32, &bitmap) == 1)
     CU_ASSERT (bitmap == 0x0000FFFF)
@@ -4785,7 +4782,8 @@ static uint64_t
 refresh_state_callback (const char *path)
 {
     apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", "up");
-    return 100000;
+    _cb_count++;
+    return 0;
 }
 
 void
@@ -4795,6 +4793,7 @@ test_query_refreshed()
     GNode *root = NULL;
     GNode *rroot = NULL;
 
+    _cb_count = 0;
     apteryx_refresh (path, refresh_state_callback);
 
     root = g_node_new (strdup(TEST_PATH"/devices/*"));
@@ -4803,20 +4802,85 @@ test_query_refreshed()
     CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
     apteryx_free_tree (rroot);
     apteryx_free_tree (root);
+    CU_ASSERT (_cb_count == 1);
 
     root = g_node_new (strdup(TEST_PATH"/devices/*/interfaces/*"));
     rroot = apteryx_query (root);
     CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/devices", APTERYX_NAME(rroot)) == 0);
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
-    if (rroot)
-    {
-        apteryx_free_tree (rroot);
-    }
+    apteryx_free_tree (rroot);
     apteryx_free_tree (root);
+    CU_ASSERT (_cb_count == 2);
 
     apteryx_unrefresh (path, refresh_state_callback);
     apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
     apteryx_prune (TEST_PATH);
+}
+
+void
+test_query_not_refreshed()
+{
+    const char *path = "/cars/suv/*";
+    GNode *root;
+    GNode *node;
+
+    _cb_count = 0;
+    apteryx_refresh (path, refresh_state_callback);
+
+    root = g_node_new (strdup("/cars/sedan/*"));
+    CU_ASSERT (apteryx_query (root) == NULL);
+    CU_ASSERT (_cb_count == 0);
+    apteryx_free_tree (root);
+
+    root = g_node_new (strdup("/"));
+    node = APTERYX_NODE (root, strdup ("cars"));
+    node = APTERYX_NODE (node, strdup ("sedan"));
+    APTERYX_NODE (node, strdup ("*"));
+    CU_ASSERT (apteryx_query (root) == NULL);
+    CU_ASSERT (_cb_count == 0);
+    apteryx_free_tree (root);
+
+    /* Current behaviour is not smart - /cars will refresh /cars/suv/**/
+    root = g_node_new (strdup("/"));
+    apteryx_path_to_node (root, "/cars/sedan/*", NULL);
+    apteryx_path_to_node (root, "/cars/hatchback/*", NULL);
+    apteryx_path_to_node (root, "/houses/*", NULL);
+    CU_ASSERT (apteryx_query (root) == NULL);
+    CU_ASSERT (_cb_count == 1);
+    apteryx_free_tree (root);
+
+    apteryx_unrefresh (path, refresh_state_callback);
+    apteryx_prune (TEST_PATH);
+}
+
+static uint64_t
+refresh_timeout_callback (const char *path)
+{
+    usleep (1.1 * RPC_TIMEOUT_US);
+    return 100000;
+}
+
+void
+test_query_refresh_timeout()
+{
+    const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
+    GNode *root;
+
+    _cb_count = 0;
+    apteryx_refresh (path, refresh_timeout_callback);
+
+    root = g_node_new (strdup(TEST_PATH"/devices/*"));
+    CU_ASSERT (apteryx_query (root) == NULL);
+    usleep (0.1 * RPC_TIMEOUT_US);
+    apteryx_free_tree (root);
+
+    root = g_node_new (strdup("/"));
+    apteryx_path_to_node (root, TEST_PATH"/devices/*", NULL);
+    CU_ASSERT (apteryx_query (root) == NULL);
+    usleep (0.1 * RPC_TIMEOUT_US);
+    apteryx_free_tree (root);
+
+    apteryx_unrefresh (path, refresh_timeout_callback);
 }
 
 void
@@ -6455,6 +6519,15 @@ test_path_to_node ()
     CU_ASSERT (node && g_strcmp0(node->data, "test") == 0);
     apteryx_free_tree (root);
 
+    /* Multiple roots */
+    root = g_node_new (strdup ("/"));
+    apteryx_path_to_node (root, "/system/time/01:23:45", NULL);
+    apteryx_path_to_node (root, "/boot/time", "12:23:45");
+    CU_ASSERT (root && strcmp(APTERYX_NAME(root), "/") == 0);
+    CU_ASSERT (root->next == NULL);
+    CU_ASSERT (g_node_n_children (root) == 2);
+    apteryx_free_tree (root);
+
     root = APTERYX_NODE (NULL, strdup ("/system"));
     apteryx_path_to_node (root, "/system/system-name", "awplus");
     node = root->children;
@@ -7878,6 +7951,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "query provided wildcard",  test_query_provided_wildcard},
     { "query provided wildcards", test_query_provided_wildcards},
     { "query refreshed", test_query_refreshed},
+    { "query not refreshed", test_query_not_refreshed},
+    { "query refresh timeout", test_query_refresh_timeout},
     { "query root length", test_query_long_root},
     { "query too long", test_query_too_long},
     { "query value on branch", test_query_value_on_branch},
