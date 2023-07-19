@@ -1537,6 +1537,7 @@ apteryx_query (GNode *root)
         ERROR ("QUERY: No response Path(%s)\n", path);
         rpc_msg_reset (&msg);
         rpc_client_release (rpc, rpc_client, false);
+        root->data = old_root_name;
         free (url);
         return NULL;
     }
