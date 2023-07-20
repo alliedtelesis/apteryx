@@ -1894,6 +1894,36 @@ collect_provided_paths_query(GNode *query)
     return matches;
 }
 
+static gboolean _refresh_paths (GNode *node, gpointer data)
+{
+    char *path = NULL;
+
+    /* Handle wildcards */
+    if (g_strcmp0 (node->data, "*") == 0)
+    {
+        /* Match everything from here down and go no further */
+        // TODO handle mid path wildcards that might not match further down
+        _node_to_path (node->parent, &path);
+        refreshers_traverse (path, cb_all);
+        free (path);
+        return FALSE;
+    }
+
+    /* Handle direct matches */
+    if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
+    {
+        /* Match this exactly and go no further */
+        _node_to_path (node, &path);
+        refreshers_traverse (path, cb_all);
+        free (path);
+        return FALSE;
+    }
+
+    /* Traverse children */
+    g_node_traverse (node->children, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, 1, _refresh_paths, NULL);
+    return FALSE;
+}
+
 static bool
 handle_query (rpc_message msg)
 {
@@ -1934,11 +1964,12 @@ handle_query (rpc_message msg)
         free (root_path);
         goto done;
     }
-
-    /* Call refreshers */
-    refreshers_traverse (root_path, cb_all);
     free (root_path);
 
+    /* Traverse the tree calling refreshers */
+    g_node_traverse (query_head, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, 1, _refresh_paths, NULL);
+
+    /* Query the database */
     root = db_query (query_head);
 
     /* Grab all providers that match this tree */
