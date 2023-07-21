@@ -1914,7 +1914,7 @@ static gboolean _refresh_paths (GNode *node, gpointer data)
     {
         /* Match this exactly and go no further */
         _node_to_path (node, &path);
-        refreshers_traverse (path, cb_all);
+        call_refreshers (path, false);
         free (path);
         return FALSE;
     }
