@@ -526,7 +526,7 @@ db_get_all (const char *path)
 }
 
 static GNode *
-_db_query_children (GNode *n, struct database_node *parent, GNode *query)
+_db_query_children (GNode *n, struct database_node *parent, GNode *query, char **value)
 {
     /* We only need to look for values on leaves of a query */
     if (!g_node_first_child (query) || !g_node_first_child (query)->data)
@@ -556,7 +556,7 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
                 for (GList *iter = children; iter; iter = g_list_next (iter))
                 {
                     struct database_node *child = iter->data;
-                    _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+                    _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element, value);
                 }
                 g_list_free (children);
             }
@@ -573,7 +573,7 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
             for (GList *iter = children; iter; iter = g_list_next (iter))
             {
                 struct database_node *child = iter->data;
-                _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+                _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element, value);
             }
             g_list_free (children);
         }
@@ -584,7 +584,22 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
                                           NULL;
             if (child)
             {
-                _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+                _db_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element, value);
+            }
+            else if (parent->value)
+            {
+                if (g_strcmp0((char *) parent->value, query_element->data) == 0)
+                {
+                    if (*value)
+                        g_free (*value);
+                    *value = g_strdup_printf ("%s=%s", (char *) n->data, (char *) parent->value);
+                }
+                else
+                {
+                    if (*value == NULL)
+                        *value = g_strdup_printf ("%s=no match", (char *) n->data);
+                }
+                _db_add_children(n, parent, -1);
             }
         }
     }
@@ -598,11 +613,112 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
     return n;
 }
 
+/**
+ * Mark the nodes in the n-ary tree that are wanted for the search result by adding their
+ * pointers to them to a temporary hash tree
+ */
+void
+db_trim_query_mark (GHashTable *valued_nodes, GNode *start_node, char *parent_name, char *value)
+{
+    GNode *node;
+    GNode *parent;
+    GNode *first_child;
+
+    if (g_strcmp0 (start_node->data, value) == 0 &&
+        g_strcmp0 (start_node->parent->data, parent_name) == 0)
+    {
+        /* Find any sibling nodes and values found by the query, and mark them as wanted */
+        parent = start_node->parent;
+        if (parent->parent)
+        {
+            parent = parent->parent;
+        }
+        first_child = g_node_first_child (parent);
+        g_hash_table_replace (valued_nodes, start_node, start_node);
+        for (node = first_child; node; node = g_node_next_sibling (node))
+        {
+            g_hash_table_replace (valued_nodes, node, node);
+            first_child = g_node_first_child (node);
+            if (first_child)
+            {
+                g_hash_table_replace (valued_nodes, first_child, first_child);
+            }
+        }
+
+        /* Mark all the parent nodes as wanted */
+        node = start_node;
+        while (node->parent)
+        {
+            node = node->parent;
+            g_hash_table_replace (valued_nodes, node, node);
+        }
+        return;
+    }
+
+    for (node = g_node_first_child (start_node); node; node = g_node_next_sibling (node))
+    {
+        db_trim_query_mark (valued_nodes, node, parent_name, value);
+    }
+}
+
+/**
+ * Copy the data from nodes that are marked to a new tree. For any other nodes delete the data of the node.
+ */
+static void
+db_trim_query_cleanup (GHashTable *valued_nodes, GNode *query, GNode *parent)
+{
+    GNode *new_node = NULL;
+
+    for (GNode *node = g_node_first_child (query); node; node = g_node_next_sibling (node))
+    {
+        if (parent && g_hash_table_lookup (valued_nodes, node))
+        {
+            new_node = g_node_new (node->data);
+            g_node_append (parent, new_node);
+        }
+        else
+        {
+            g_free (node->data);
+        }
+        node->data = NULL;
+        db_trim_query_cleanup (valued_nodes, node, new_node);
+    }
+}
+
+GNode *
+db_trim_query (GNode *start_node, char *value)
+{
+    GNode *root = NULL;
+    GHashTable *valued_nodes = g_hash_table_new (g_direct_hash, g_direct_equal);
+    gchar **split = g_strsplit (value, "=", -2);
+
+    db_trim_query_mark (valued_nodes, start_node, split[0], split[1]);
+
+    /* The hash table now contains pointers to the nodes that wanted. Create a new tree with
+       the data we want from the old tree. Also delete any unwanted data. */
+    root = g_node_new (start_node->data);
+    start_node->data = NULL;
+    db_trim_query_cleanup (valued_nodes, start_node, root);
+
+    /* Delete the old n-ary tree */
+    g_node_destroy (start_node);
+    if (!g_node_first_child (root))
+    {
+        g_free (root->data);
+        g_node_destroy (root);
+        root = NULL;
+    }
+    g_hash_table_destroy(valued_nodes);
+    g_strfreev(split);
+    return root;
+}
+
 GNode *
 db_query (GNode *query)
 {
     /* Move db_node along as far as we can to match this new_node */
     GNode *new_node = g_node_new(g_strdup(APTERYX_NAME(query)));
+    char *value = NULL;
 
     pthread_rwlock_rdlock (&db_lock);
     struct database_node *db_node = _db_align_nodes((struct database_node*)root, new_node, false);
@@ -611,8 +727,13 @@ db_query (GNode *query)
         pthread_rwlock_unlock (&db_lock);
         return new_node;
     }
-    new_node = _db_query_children(new_node, db_node, query);
+    new_node = _db_query_children(new_node, db_node, query, &value);
     pthread_rwlock_unlock (&db_lock);
+    if (value && new_node)
+    {
+        new_node = db_trim_query (new_node, value);
+    }
+    g_free (value);
     return new_node;
 }
 
