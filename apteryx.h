@@ -472,6 +472,34 @@ GNode *apteryx_get_tree (const char *path);
 GNode *apteryx_query (GNode *root);
 
 /**
+ * Get a tree of multiple values from Apteryx that match this tree below the root path given.
+ *
+ * Leaf nodes must be supplied - NULL values will match all entries in apteryx, sub trees with
+ * values will require all values to match back to the next wildcard (or the root, if no wildcard
+ * is present in the tree).
+ *
+ * This tree may be set up with full paths to given values to be fetched, with intermediate wildcard
+ * nodes indicated by key of "*" that will match all paths that can be found at that level, leaf
+ * nodes with "*" that will match the full tree below that path, and/or with leaf nodes
+ * with empty keys "" that will match values at exactly that level.
+ *
+ * This matching is the same as apteryx_watch, provide, index and refresh when the tree
+ * is set up with apteryx_path_to_node.
+ *
+ * @param root pointer to the N-ary tree of nodes.
+ * @return N-ary tree of nodes.
+ * Example: Create a tree and get the n-ary tree with the values for the given nodes
+ *          where the distance is 1.
+     GNode *root = g_node_new ("/");
+     GNode *node = apteryx_path_to_node (root, "/routing/ipv4/rib/", NULL);
+     node = APTERYX_NODE (node, "*");
+     APTERYX_LEAF_INT(node, "distance", 1);
+
+     GNode *rroot = apteryx_query_full (root);
+ */
+GNode *apteryx_query_full (GNode *root);
+
+/**
  * Set a tree of multiple values in Apteryx, but only if
  * the existing value has not changed since the specified monotonic timestamp.
  * @param root pointer to the N-ary tree of nodes.

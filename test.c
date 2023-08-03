@@ -4979,6 +4979,650 @@ test_query_not_refreshed_different_roots()
 //     apteryx_prune (TEST_PATH);
 // }
 
+
+void
+test_query_full_one_match ()
+{
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+    GNode *iroot = NULL;
+    char *path = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/3");
+    APTERYX_LEAF (root, "proto", "dynamic");
+    APTERYX_LEAF (root, "ifname", "eth2");
+    APTERYX_LEAF (root, "prefix", "172.17.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/4");
+    APTERYX_LEAF (root, "proto", "dynamic");
+    APTERYX_LEAF (root, "ifname", "eth4");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = g_node_new (strdup ("/"));
+    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*/ifname");
+    iroot = apteryx_path_to_node (root, path, "eth0");
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 8);
+
+    if (rroot) apteryx_free_tree (rroot);
+    if (root) apteryx_free_tree (root);
+
+    /* Query to pick up info for addresses on eth1*/
+    root = g_node_new (strdup ("/"));
+    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
+    iroot = apteryx_path_to_node (root, path, NULL);
+    APTERYX_LEAF (iroot, strdup("proto"), NULL);
+    APTERYX_LEAF (iroot, strdup("prefix"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth1"));
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 12);
+
+    if (rroot) apteryx_free_tree (rroot);
+    if (root) apteryx_free_tree (root);
+
+    /* Query to pick up info for all static addresses*/
+    root = g_node_new (strdup ("/"));
+    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
+    iroot = apteryx_path_to_node (root, path, NULL);
+    APTERYX_LEAF (iroot, strdup("proto"), strdup("static"));
+    APTERYX_LEAF (iroot, strdup("prefix"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), NULL);
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
+
+    /* Query to pick up info for all dynamic 172.16.0.0/16 addresses */
+    root = g_node_new (strdup ("/"));
+    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
+    iroot = apteryx_path_to_node (root, path, NULL);
+    APTERYX_LEAF (iroot, strdup("proto"), strdup("dynamic"));
+    APTERYX_LEAF (iroot, strdup("prefix"), strdup("172.16.0.0/16"));
+    APTERYX_LEAF (iroot, strdup("ifname"), NULL);
+    rroot = apteryx_query_full (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
+    apteryx_free_tree(root);
+
+    root = g_node_new (strdup ("/"));
+    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
+    iroot = apteryx_path_to_node (root, path, NULL);
+    APTERYX_LEAF (iroot, strdup("proto"), strdup("static"));
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+
+    if (rroot) apteryx_free_tree (rroot);
+    if (root) apteryx_free_tree (root);
+
+    g_free (path);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
+test_query_full_two_lists()
+{
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+    GNode *iroot = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "prefix", "10.0.0.0/8");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/2");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.16.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/3");
+    APTERYX_LEAF (root, "proto", "static");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "prefix", "172.17.0.0/16");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/interface/interfaces/eth0");
+    APTERYX_LEAF (root, "admin", "up");
+    APTERYX_LEAF (root, "ifname", "eth0");
+    APTERYX_LEAF (root, "link", "up");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/interface/interfaces/eth1");
+    APTERYX_LEAF (root, "admin", "up");
+    APTERYX_LEAF (root, "ifname", "eth1");
+    APTERYX_LEAF (root, "link", "down");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/interface/interfaces/eth2");
+    APTERYX_LEAF (root, "admin", "down");
+    APTERYX_LEAF (root, "ifname", "eth2");
+    APTERYX_LEAF (root, "link", "down");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+    root = NULL;
+
+    /* Query to pick up info for eth0 from oner block*/
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("admin"), NULL);
+    APTERYX_LEAF (iroot, strdup("link"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 11);
+    if (rroot) apteryx_free_tree (rroot);
+    if (root) apteryx_free_tree (root);
+
+    /* Query to pick up info for eth0 from either block*/
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/routing/ipv4/rib/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("proto"), NULL);
+    APTERYX_LEAF (iroot, strdup("prefix"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("admin"), NULL);
+    APTERYX_LEAF (iroot, strdup("link"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 21);
+    if (rroot) apteryx_free_tree (rroot);
+    if (root) apteryx_free_tree (root);
+
+    /* Query to pick up info for eth1 and addresses on eth0*/
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/routing/ipv4/rib/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("proto"), NULL);
+    APTERYX_LEAF (iroot, strdup("prefix"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("admin"), NULL);
+    APTERYX_LEAF (iroot, strdup("link"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth1"));
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 21);
+
+    if (rroot) apteryx_free_tree (rroot);
+    if (root) apteryx_free_tree (root);
+
+    /* Query to pick up info for eth1 and addresses on eth0*/
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/routing/ipv4/rib/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("proto"), NULL);
+    APTERYX_LEAF (iroot, strdup("prefix"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth1"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("admin"), NULL);
+    APTERYX_LEAF (iroot, strdup("link"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 9);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 28);
+
+    /* Get all admin up interfaces */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("admin"), strdup("up"));
+    APTERYX_LEAF (iroot, strdup("link"), NULL);
+    APTERYX_LEAF (iroot, strdup("ifname"), NULL);
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 18);
+
+    /* Get all link up interfaces */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    APTERYX_LEAF (iroot, strdup("admin"), NULL);
+    APTERYX_LEAF (iroot, strdup("link"), strdup("up"));
+    APTERYX_LEAF (iroot, strdup("ifname"), NULL);
+    rroot = apteryx_query_full (root);
+
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
+
+    if (rroot) apteryx_free_tree (rroot);
+    if (root) apteryx_free_tree (root);
+
+    apteryx_prune (TEST_PATH);
+}
+
+static char *
+test_query_provide_awake(const char *path)
+{
+    return strdup("awake");
+}
+
+static char *
+test_query_provide_asleep(const char *path)
+{
+    return strdup("asleep");
+}
+
+void
+pet_setup(void)
+{
+    GNode *root, *iroot, *troot;
+
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "smokey");
+    APTERYX_LEAF(iroot, "name", "smokey");
+    APTERYX_LEAF(iroot, "type", "cat");
+    troot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(troot, "flat");
+    APTERYX_LEAF(iroot, "name", "flat");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "leather", "leather");
+    iroot = APTERYX_NODE(troot, "stripy");
+    APTERYX_LEAF(iroot, "name", "stripy");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "rubber", "rubber");
+    iroot = APTERYX_NODE(troot, "mousey");
+    APTERYX_LEAF(iroot, "name", "mousey");
+    APTERYX_LEAF(iroot, "type", "mouse");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "cloth", "cloth");
+    APTERYX_LEAF(iroot, "button", "button");
+
+    iroot = APTERYX_NODE(root, "mist");
+    APTERYX_LEAF(iroot, "name", "mist");
+    APTERYX_LEAF(iroot, "type", "cat");
+    troot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(troot, "bouncy");
+    APTERYX_LEAF(iroot, "name", "bouncy");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "rubber", "rubber");
+    iroot = APTERYX_NODE(troot, "mickey");
+    APTERYX_LEAF(iroot, "name", "mickey");
+    APTERYX_LEAF(iroot, "type", "mouse");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "cloth", "cloth");
+
+    iroot = APTERYX_NODE(root, "saffy");
+    APTERYX_LEAF(iroot, "name", "saffy");
+    APTERYX_LEAF(iroot, "type", "dog");
+    troot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(troot, "bouncy");
+    APTERYX_LEAF(iroot, "name", "bouncy");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "rubber", "rubber");
+    iroot = APTERYX_NODE(troot, "flat");
+    APTERYX_LEAF(iroot, "name", "flat");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "rubber", "rubber");
+    APTERYX_LEAF(iroot, "rattle", "rattle");
+    iroot = APTERYX_NODE(troot, "boris");
+    APTERYX_LEAF(iroot, "name", "boris");
+    APTERYX_LEAF(iroot, "type", "bear");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "leather", "leather");
+    APTERYX_LEAF(iroot, "rattle", "rattle");
+
+    CU_ASSERT(apteryx_set_tree(root));
+    g_node_destroy(root);
+    
+    CU_ASSERT(apteryx_provide(TEST_PATH"/animal/smokey/state", test_query_provide_asleep));
+    CU_ASSERT(apteryx_provide(TEST_PATH"/animal/saffy/state", test_query_provide_asleep));
+    CU_ASSERT(apteryx_provide(TEST_PATH"/animal/mist/state", test_query_provide_awake));
+}
+
+void
+pet_teardown(void)
+{
+    CU_ASSERT(apteryx_prune(TEST_PATH));
+    CU_ASSERT(apteryx_unprovide(TEST_PATH"/animal/smokey/state", test_query_provide_asleep));
+    CU_ASSERT(apteryx_unprovide(TEST_PATH"/animal/saffy/state", test_query_provide_asleep));
+    CU_ASSERT(apteryx_unprovide(TEST_PATH"/animal/mist/state", test_query_provide_awake));
+}
+
+void
+test_query_cats_with_flat_toy()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+
+    /* Get all cats with a flat toy */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    APTERYX_LEAF(iroot, "type", "cat");
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "name", "flat");
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
+    apteryx_free_tree(rroot);
+    g_node_destroy(root);
+
+    pet_teardown();
+}
+
+void
+test_query_pets_with_ball()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all pets with a ball */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    APTERYX_LEAF(iroot, "type", "ball");
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 13);
+    apteryx_free_tree(rroot);
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_pets_with_leather_toy()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all pets with a toy containing leather */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "leather", "leather");
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 4);
+    apteryx_free_tree(rroot);
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_all_dog_toys()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all dog toys */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    APTERYX_LEAF(iroot, "type", "dog");
+    iroot = APTERYX_NODE(iroot, "toys");
+    APTERYX_LEAF(iroot, "*", NULL);
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 13);
+    apteryx_free_tree(rroot);
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_materials_for_smokeys_balls()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all dog toys */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", "smokey");
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "*", NULL);
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 5);
+    apteryx_free_tree(rroot);
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_materials_for_flat_balls()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all dog toys */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "name", "flat");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    iroot = APTERYX_LEAF(iroot, "*", NULL);
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 7);
+    apteryx_free_tree(rroot);
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_does_a_dog_have_a_leather_ball()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all dog toys */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "type", "dog");
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    iroot = APTERYX_LEAF(iroot, "leather", "leather");
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot == NULL);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_who_owns_the_flat_leather_ball()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all dog toys */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "type", "ball");
+    APTERYX_LEAF(iroot, "name", "flat");
+    iroot = APTERYX_NODE(iroot, "material");
+    iroot = APTERYX_LEAF(iroot, "leather", "leather");
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 4);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_all_ball_materials()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all dog toys */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "*", NULL);
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 11);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+static uint64_t
+test_query_full_refresh_cb(const char *path)
+{
+    apteryx_set (TEST_PATH"/system/ram/size", "1024");
+    apteryx_set (TEST_PATH"/system/ram/free", "100");
+    return 1000000;
+}
+
+char *
+test_query_full_provide_cb(const char *path)
+{
+    return strdup("1024");
+}
+
+void
+test_query_full_refreshed_provided()
+{
+    const char *path = TEST_PATH"/system";
+    GNode *root = NULL;
+    GNode *rroot = NULL;
+    GNode *iroot = NULL;
+
+    CU_ASSERT (apteryx_provide (TEST_PATH"/system/flash/size", test_query_full_provide_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/system/flash/free", test_query_full_provide_cb));
+    CU_ASSERT (apteryx_refresh (TEST_PATH"/system/ram/*", test_query_full_refresh_cb));
+
+    /* Direct query of value on the tree (no value) */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, path, NULL);
+    APTERYX_NODE(iroot, NULL);
+    rroot = apteryx_query_full (root);
+    CU_ASSERT (!rroot);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Full depth query of tree */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/*", NULL);
+    APTERYX_NODE(iroot, NULL);
+    rroot = apteryx_query_full (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 4);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 6);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Directory level query of provided + refreshed value */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/ram/", NULL);
+    APTERYX_NODE(iroot, NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/flash/", NULL);
+    APTERYX_NODE(iroot, NULL);
+    rroot = apteryx_query_full (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 4);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 6);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Get all the "size" values */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/*/size", NULL);
+    APTERYX_NODE(iroot, NULL);
+    rroot = apteryx_query_full (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 6);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Get size and free when free == 100 */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/*/size", NULL);
+    APTERYX_NODE(iroot, NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/*/free", NULL);
+    APTERYX_NODE(iroot, strdup("100"));
+    rroot = apteryx_query_full (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 6);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    /* Get size and free when size == 1024 (requires provider to be hit for match
+     * and getting the actual value).
+     */
+    root = g_node_new (strdup ("/"));
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/*/size", NULL);
+    APTERYX_NODE(iroot, strdup("1024"));
+    iroot = apteryx_path_to_node (root, TEST_PATH"/system/*/free", NULL);
+    APTERYX_NODE(iroot, NULL);
+    rroot = apteryx_query_full (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 4);
+    CU_ASSERT (rroot && g_node_max_height (rroot) == 6);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/system/flash/size", test_query_full_provide_cb));
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/system/flash/free", test_query_full_provide_cb));
+    CU_ASSERT (apteryx_unrefresh (TEST_PATH"/system/ram/*", test_query_full_refresh_cb));
+    apteryx_prune (TEST_PATH);
+}
+
 static uint64_t
 refresh_timeout_callback (const char *path)
 {
@@ -8088,6 +8732,20 @@ static CU_TestInfo tests_api_tree[] = {
     { "query root length", test_query_long_root},
     { "query too long", test_query_too_long},
     { "query value on branch", test_query_value_on_branch},
+    { "query full one match", test_query_full_one_match },
+    { "query full two lists", test_query_full_two_lists },
+    { "query full provided / refreshed", test_query_full_refreshed_provided },
+
+    { "query full 1", test_query_cats_with_flat_toy },
+    { "query full 2", test_query_pets_with_ball },
+    { "query full 3", test_query_pets_with_leather_toy },
+    { "query full 4", test_query_all_dog_toys },
+    { "query full 5", test_query_materials_for_smokeys_balls },
+    { "query full 6", test_query_materials_for_flat_balls },
+    { "query full 7", test_query_does_a_dog_have_a_leather_ball },
+    { "query full 8", test_query_who_owns_the_flat_leather_ball },
+    { "query full 9", test_query_all_ball_materials },
+
     { "cas tree", test_cas_tree},
     { "cas tree detailed", test_cas_tree_detailed},
     { "tree atomic", test_tree_atomic},

@@ -1477,7 +1477,7 @@ add_null_data (GNode *node, gpointer data)
 }
 
 GNode *
-apteryx_query (GNode *root)
+apteryx_query_full (GNode *root)
 {
     char *url = NULL;
     rpc_client rpc_client;
@@ -1523,11 +1523,6 @@ apteryx_query (GNode *root)
     /* Save sanitized root path (less URL) to query node */
     old_root_name = APTERYX_NAME (root);
     root->data = (char *) path;
-
-    /* the g_node tree that gets passed in here it's a legal apteryx tree - leaf
-     * nodes don't get created. We need them for the encode tree, so add them now
-     */
-    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, add_null_data, NULL);
 
     rpc_msg_encode_uint8 (&msg, MODE_QUERY);
     rpc_msg_encode_tree (&msg, root);
@@ -1601,6 +1596,17 @@ apteryx_query (GNode *root)
     rpc_client_release (rpc, rpc_client, true);
     free (url);
     return rroot;
+}
+
+GNode *
+apteryx_query (GNode *root)
+{
+    /* the g_node tree that gets passed in here it different from an apteryx tree
+     * used for get / set tree operations - value leaf nodes don't get created.
+     * We need them for the encode tree, so add them now.
+     */
+    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, add_null_data, NULL);
+    return apteryx_query_full (root);
 }
 
 GList *

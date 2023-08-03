@@ -1924,6 +1924,118 @@ static gboolean _refresh_paths (GNode *node, gpointer data)
     return FALSE;
 }
 
+/* g_node_traverse function to check if we have any filters to work with */
+static gboolean _tree_has_filter (GNode *node, gpointer data)
+{
+    if (node->data)
+    {
+        *((bool *)data) = true;
+        return false;
+    }
+    return false;
+}
+
+/* Fill in values we know (ones that matched the filter) */
+static gboolean _copy_filter_to_result (GNode *node, gpointer data)
+{
+    GNode *result = data;
+    if (result && node && node->data)
+    {
+        char *path = apteryx_node_path(node->parent);
+        apteryx_path_to_node(result, path, node->data);
+        g_free(path);
+    }
+    return false;
+}
+
+
+static gboolean
+_expand_wildcards (GNode *query_node, gpointer data)
+{
+    GNode *result_tree = data;
+    GNode *next_node = NULL;
+    GNode *child;
+
+    char *path = apteryx_node_path(query_node);
+    next_node = g_node_new(strdup(query_node->data));
+
+    if (strcmp(query_node->data, "*") == 0)
+    {
+        /* Terminal *, we're done here. */
+        if (G_NODE_IS_LEAF(g_node_first_child(query_node)))
+        {
+            g_node_prepend_data(next_node, g_node_first_child(query_node)->data ? strdup(g_node_first_child(query_node)->data) : NULL);
+            goto done;
+        }
+        /* Need to find matches in the database for this tree */
+        GList *paths = NULL;
+
+        /* Chop off the trailing "/*" */
+        path[strlen(path)-1] = '\0';
+
+        /* Find the possible nodes below this one to match against. */
+        paths = search_path (path);
+        char *saved_key = query_node->data;
+        for (GList *iter = paths; iter; iter = iter->next)
+        {
+            char *key = iter->data + strlen(path);
+            query_node->data = strdup(key);
+            _expand_wildcards (query_node, result_tree);
+            free(query_node->data);
+        }
+        g_list_free_full(paths, g_free);
+        query_node->data = saved_key;
+        free(path);
+        apteryx_free_tree(next_node);
+        return true;
+    }
+
+    for (child = g_node_first_child(query_node); child; child = g_node_next_sibling(child))
+    {
+        if (G_NODE_IS_LEAF(child))
+        {
+            char *value = NULL;
+            size_t length;
+
+            /* Get values from database + providers. If a provider value matches
+            * here we won't call it again later - we will reuse the value from the
+            * filter (which we know to be the same).
+            */
+            value = provide_get(path);
+            if (!value)
+                db_get (path, (unsigned char**) &value, &length);
+
+            if (value && (child->data == NULL || strcmp(child->data, value) == 0))
+            {
+                g_node_prepend_data(next_node, value);
+            }
+            else
+            {
+                g_free(value);
+                break;
+            }
+        }
+        else if (child->data)
+        {
+            _expand_wildcards(child, next_node);
+        }
+    }
+
+done:
+    /* Got at least one match for each one... */
+    if (g_node_n_children(query_node) <= g_node_n_children(next_node))
+    {
+        g_node_prepend(result_tree, next_node);
+    }
+    else
+    {
+        apteryx_free_tree(next_node);
+    }
+    free(path);
+    return true;
+}
+
+
 static bool
 handle_query (rpc_message msg)
 {
@@ -1969,6 +2081,26 @@ handle_query (rpc_message msg)
     /* Traverse the tree calling refreshers */
     g_node_traverse (query_head, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, 1, _refresh_paths, NULL);
 
+    /* If we have a filter adjust the query to only have matching subtrees */
+    bool has_filter = false;
+    g_node_traverse (query_head, G_PRE_ORDER, G_TRAVERSE_LEAFS, -1, _tree_has_filter, &has_filter);
+    if (has_filter)
+    {
+        /* Fill the expanded tree in with matching paths */
+        GNode *expanded_tree = APTERYX_NODE (NULL, strdup (""));
+        g_node_traverse (query_head, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, 1, _expand_wildcards, expanded_tree);
+        apteryx_free_tree (query_head);
+        query_head = g_node_first_child (expanded_tree);
+        if (query_head)
+        {
+            g_node_unlink (query_head);
+        }
+        apteryx_free_tree (expanded_tree);
+        if (!query_head)
+        {
+            goto done;
+        }
+    }
     /* Query the database */
     root = db_query (query_head);
 
@@ -2010,6 +2142,9 @@ handle_query (rpc_message msg)
         }
     }
 
+    /* We won't call providers for the filtered values - fill them in from the query */
+    g_node_traverse (query_head, G_PRE_ORDER, G_TRAVERSE_LEAFS, -1, _copy_filter_to_result, root);
+
     if (apteryx_debug && root)
     {
         DEBUG ("QUERY RESULT");
@@ -2025,8 +2160,14 @@ done:
     g_list_free_full (paths, g_free);
     g_list_free_full (values, g_free);
 
-    apteryx_free_tree(query_head);
-    apteryx_free_tree(root);
+    if (query_head)
+    {
+        apteryx_free_tree(query_head);
+    }
+    if (root)
+    {
+        apteryx_free_tree(root);
+    }
 
     return true;
 }
