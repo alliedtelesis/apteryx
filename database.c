@@ -577,6 +577,14 @@ _db_query_children (GNode *n, struct database_node *parent, GNode *query)
             }
             g_list_free (children);
         }
+        /* The incoming query is a string - parent length includes the null terminator */
+        else if ((strlen(query_element->data)+1) == parent->length &&
+                 (memcmp(query_element->data, parent->value, parent->length) == 0))
+        {
+            /* Got a direct value match */
+            g_node_prepend_data(n, g_strdup ((char*)parent->value));
+            return n;
+        }
         else
         {
             struct database_node *child = parent->hashtree_node.children ?
