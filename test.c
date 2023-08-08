@@ -5228,15 +5228,18 @@ test_query_full_two_lists()
     apteryx_prune (TEST_PATH);
 }
 
+static int query_provide_counts = 0;
 static char *
 test_query_provide_awake(const char *path)
 {
+    query_provide_counts++;
     return strdup("awake");
 }
 
 static char *
 test_query_provide_asleep(const char *path)
 {
+    query_provide_counts++;
     return strdup("asleep");
 }
 
@@ -5306,7 +5309,7 @@ pet_setup(void)
 
     CU_ASSERT(apteryx_set_tree(root));
     g_node_destroy(root);
-    
+
     CU_ASSERT(apteryx_provide(TEST_PATH"/animal/smokey/state", test_query_provide_asleep));
     CU_ASSERT(apteryx_provide(TEST_PATH"/animal/saffy/state", test_query_provide_asleep));
     CU_ASSERT(apteryx_provide(TEST_PATH"/animal/mist/state", test_query_provide_awake));
@@ -5523,6 +5526,92 @@ test_query_all_ball_materials()
     g_node_destroy(root);
     pet_teardown();
 }
+
+void
+test_query_filter_on_provided()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get toys details for pets who are asleep */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "state", "asleep");
+    APTERYX_LEAF(iroot, "name", NULL);
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    APTERYX_LEAF(iroot, "type", NULL);
+
+    query_provide_counts = 0;
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 16);
+    CU_ASSERT (query_provide_counts <= 3);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_filter_selects_provided()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get status for pets who have a bear */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "state", NULL);
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    APTERYX_LEAF(iroot, "type", "bear");
+
+    query_provide_counts = 0;
+    printf("\nquery:\n");
+    apteryx_print_tree(root, stdout);
+    rroot = apteryx_query_full(root);
+    printf("result:\n");
+    apteryx_print_tree(rroot, stdout);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
+    CU_ASSERT (query_provide_counts == 1);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_filter_avoids_provided()
+{
+    GNode *root, *iroot, *rroot;
+
+    pet_setup();
+    /* Get all dog toys (no need to call providers) */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    iroot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(iroot, "*");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "*", NULL);
+    query_provide_counts = 0;
+    rroot = apteryx_query_full(root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 11);
+    CU_ASSERT (query_provide_counts == 0);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
 
 static uint64_t
 test_query_full_refresh_cb(const char *path)
@@ -8732,19 +8821,22 @@ static CU_TestInfo tests_api_tree[] = {
     { "query root length", test_query_long_root},
     { "query too long", test_query_too_long},
     { "query value on branch", test_query_value_on_branch},
-    { "query full one match", test_query_full_one_match },
-    { "query full two lists", test_query_full_two_lists },
-    { "query full provided / refreshed", test_query_full_refreshed_provided },
-
-    { "query full 1", test_query_cats_with_flat_toy },
-    { "query full 2", test_query_pets_with_ball },
-    { "query full 3", test_query_pets_with_leather_toy },
-    { "query full 4", test_query_all_dog_toys },
-    { "query full 5", test_query_materials_for_smokeys_balls },
-    { "query full 6", test_query_materials_for_flat_balls },
-    { "query full 7", test_query_does_a_dog_have_a_leather_ball },
-    { "query full 8", test_query_who_owns_the_flat_leather_ball },
-    { "query full 9", test_query_all_ball_materials },
+    { "query filter one match", test_query_full_one_match },
+    { "query filter two lists", test_query_full_two_lists },
+    { "query filter provided / refreshed", test_query_full_refreshed_provided },
+    /* These cryptic names mean list level x number of matches / data level x matches */
+    { "query filter level 1x1, 2x1, data 1x1", test_query_cats_with_flat_toy },
+    { "query filter level 2x1, data 1x1", test_query_pets_with_ball },
+    { "query filter level 3x1, data 1x1", test_query_pets_with_leather_toy },
+    { "query filter level 1x1, data 2*", test_query_all_dog_toys },
+    { "query filter level 1x1, 2x1, data 3*", test_query_materials_for_smokeys_balls },
+    { "query filter level 2x2, data 3*", test_query_materials_for_flat_balls },
+    { "query filter level 1x1, 2x1, 3x1", test_query_does_a_dog_have_a_leather_ball },
+    { "query filter level 2x2, 3x1, data 1x1", test_query_who_owns_the_flat_leather_ball },
+    { "query filter level 2x1, data 3*", test_query_all_ball_materials },
+    { "query filter requires provided value", test_query_filter_on_provided },
+    { "query filter response contains provided value", test_query_filter_selects_provided },
+    { "query filter doesn't call provied value if not required", test_query_filter_avoids_provided },
 
     { "cas tree", test_cas_tree},
     { "cas tree detailed", test_cas_tree_detailed},

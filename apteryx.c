@@ -1605,6 +1605,7 @@ apteryx_query (GNode *root)
      * used for get / set tree operations - value leaf nodes don't get created.
      * We need them for the encode tree, so add them now.
      */
+    ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
     g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, add_null_data, NULL);
     return apteryx_query_full (root);
 }
