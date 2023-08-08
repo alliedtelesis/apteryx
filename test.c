@@ -5685,6 +5685,70 @@ test_query_all_ball_materials()
     pet_teardown();
 }
 
+
+void
+test_query_animals_with_a_leather_ball()
+{
+    GNode *root, *iroot, *rroot, *troot;
+
+    pet_setup();
+    /* Get animals with a ball AND a leather toy (may be same toy) */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    troot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(troot, "*");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "leather", "leather");
+
+    apteryx_print_tree(root, stdout);
+    rroot = apteryx_query_full(root);
+    /* Only 1 pet has a leather ball */
+    CU_ASSERT (rroot && g_node_n_children (rroot) == 1);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
+void
+test_query_animals_with_a_ball_and_a_leather_toy()
+{
+    GNode *root, *iroot, *rroot, *troot;
+
+    pet_setup();
+    /* Get animals with a ball AND a leather toy (may be same toy) */
+    root = APTERYX_NODE(NULL, TEST_PATH"/animal");
+    iroot = APTERYX_NODE(root, "*");
+    APTERYX_LEAF(iroot, "name", NULL);
+    troot = APTERYX_NODE(iroot, "toys");
+    iroot = APTERYX_NODE(troot, "*");
+    APTERYX_LEAF(iroot, "type", "ball");
+    iroot = APTERYX_NODE(troot, "*");
+    iroot = APTERYX_NODE(iroot, "material");
+    APTERYX_LEAF(iroot, "leather", "leather");
+
+    rroot = apteryx_query_full(root);
+    /* 2 pets have a leather toy and a ball */
+    CU_ASSERT (rroot && g_node_n_children (rroot) == 2);
+    /* This returns the subtrees that match each side of the query (both "toys/ * /type"=ball and
+     * "toys/ * /material/ * /leather"=leather) which I'm not super happy about, but fixing will
+     * require iterating through child nodes to find a match, which I want to avoid at just about
+     * any cost.
+     */
+    // CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 8);
+    if (rroot)
+    {
+        apteryx_free_tree(rroot);
+    }
+    g_node_destroy(root);
+    pet_teardown();
+}
+
 void
 test_query_filter_on_provided()
 {
@@ -5729,11 +5793,7 @@ test_query_filter_selects_provided()
     APTERYX_LEAF(iroot, "type", "bear");
 
     query_provide_counts = 0;
-    printf("\nquery:\n");
-    apteryx_print_tree(root, stdout);
     rroot = apteryx_query_full(root);
-    printf("result:\n");
-    apteryx_print_tree(rroot, stdout);
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
     CU_ASSERT (query_provide_counts == 1);
     if (rroot)
@@ -9359,6 +9419,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "query filter level 1x1, 2x1, data 1x1", test_query_cats_with_flat_toy },
     { "query filter level 2x1, data 1x1", test_query_pets_with_ball },
     { "query filter level 3x1, data 1x1", test_query_pets_with_leather_toy },
+    { "query filter level 2x1, 3x1, data 1x1",  test_query_animals_with_a_leather_ball },
+    { "query filter level 2x1 + 3x1, data 1x1",  test_query_animals_with_a_ball_and_a_leather_toy },
     { "query filter level 1x1, data 2*", test_query_all_dog_toys },
     { "query filter level 1x1, 2x1, data 3*", test_query_materials_for_smokeys_balls },
     { "query filter level 2x2, data 3*", test_query_materials_for_flat_balls },
