@@ -1819,7 +1819,8 @@ collect_provided_paths_query(GNode *query)
     const char *match_key = query->data;
     char *path = apteryx_node_path (query);
 
-    if (query->data == NULL)
+    /* We don't need to go right to the end - that is a value */
+    if (G_NODE_IS_LEAF(query))
     {
         free(path);
         return NULL;
@@ -1994,22 +1995,29 @@ _expand_wildcards (GNode *query_node, gpointer data)
             char *value = NULL;
             size_t length;
 
-            /* Get values from database + providers. If a provider value matches
-            * here we won't call it again later - we will reuse the value from the
-            * filter (which we know to be the same).
-            */
-            value = provide_get(path);
-            if (!value)
-                db_get (path, (unsigned char**) &value, &length);
-
-            if (value && (child->data == NULL || strcmp(child->data, value) == 0))
+            if (child->data == NULL)
             {
-                g_node_prepend_data(next_node, value);
+                g_node_prepend_data(next_node, NULL);
             }
             else
             {
-                g_free(value);
-                break;
+                /* Get values from database + providers. If a provider value matches
+                 * here we won't call it again later - we will reuse the value from the
+                 * filter (which we know to be the same).
+                 */
+                value = provide_get(path);
+                if (!value)
+                    db_get (path, (unsigned char**) &value, &length);
+
+                if (value && strcmp(child->data, value) == 0)
+                {
+                    g_node_prepend_data(next_node, value);
+                }
+                else
+                {
+                    g_free(value);
+                    break;
+                }
             }
         }
         else if (child->data)
