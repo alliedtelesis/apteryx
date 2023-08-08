@@ -5147,7 +5147,6 @@ test_query_full_one_match ()
     GNode *root = NULL;
     GNode *rroot = NULL;
     GNode *iroot = NULL;
-    char *path = NULL;
 
     root = APTERYX_NODE (NULL, TEST_PATH"/routing/ipv4/rib/1");
     APTERYX_LEAF (root, "proto", "static");
@@ -5181,8 +5180,7 @@ test_query_full_one_match ()
     root = NULL;
 
     root = g_node_new (strdup ("/"));
-    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*/ifname");
-    iroot = apteryx_path_to_node (root, path, "eth0");
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*/ifname", "eth0");
     rroot = apteryx_query_full (root);
 
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
@@ -5193,8 +5191,7 @@ test_query_full_one_match ()
 
     /* Query to pick up info for addresses on eth1*/
     root = g_node_new (strdup ("/"));
-    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
-    iroot = apteryx_path_to_node (root, path, NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*", NULL);
     APTERYX_LEAF (iroot, strdup("proto"), NULL);
     APTERYX_LEAF (iroot, strdup("prefix"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth1"));
@@ -5208,39 +5205,36 @@ test_query_full_one_match ()
 
     /* Query to pick up info for all static addresses*/
     root = g_node_new (strdup ("/"));
-    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
-    iroot = apteryx_path_to_node (root, path, NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*", NULL);
     APTERYX_LEAF (iroot, strdup("proto"), strdup("static"));
     APTERYX_LEAF (iroot, strdup("prefix"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), NULL);
     rroot = apteryx_query_full (root);
 
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
+    if (root) apteryx_free_tree(root);
+    if (rroot) apteryx_free_tree(rroot);
 
     /* Query to pick up info for all dynamic 172.16.0.0/16 addresses */
     root = g_node_new (strdup ("/"));
-    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
-    iroot = apteryx_path_to_node (root, path, NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*", NULL);
     APTERYX_LEAF (iroot, strdup("proto"), strdup("dynamic"));
     APTERYX_LEAF (iroot, strdup("prefix"), strdup("172.16.0.0/16"));
     APTERYX_LEAF (iroot, strdup("ifname"), NULL);
     rroot = apteryx_query_full (root);
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
-    apteryx_free_tree(root);
+    if (root) apteryx_free_tree(root);
+    if (rroot) apteryx_free_tree(rroot);
 
     root = g_node_new (strdup ("/"));
-    path = g_strdup (TEST_PATH"/routing/ipv4/rib/*");
-    iroot = apteryx_path_to_node (root, path, NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*", NULL);
     APTERYX_LEAF (iroot, strdup("proto"), strdup("static"));
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
     rroot = apteryx_query_full (root);
 
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 2);
-
     if (rroot) apteryx_free_tree (rroot);
     if (root) apteryx_free_tree (root);
-
-    g_free (path);
 
     apteryx_prune (TEST_PATH);
 }
@@ -5301,7 +5295,7 @@ test_query_full_two_lists()
 
     /* Query to pick up info for eth0 from oner block*/
     root = g_node_new (strdup ("/"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/interface/interfaces/*", NULL);
     APTERYX_LEAF (iroot, strdup("admin"), NULL);
     APTERYX_LEAF (iroot, strdup("link"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
@@ -5314,11 +5308,11 @@ test_query_full_two_lists()
 
     /* Query to pick up info for eth0 from either block*/
     root = g_node_new (strdup ("/"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/routing/ipv4/rib/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*", NULL);
     APTERYX_LEAF (iroot, strdup("proto"), NULL);
     APTERYX_LEAF (iroot, strdup("prefix"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/interface/interfaces/*", NULL);
     APTERYX_LEAF (iroot, strdup("admin"), NULL);
     APTERYX_LEAF (iroot, strdup("link"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
@@ -5331,11 +5325,11 @@ test_query_full_two_lists()
 
     /* Query to pick up info for eth1 and addresses on eth0*/
     root = g_node_new (strdup ("/"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/routing/ipv4/rib/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*", NULL);
     APTERYX_LEAF (iroot, strdup("proto"), NULL);
     APTERYX_LEAF (iroot, strdup("prefix"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/interface/interfaces/*", NULL);
     APTERYX_LEAF (iroot, strdup("admin"), NULL);
     APTERYX_LEAF (iroot, strdup("link"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth1"));
@@ -5349,11 +5343,11 @@ test_query_full_two_lists()
 
     /* Query to pick up info for eth1 and addresses on eth0*/
     root = g_node_new (strdup ("/"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/routing/ipv4/rib/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/routing/ipv4/rib/*", NULL);
     APTERYX_LEAF (iroot, strdup("proto"), NULL);
     APTERYX_LEAF (iroot, strdup("prefix"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth1"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/interface/interfaces/*", NULL);
     APTERYX_LEAF (iroot, strdup("admin"), NULL);
     APTERYX_LEAF (iroot, strdup("link"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), strdup("eth0"));
@@ -5361,10 +5355,12 @@ test_query_full_two_lists()
 
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 9);
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 28);
+    if (root) apteryx_free_tree(root);
+    if (rroot) apteryx_free_tree(rroot);
 
     /* Get all admin up interfaces */
     root = g_node_new (strdup ("/"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/interface/interfaces/*", NULL);
     APTERYX_LEAF (iroot, strdup("admin"), strdup("up"));
     APTERYX_LEAF (iroot, strdup("link"), NULL);
     APTERYX_LEAF (iroot, strdup("ifname"), NULL);
@@ -5372,17 +5368,18 @@ test_query_full_two_lists()
 
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 6);
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_ALL) == 18);
+    if (root) apteryx_free_tree(root);
+    if (rroot) apteryx_free_tree(rroot);
 
     /* Get all link up interfaces */
     root = g_node_new (strdup ("/"));
-    iroot = apteryx_path_to_node (root, g_strdup (TEST_PATH"/interface/interfaces/*"), NULL);
+    iroot = apteryx_path_to_node (root, TEST_PATH"/interface/interfaces/*", NULL);
     APTERYX_LEAF (iroot, strdup("admin"), NULL);
     APTERYX_LEAF (iroot, strdup("link"), strdup("up"));
     APTERYX_LEAF (iroot, strdup("ifname"), NULL);
     rroot = apteryx_query_full (root);
 
     CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 3);
-
     if (rroot) apteryx_free_tree (rroot);
     if (root) apteryx_free_tree (root);
 
