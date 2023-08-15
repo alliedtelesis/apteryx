@@ -34,6 +34,9 @@
 #include "apteryx.h"
 #include <glib.h>
 
+/* Flag the destructor so things get tidied up when the shared library is unloaded */
+bool apteryx_shutdown_force (void) __attribute__((destructor));
+
 /* Configuration */
 bool apteryx_debug = false;                      /* Debug enabled */
 static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
