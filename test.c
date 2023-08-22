@@ -4859,6 +4859,35 @@ test_query_refreshed_multi_wildcard()
 }
 
 void
+test_query_refreshed_multi_branches()
+{
+    const char *path = TEST_PATH"/devices/*";
+    GNode *root , *node, *rroot;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    apteryx_refresh (path, refresh_state_callback);
+
+    root = g_node_new (g_strdup (TEST_PATH));
+    node = APTERYX_NODE (root, g_strdup ("cars"));
+    node = APTERYX_NODE (node, g_strdup ("*"));
+    node = APTERYX_NODE (root, g_strdup ("devices"));
+    node = APTERYX_NODE (node, g_strdup ("*"));
+    node = APTERYX_NODE (node, g_strdup ("interfaces"));
+    node = APTERYX_NODE (node, g_strdup ("*"));
+    node = APTERYX_NODE (node, g_strdup ("state"));
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    apteryx_free_tree (rroot);
+    apteryx_free_tree (root);
+    CU_ASSERT (_cb_count == 1);
+
+    apteryx_unrefresh (path, refresh_state_callback);
+    apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
+    apteryx_prune (TEST_PATH);
+}
+
+void
 test_query_refreshed_once()
 {
     const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
@@ -8101,6 +8130,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query refreshed simple", test_query_refreshed_simple},
     { "query refreshed mid wildcard", test_query_refreshed_mid_wildcard},
     { "query refreshed multi wildcard", test_query_refreshed_multi_wildcard},
+    { "query refreshed multi branches", test_query_refreshed_multi_branches},
     { "query refreshed once", test_query_refreshed_once},
     { "query not refreshed one path", test_query_not_refreshed_one_path},
     { "query not refreshed two paths", test_query_not_refreshed_two_paths},
