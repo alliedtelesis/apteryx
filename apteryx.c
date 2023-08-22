@@ -896,7 +896,7 @@ apteryx_find_child (GNode *parent, const char *name)
 
     for (node = g_node_first_child (parent); node; node = node->next)
     {
-        if (strcmp (APTERYX_NAME (node), name) == 0)
+        if (g_strcmp0 (APTERYX_NAME (node), name) == 0)
         {
             return node;
         }
