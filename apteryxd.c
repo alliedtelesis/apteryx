@@ -1894,7 +1894,7 @@ collect_provided_paths_query(GNode *query)
     return matches;
 }
 
-static gboolean _refresh_paths (GNode *node, gpointer data)
+static void _refresh_paths (GNode *node, gpointer data)
 {
     char *path = NULL;
 
@@ -1906,7 +1906,7 @@ static gboolean _refresh_paths (GNode *node, gpointer data)
         _node_to_path (node->parent, &path);
         refreshers_traverse (path, cb_all);
         free (path);
-        return FALSE;
+        return;
     }
 
     /* Handle direct matches */
@@ -1916,12 +1916,12 @@ static gboolean _refresh_paths (GNode *node, gpointer data)
         _node_to_path (node, &path);
         call_refreshers (path, false);
         free (path);
-        return FALSE;
+        return;
     }
 
     /* Traverse children */
-    g_node_traverse (node->children, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, 1, _refresh_paths, NULL);
-    return FALSE;
+    g_node_children_foreach (node, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
+    return;
 }
 
 static bool
@@ -1967,7 +1967,7 @@ handle_query (rpc_message msg)
     free (root_path);
 
     /* Traverse the tree calling refreshers */
-    g_node_traverse (query_head, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, 1, _refresh_paths, NULL);
+    g_node_children_foreach (query_head, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
 
     /* Query the database */
     root = db_query (query_head);
