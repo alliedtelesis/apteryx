@@ -459,6 +459,7 @@ apteryx_shutdown (void)
 bool
 apteryx_shutdown_force (void)
 {
+    DEBUG ("SHUTDOWN: (Forced)\n");
     while (ref_count > 0)
         apteryx_shutdown ();
     return true;

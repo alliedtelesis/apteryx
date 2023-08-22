@@ -7119,6 +7119,28 @@ test_rpc_double_bind ()
 }
 
 void
+test_rpc_fork ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    char *filename = g_strdup_printf ("/tmp/apteryx.%"PRIu64, (uint64_t) getpid ());
+
+    /* Add a watcher so that the callback socket is created */
+    CU_ASSERT (apteryx_watch (path, test_watch_callback));
+    CU_ASSERT (access(filename, F_OK) == 0);
+    if ((fork ()) == 0)
+    {
+        CU_ASSERT (apteryx_unwatch (path, test_watch_callback));
+        free (filename);
+        /* The destructor will call apteryx_shutdown_force */
+        exit (0);
+    }
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (access(filename, F_OK) == 0);
+    CU_ASSERT (apteryx_unwatch (path, test_watch_callback));
+    free (filename);
+}
+
+void
 test_rpc_perf ()
 {
     rpc_message_t msg = {};
@@ -8172,6 +8194,7 @@ CU_TestInfo tests_rpc[] = {
     { "rpc connect", test_rpc_connect },
     { "rpc ping", test_rpc_ping },
     { "rpc double bind", test_rpc_double_bind },
+    { "rpc fork", test_rpc_fork },
     { "rpc perf", test_rpc_perf },
     CU_TEST_INFO_NULL,
 };
