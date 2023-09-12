@@ -4000,6 +4000,22 @@ test_query2node_double_field_path ()
 }
 
 void
+test_query2node_double_field_merge_path ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time/seconds;time/day"));
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    GNode *parent, *child;
+    CU_ASSERT ((parent = apteryx_find_child (root, "time")) != NULL);
+    CU_ASSERT (parent && g_node_n_children (parent) == 2);
+    CU_ASSERT ((child = apteryx_find_child (parent, "seconds")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (parent, "day")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    apteryx_free_tree (root);
+}
+
+void
 test_query2node_one_path_two_nodes ()
 {
     GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
@@ -4031,6 +4047,26 @@ test_query2node_two_path_two_nodes ()
     CU_ASSERT (child && g_node_n_children (child) == 0);
     CU_ASSERT ((parent = apteryx_find_child (root, "date")) != NULL);
     CU_ASSERT (parent && g_node_n_children (parent) == 2);
+    CU_ASSERT ((child = apteryx_find_child (parent, "month")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (parent, "day")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_two_path_merge_two_nodes ()
+{
+    GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
+    CU_ASSERT (apteryx_query_to_node (root, "time(minutes;seconds);time(month;day)"));
+    CU_ASSERT (root && g_node_n_children (root) == 1);
+    GNode *parent, *child;
+    CU_ASSERT ((parent = apteryx_find_child (root, "time")) != NULL);
+    CU_ASSERT (parent && g_node_n_children (parent) == 4);
+    CU_ASSERT ((child = apteryx_find_child (parent, "seconds")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
+    CU_ASSERT ((child = apteryx_find_child (parent, "minutes")) != NULL);
+    CU_ASSERT (child && g_node_n_children (child) == 0);
     CU_ASSERT ((child = apteryx_find_child (parent, "month")) != NULL);
     CU_ASSERT (child && g_node_n_children (child) == 0);
     CU_ASSERT ((child = apteryx_find_child (parent, "day")) != NULL);
@@ -8231,8 +8267,10 @@ static CU_TestInfo tests_api_tree[] = {
     { "query2node double field", test_query2node_double_field },
     { "query2node single field path", test_query2node_single_field_path },
     { "query2node double field path", test_query2node_double_field_path },
+    { "query2node double field merge path", test_query2node_double_field_merge_path },
     { "query2node one path two nodes", test_query2node_one_path_two_nodes },
     { "query2node two paths two nodes", test_query2node_two_path_two_nodes },
+    { "query2node two paths merge two nodes", test_query2node_two_path_merge_two_nodes },
     { "query2node deep nodes", test_query2node_deep_nodes },
     { "query2node deep paths", test_query2node_deep_paths },
     { "query empty", test_query_empty },
