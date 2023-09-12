@@ -66,6 +66,18 @@ assert_apteryx_empty (void)
     return true;
 }
 
+static char *
+dump_apteryx_tree (GNode *root)
+{
+    char *buffer = NULL;
+    size_t size;
+    FILE *stream = open_memstream (&buffer, &size);
+    apteryx_print_tree(root, stream);
+    fflush (stream);
+    fclose (stream);
+    return buffer;
+}
+
 void
 test_init ()
 {
@@ -4027,6 +4039,58 @@ test_query2node_two_path_two_nodes ()
 }
 
 void
+test_query2node_deep_nodes ()
+{
+    char *expect = "test\n"
+                   "  h\n"
+                   "    a\n"
+                   "      t\n"
+                   "    b\n"
+                   "      d\n"
+                   "        t\n"
+                   "      e\n"
+                   "        t\n"
+                   "    c\n"
+                   "      t\n";
+    GNode *root = g_node_new (g_strdup (TEST_PATH));
+    CU_ASSERT (apteryx_query_to_node (root, "h(a;b(d;e);c)t"));
+    char *buffer = dump_apteryx_tree (root);
+    CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
+    free (buffer);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_deep_paths ()
+{
+    char *expect = "test\n"
+                   "  h\n"
+                   "    a\n"
+                   "      j\n"
+                   "        t\n"
+                   "    b\n"
+                   "      d\n"
+                   "        e\n"
+                   "          g\n"
+                   "            j\n"
+                   "              t\n"
+                   "        f\n"
+                   "          h\n"
+                   "            j\n"
+                   "              t\n"
+                   "    c\n"
+                   "      i\n"
+                   "        j\n"
+                   "          t\n";
+    GNode *root = g_node_new (g_strdup (TEST_PATH));
+    CU_ASSERT (apteryx_query_to_node (root, "h(a;b/d(e/g;f/h);c/i)j/t"));
+    char *buffer = dump_apteryx_tree (root);
+    CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
+    free (buffer);
+    apteryx_free_tree (root);
+}
+
+void
 test_query_empty ()
 {
     GNode *query = g_node_new ("/");
@@ -5455,6 +5519,7 @@ test_find_one_star ()
 
     GList *paths = apteryx_find (TEST_PATH"/routing/ipv4/rib/*/ifname", "eth0");
     CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_strcmp0 ((char *)paths->data, TEST_PATH"/routing/ipv4/rib/1") == 0);
     g_list_free_full (paths, free);
 
     apteryx_prune (TEST_PATH);
@@ -5496,6 +5561,9 @@ test_find_two_star ()
 
     GList *paths = apteryx_find (TEST_PATH"/routing/*/rib/*/ifname", "eth1");
     CU_ASSERT (g_list_length (paths) == 2);
+    paths = g_list_sort (paths, (GCompareFunc) strcasecmp);
+    CU_ASSERT (g_strcmp0 ((char *)paths->data, TEST_PATH"/routing/ipv4/rib/2") == 0);
+    CU_ASSERT (g_strcmp0 ((char *)paths->next->data, TEST_PATH"/routing/ipv6/rib/2") == 0);
     g_list_free_full (paths, free);
 
     apteryx_prune(TEST_PATH);
@@ -7476,6 +7544,43 @@ test_lua_basic_search (void)
 }
 
 void
+test_lua_basic_1_star_find (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "apteryx.set('"TEST_PATH"/list/eth0/name', 'eth0')            \n"
+        "apteryx.set('"TEST_PATH"/list/eth1/name', 'eth1')            \n"
+        "apteryx.set('"TEST_PATH"/list/eth2/name', 'eth2')            \n"
+        "paths = apteryx.find('"TEST_PATH"/list/*/name', 'eth1')      \n"
+        "assert(#paths == 1)                                          \n"
+        "assert(paths[1] == '"TEST_PATH"/list/eth1')                  \n"
+        "apteryx.set('"TEST_PATH"/list/eth0/name')                    \n"
+        "apteryx.set('"TEST_PATH"/list/eth1/name')                    \n"
+        "apteryx.set('"TEST_PATH"/list/eth2/name')                    \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_2_star_find (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "apteryx.set('"TEST_PATH"/list/vlan1/ports/1/name', '1')      \n"
+        "apteryx.set('"TEST_PATH"/list/vlan1/ports/2/name', '2')      \n"
+        "apteryx.set('"TEST_PATH"/list/vlan2/ports/1/name', '1')      \n"
+        "paths = apteryx.find('"TEST_PATH"/list/*/ports/*/name', '1') \n"
+        "assert(#paths == 2)                                          \n"
+        "assert(paths[1] == '"TEST_PATH"/list/vlan1/ports/1')         \n"
+        "assert(paths[2] == '"TEST_PATH"/list/vlan2/ports/1')         \n"
+        "apteryx.set('"TEST_PATH"/list/vlan1/ports/1/name')           \n"
+        "apteryx.set('"TEST_PATH"/list/vlan1/ports/2/name')           \n"
+        "apteryx.set('"TEST_PATH"/list/vlan2/ports/1/name')           \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_lua_basic_prune (void)
 {
     CU_ASSERT (_run_lua (
@@ -7506,7 +7611,7 @@ test_lua_basic_set_tree_get_tree (void)
 }
 
 void
-test_lua_basic_query (void)
+test_lua_basic_table_query (void)
 {
     CU_ASSERT (_run_lua (
         "apteryx = require('apteryx')                                 \n"
@@ -7514,6 +7619,25 @@ test_lua_basic_query (void)
         "apteryx.set_tree('"TEST_PATH"/t', t);                        \n"
         "t1={test={t={a={}, b={a={}, b={}}, c={}}}}                   \n"
         "t2 = apteryx.query(t1)                                       \n"
+        "assert (t2 and t2.test.t.a and t2.test.t.b.a                   "
+        "    and t2.test.t.b.b)                                       \n"
+        "assert (#t2 == #t1 and #t2.test.t.b == #t1.test.t.b)         \n"
+        "assert (t2.test.t.a == t.a and t2.test.t.b.a == t.b.a          "
+        "    and t2.test.t.b.b == t.b.b and t2.test.t.c == t.c)       \n"
+        "apteryx.prune('"TEST_PATH"/t')                               \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_basic_string_query (void)
+{
+    CU_ASSERT (_run_lua (
+        "apteryx = require('apteryx')                                 \n"
+        "t={a='a', b={a='ba', b='bb'}, c = 'c'}                       \n"
+        "apteryx.set_tree('"TEST_PATH"/t', t);                        \n"
+        "t1={test={t={a={}, b={a={}, b={}}, c={}}}}                   \n"
+        "t2 = apteryx.query('test/t(a;b(a;b);c)')                     \n"
         "assert (t2 and t2.test.t.a and t2.test.t.b.a                   "
         "    and t2.test.t.b.b)                                       \n"
         "assert (#t2 == #t1 and #t2.test.t.b == #t1.test.t.b)         \n"
@@ -8109,6 +8233,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "query2node double field path", test_query2node_double_field_path },
     { "query2node one path two nodes", test_query2node_one_path_two_nodes },
     { "query2node two paths two nodes", test_query2node_two_path_two_nodes },
+    { "query2node deep nodes", test_query2node_deep_nodes },
+    { "query2node deep paths", test_query2node_deep_paths },
     { "query empty", test_query_empty },
     { "query basic", test_query_basic},
     { "query subtree root", test_query_subtree_root},
@@ -8234,9 +8360,12 @@ CU_TestInfo tests_lua[] = {
     { "lua load module",test_lua_load },
     { "lua basic set get", test_lua_basic_set_get },
     { "lua basic search", test_lua_basic_search },
+    { "lua basic 1 star find", test_lua_basic_1_star_find },
+    { "lua basic 2 star find", test_lua_basic_2_star_find },
     { "lua basic prune", test_lua_basic_prune },
     { "lua basic set_tree get_tree", test_lua_basic_set_tree_get_tree},
-    { "lua basic query", test_lua_basic_query},
+    { "lua basic table query", test_lua_basic_table_query},
+    { "lua basic string query", test_lua_basic_string_query},
     { "lua basic timestamp", test_lua_basic_timestamp },
     { "lua basic watch", test_lua_basic_watch },
     { "lua multiple watchers", test_lua_multiple_watchers },
