@@ -280,6 +280,31 @@ lua_apteryx_search (lua_State *L)
 }
 
 static int
+lua_apteryx_find (lua_State *L)
+{
+    GList *paths;
+    int num;
+    if (lua_gettop (L) != 2 || !lua_isstring (L, 1) || !lua_isstring (L, 2))
+    {
+        luaL_error (L, "Invalid arguments: requires path and value");
+        return 0;
+    }
+    paths = apteryx_find (lua_tostring (L, 1), lua_tostring (L, 2));
+    num = g_list_length (paths);
+    GList *_iter = paths;
+    lua_createtable (L, num, 0);
+    for (int i = 1; i <= num; i++)
+    {
+        const char *path = (char *) _iter->data;
+        lua_pushstring (L, path);
+        lua_rawseti (L, -2, i);
+        _iter = _iter->next;
+    }
+    g_list_free_full (paths, free);
+    return 1;
+}
+
+static int
 lua_apteryx_prune (lua_State *L)
 {
     if (lua_gettop (L) != 1 || !lua_isstring (L, 1))
@@ -339,13 +364,28 @@ lua_apteryx_query (lua_State *L)
     GNode *root = NULL;
     GNode *out_root = NULL;
 
-    if (lua_gettop (L) != 1 || !lua_istable (L, 1))
+    if (lua_gettop (L) != 1 || (!lua_istable (L, 1) && !lua_isstring (L, 1)))
     {
-        luaL_error (L, "Invalid arguments: requires table");
+        luaL_error (L, "Invalid arguments: requires table or query string");
         return 0;
     }
 
-    root = lua_apteryx_dict2tree_paths (L);
+    if (lua_istable (L, 1))
+    {
+        root = lua_apteryx_dict2tree_paths (L);
+    }
+    else
+    {
+        root = g_node_new (g_strdup ("/"));
+        if (!apteryx_query_to_node (root, lua_tostring (L, 1)))
+        {
+            free ((void *)root->data);
+            g_node_destroy (root);
+            luaL_error (L, "Invalid arguments: query format invalid");
+            return 0;
+        }
+    }
+
     if (root)
     {
         out_root = apteryx_query (root);
@@ -838,6 +878,7 @@ luaopen_libapteryx (lua_State *L)
         { "set", lua_apteryx_set },
         { "get", lua_apteryx_get },
         { "search", lua_apteryx_search },
+        { "find", lua_apteryx_find},
         { "prune", lua_apteryx_prune },
         { "get_tree", lua_apteryx_get_tree },
         { "set_tree", lua_apteryx_set_tree },
