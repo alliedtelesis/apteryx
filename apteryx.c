@@ -1309,7 +1309,11 @@ q2n_append_path (GNode *root, const char *path)
     char **node = nodes;
     while (*node)
     {
-        root = g_node_append_data (root, g_strdup (*node));
+        GNode *existing = apteryx_find_child (root, *node);
+        if (existing)
+            root = existing;
+        else
+            root = g_node_append_data (root, g_strdup (*node));
         node++;
     }
     g_strfreev (nodes);
@@ -1330,7 +1334,7 @@ _apteryx_query_to_node (GNode *root, const char *query, const char *tail)
         char *right = g_strrstr_len (query, -1, ")");
         if (left == NULL && right == NULL)
         {
-            rroot = q2n_append_path (root, query);
+            rroot = q2n_append_path (rroot, query);
             if (tail)
                 rroot = q2n_append_path (rroot, tail);
             continue;
