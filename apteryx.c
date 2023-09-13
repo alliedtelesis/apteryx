@@ -1096,8 +1096,8 @@ _apteryx_print_tree (GNode *node, FILE *fp, int depth)
     if (node)
     {
         const char *name = APTERYX_NAME (node);
-        if (depth == 0 && name[0] == '/')
-            fprintf (fp, "%s\n", name + 1);
+        if (depth == 0)
+            fprintf (fp, "%s\n", name);
         else
             fprintf (fp, "%*s%s\n", depth * 2, " ", name);
         for (GNode *child = node->children; child; child = child->next)
@@ -1307,6 +1307,8 @@ q2n_append_path (GNode *root, const char *path)
 {
     char **nodes = g_strsplit (path, "/", -1);
     char **node = nodes;
+    if (*node && (*node)[0] == '\0')
+        node++;
     while (*node)
     {
         GNode *existing = apteryx_find_child (root, *node);

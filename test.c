@@ -3941,6 +3941,38 @@ test_query2node_invalid ()
 }
 
 void
+test_query2node_empty_root_no_slash ()
+{
+    char *expect = "/\n"
+                   "  test\n"
+                   "    system\n"
+                   "      time\n";
+    GNode *root = g_node_new (g_strdup ("/"));
+    CU_ASSERT (apteryx_query_to_node (root, "test/system/time"));
+    char *buffer = dump_apteryx_tree (root);
+    CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
+    free (buffer);
+    apteryx_free_tree (root);
+}
+
+void
+test_query2node_empty_root_slash ()
+{
+    char *expect = "/\n"
+                   "  test\n"
+                   "    system\n"
+                   "      time\n";
+    GNode *root = g_node_new (g_strdup ("/"));
+    CU_ASSERT (apteryx_query_to_node (root, "/test/system/time"));
+    char *buffer = dump_apteryx_tree (root);
+    printf("\nE:\n%s", expect);
+    printf("\nB:\n%s", buffer);
+    CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
+    free (buffer);
+    apteryx_free_tree (root);
+}
+
+void
 test_query2node_single_field ()
 {
     GNode *root = g_node_new (g_strdup (TEST_PATH"/system"));
@@ -4077,7 +4109,7 @@ test_query2node_two_path_merge_two_nodes ()
 void
 test_query2node_deep_nodes ()
 {
-    char *expect = "test\n"
+    char *expect = "/test\n"
                    "  h\n"
                    "    a\n"
                    "      t\n"
@@ -4099,7 +4131,7 @@ test_query2node_deep_nodes ()
 void
 test_query2node_deep_paths ()
 {
-    char *expect = "test\n"
+    char *expect = "/test\n"
                    "  h\n"
                    "    a\n"
                    "      j\n"
@@ -8263,6 +8295,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "get tree provider writes", test_get_tree_provider_write },
     { "get tree thrashing" , test_get_tree_while_thrashing },
     { "query2node invalid" , test_query2node_invalid },
+    { "query2node empty root no slash", test_query2node_empty_root_no_slash },
+    { "query2node empty root slash", test_query2node_empty_root_slash },
     { "query2node single field", test_query2node_single_field },
     { "query2node double field", test_query2node_double_field },
     { "query2node single field path", test_query2node_single_field_path },
