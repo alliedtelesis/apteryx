@@ -78,17 +78,24 @@ apteryxd = \
 	rm -f /tmp/apteryxd.run; \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(BUILDDIR)/ $(BUILDDIR)/apteryxd -b -p /tmp/apteryxd.pid -r /tmp/apteryxd.run && sleep 0.1; \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(BUILDDIR)/ $(TEST_WRAPPER) $(BUILDDIR)/$(1); \
-	kill -TERM `cat /tmp/apteryxd.pid`;
+	kill -TERM `cat /tmp/apteryxd.pid`; \
+	wait
 
 ifeq (test,$(firstword $(MAKECMDGOALS)))
 TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 $(eval $(TEST_ARGS):;@:)
 endif
 
+test: EXTRA_CFLAGS += -fprofile-arcs -ftest-coverage
+test: EXTRA_LDFLAGS += -fprofile-arcs -ftest-coverage
 test: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
 	@echo "Running apteryx unit test: $<"
 	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
 	@echo "Tests have been run!"
+	@echo "Processing gcov output"
+	@lcov -q --capture --directory . --output-file .test/coverage.info
+	@genhtml -q .test/coverage.info --output-directory .test/gcov
+	@echo "GCOV: google-chrome " $(PWD)"/.test/gcov/index.html"
 
 install: all
 	@install -d $(DESTDIR)/$(PREFIX)/$(LIBDIR)
