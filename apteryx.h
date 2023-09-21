@@ -76,6 +76,13 @@
 #define APTERYX_COUNTERS                         "/apteryx/counters"
 #define APTERYX_STATISTICS                       "/apteryx/statistics"
 
+typedef enum {
+    FLAG_SET_NONE = 0,
+    FLAG_SET_WATCH = 1,
+    FLAG_SET_ACK = 2,
+    FLAG_SET_WATCH_NOT_SELF = 4,
+} set_flags;
+
 /** Initialise this instance of the Apteryx library.
  * @param debug verbose debug to stdout
  * @return true on success
@@ -172,6 +179,17 @@ bool apteryx_set_full (const char *path, const char *value, uint64_t ts,
 bool apteryx_set_tree_full (GNode *root, uint64_t ts, bool wait_for_completion);
 
 /**
+ * Set a tree of multiple values in Apteryx, with full options
+ * @param root pointer to the N-ary tree of nodes.
+ * @param ts monotonic timestamp to be compared to the paths last change time
+ * @param id is the pid of the process to not send a watch callback to
+ * @param flags allow the control of acking and watch callbacks
+ * @return true on a successful set
+ * @return false if the path is invalid
+ */
+bool apteryx_set_tree_with_flags (GNode* root, uint64_t ts, uint64_t id, set_flags flags);
+
+/**
  * Set a path/value in Apteryx
  * @param path path to the value to set
  * @param value value to set at the specified path
@@ -193,6 +211,13 @@ bool apteryx_set_tree_full (GNode *root, uint64_t ts, bool wait_for_completion);
 bool apteryx_set_string (const char *path, const char *key, const char *value);
 /** Helper to store a simple int at an extended path */
 bool apteryx_set_int (const char *path, const char *key, int32_t value);
+
+/** Helper to extend the path with the specified key */
+bool apteryx_set_string_with_flags (const char *path, const char *key, const char *value,
+                                    uint64_t id, set_flags flags);
+/** Helper to store a simple int at an extended path */
+bool apteryx_set_int_with_flags (const char *path, const char *key, int32_t value,
+                                 uint64_t id, set_flags flags);
 
 /**
  * Get a path/value from Apteryx

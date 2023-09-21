@@ -602,8 +602,8 @@ apteryx_dump (const char *path, FILE *fp)
     return true;
 }
 
-bool
-apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
+static bool
+_apteryx_set_full (const char *path, const char *value, uint64_t ts, uint64_t id, set_flags flags)
 {
     char *url = NULL;
     rpc_client rpc_client;
@@ -633,8 +633,10 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
         free (url);
         return false;
     }
-    rpc_msg_encode_uint8 (&msg, ack ? MODE_SET_WITH_ACK : MODE_SET);
+    rpc_msg_encode_uint8 (&msg, MODE_SET);
+    rpc_msg_encode_uint8 (&msg, (flags & 0xff));
     rpc_msg_encode_uint64 (&msg, ts);
+    rpc_msg_encode_uint64 (&msg, id);
     rpc_msg_encode_uint8 (&msg, rpc_value);
     rpc_msg_encode_string (&msg, path);
     if (value)
@@ -664,7 +666,17 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
 }
 
 bool
-apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
+apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
+{
+    set_flags flags = FLAG_SET_WATCH;
+    if (ack)
+        flags |= FLAG_SET_ACK;
+    return _apteryx_set_full (path, value, ts, getpid (), flags);
+}
+
+static bool
+_apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts,
+                     uint64_t id, set_flags flags)
 {
     char *full_path;
     size_t len;
@@ -677,20 +689,34 @@ apteryx_cas_string (const char *path, const char *key, const char *value, uint64
         len = asprintf (&full_path, "%s", path);
     if (len)
     {
-        res = apteryx_cas (full_path, value, ts);
+        res = _apteryx_set_full (full_path, value, ts, id, flags);
         free (full_path);
     }
     return res;
 }
 
 bool
-apteryx_set_string (const char *path, const char *key, const char *value)
+apteryx_cas_string (const char *path, const char *key, const char *value, uint64_t ts)
 {
-    return apteryx_cas_string (path, key, value, UINT64_MAX);
+    return _apteryx_cas_string (path, key, value, ts, getpid (), FLAG_SET_WATCH);
 }
 
 bool
-apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
+apteryx_set_string (const char *path, const char *key, const char *value)
+{
+    return _apteryx_cas_string (path, key, value, UINT64_MAX, getpid (), FLAG_SET_WATCH);
+}
+
+bool
+apteryx_set_string_with_flags (const char *path, const char *key, const char *value,
+                               uint64_t id, set_flags flags)
+{
+    return _apteryx_cas_string (path, key, value, UINT64_MAX, id, flags);
+}
+
+static bool
+_apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts,
+                  uint64_t id, set_flags flags)
 {
     char *full_path;
     size_t len;
@@ -708,7 +734,7 @@ apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
         len = asprintf ((char **) &v, "%d", value);
         if (len)
         {
-            res = apteryx_cas (full_path, v, ts);
+            res = _apteryx_set_full (full_path, v, ts, id, flags);
             free ((void *) v);
         }
         free (full_path);
@@ -717,9 +743,22 @@ apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
 }
 
 bool
+apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t ts)
+{
+    return _apteryx_cas_int (path, key, value, ts, getpid (), FLAG_SET_WATCH);
+}
+
+bool
 apteryx_set_int (const char *path, const char *key, int32_t value)
 {
-    return apteryx_cas_int (path, key, value, UINT64_MAX);
+    return _apteryx_cas_int (path, key, value, UINT64_MAX, getpid (), FLAG_SET_WATCH);
+}
+
+bool
+apteryx_set_int_with_flags (const char *path, const char *key, int32_t value,
+                            uint64_t id, set_flags flags)
+{
+    return _apteryx_cas_int (path, key, value, UINT64_MAX, id, flags);
 }
 
 char *
@@ -1129,8 +1168,8 @@ _set_multi (GNode *node, gpointer data)
     return FALSE;
 }
 
-bool
-apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
+static bool
+_apteryx_set_tree_full (GNode* root, uint64_t ts, uint64_t id, set_flags flags)
 {
     const char *path = NULL;
     char *old_root_name = NULL;
@@ -1175,8 +1214,10 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     root->data = (char*) path;
 
     /* Create the list of Paths/Value's */
-    rpc_msg_encode_uint8 (&msg, wait_for_completion ? MODE_SET_WITH_ACK : MODE_SET);
+    rpc_msg_encode_uint8 (&msg, MODE_SET);
+    rpc_msg_encode_uint8 (&msg, (flags & 0xff));
     rpc_msg_encode_uint64 (&msg, ts);
+    rpc_msg_encode_uint64 (&msg, id);
     rpc_msg_encode_tree (&msg, root);
     if (!rpc_msg_send (rpc_client, &msg))
     {
@@ -1202,6 +1243,22 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
 
     /* Return result */
     return result == 0;
+}
+
+bool
+apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
+{
+    set_flags flags = FLAG_SET_WATCH;
+    if (wait_for_completion)
+        flags |= FLAG_SET_ACK;
+
+    return (_apteryx_set_tree_full (root, ts, getpid (), flags));
+}
+
+bool
+apteryx_set_tree_with_flags (GNode* root, uint64_t ts, uint64_t id, set_flags flags)
+{
+    return (_apteryx_set_tree_full (root, ts, id, flags));
 }
 
 GNode*

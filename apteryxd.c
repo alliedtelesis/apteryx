@@ -365,7 +365,7 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
 }
 
 static void
-notify_watchers (GList *paths, GList *values, bool ack)
+notify_watchers (GList *paths, GList *values, bool ack, bool watch_self, uint64_t id)
 {
     GList *common_watchers = NULL;
     GList *used_watchers = NULL;
@@ -386,7 +386,7 @@ notify_watchers (GList *paths, GList *values, bool ack)
             {
                 cb_info_t *watcher = iter->data;
 
-                if (watcher->id != getpid ())
+                if (watcher->id != getpid () && (watcher->id != id || watch_self))
                 {
                     send_watch_notification (watcher, paths, values, ack);
                     /* Remember so we dont use this one again */
@@ -427,7 +427,8 @@ notify_watchers (GList *paths, GList *values, bool ack)
                 }
                 GList *watch_paths = g_list_append(NULL, (void *) path);
                 GList *watch_values = g_list_append(NULL, (void *) value);
-                send_watch_notification (watcher, watch_paths, watch_values, ack);
+                if (watcher->id != id || watch_self)
+                    send_watch_notification (watcher, watch_paths, watch_values, ack);
                 g_list_free (watch_paths);
                 g_list_free (watch_values);
             }
@@ -720,7 +721,9 @@ proxy_set (const char *path, const char *value, uint64_t ts)
 
     /* Do remote set */
     rpc_msg_encode_uint8 (&msg, MODE_SET);
+    rpc_msg_encode_uint8 (&msg, FLAG_SET_WATCH);
     rpc_msg_encode_uint64 (&msg, ts);
+    rpc_msg_encode_uint64 (&msg, 0);
     rpc_msg_encode_uint8 (&msg, rpc_value);
     rpc_msg_encode_string (&msg, path);
     if (value)
@@ -1131,10 +1134,11 @@ exit:
 }
 
 static bool
-handle_set (rpc_message msg, bool ack)
+handle_set (rpc_message msg)
 {
     int result = 0;
     uint64_t ts = 0;
+    uint64_t id = 0;
     GList *ipath;
     const char *path;
     GList *ivalue;
@@ -1145,10 +1149,16 @@ handle_set (rpc_message msg, bool ack)
     int validation_result = 0;
     int validation_lock = 0;
     bool db_result = false;
+    set_flags flags;
+    bool ack;
+    bool watch;
+    bool watch_self;
     key_value_lists lists = { NULL, NULL };
 
     /* Parse the parameters */
+    flags = rpc_msg_decode_uint8 (msg);
     ts = rpc_msg_decode_uint64 (msg);
+    id = rpc_msg_decode_uint64 (msg);
     root = rpc_msg_decode_tree (msg);
 
     if (!root)
@@ -1160,6 +1170,11 @@ handle_set (rpc_message msg, bool ack)
         DEBUG ("SET:\n");
         apteryx_print_tree (root, stdout);
     }
+
+    /* Parse our input flags */
+    ack = (flags & FLAG_SET_ACK) != 0;
+    watch = (flags & FLAG_SET_WATCH) != 0;
+    watch_self = (flags & FLAG_SET_WATCH_NOT_SELF) == 0;
 
     /* Figure out if we need the lists for checking callbacks */
     _node_to_path(root, &root_path);
@@ -1197,7 +1212,8 @@ handle_set (rpc_message msg, bool ack)
                 GList *wpaths = g_list_append (NULL, (gpointer) path);
                 GList *wvalues = g_list_append (NULL, (gpointer) value);
                 GList *next;
-                notify_watchers (wpaths, wvalues, ack);
+                if (watch)
+                    notify_watchers (wpaths, wvalues, ack, watch_self, id);
                 g_list_free (wpaths);
                 g_list_free (wvalues);
 
@@ -1264,9 +1280,9 @@ exit:
     if (validation_result >= 0 && result == 0)
     {
         /* Notify watchers, if any are present */
-        if (config_tree_has_watchers (root_path))
+        if (watch && config_tree_has_watchers (root_path))
         {
-            notify_watchers (lists.paths, lists.values, ack);
+            notify_watchers (lists.paths, lists.values, ack, watch_self, id);
         }
     }
 
@@ -2116,7 +2132,7 @@ handle_prune (rpc_message msg)
     if (validation_result >= 0)
     {
         /* Call watchers for each pruned path */
-        notify_watchers (paths, NULL, false);
+        notify_watchers (paths, NULL, false, true, 0);
     }
 
     /* Release validation lock - this is a sensitive value */
@@ -2206,10 +2222,8 @@ msg_handler (rpc_message msg)
     APTERYX_MODE mode = rpc_msg_decode_uint8 (msg);
     switch (mode)
     {
-    case MODE_SET_WITH_ACK:
-        return handle_set (msg, true);
     case MODE_SET:
-        return handle_set (msg, false);
+        return handle_set (msg);
     case MODE_GET:
         return handle_get (msg);
     case MODE_QUERY:
