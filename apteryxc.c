@@ -26,9 +26,6 @@
 #include "internal.h"
 #include "apteryx.h"
 
-/* Debug enabled */
-bool apteryx_debug = false;
-
 /* Run while true */
 static bool running = true;
 
