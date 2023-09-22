@@ -48,7 +48,7 @@ endif
 all: $(BUILDDIR)/libapteryx.so $(BUILDDIR)/apteryx $(BUILDDIR)/apteryxd
 
 $(BUILDDIR):
-	mkdir -p $@
+	@mkdir -p $@
 
 $(BUILDDIR)/libapteryx.so.$(ABI_VERSION): $(BUILDDIR)/rpc.o $(BUILDDIR)/rpc_transport.o $(BUILDDIR)/rpc_socket.o $(BUILDDIR)/apteryx.o $(BUILDDIR)/lua.o
 	@echo "Creating library "$@""
@@ -76,8 +76,11 @@ apteryxd = \
 	fi; \
 	rm -f /tmp/apteryxd.pid; \
 	rm -f /tmp/apteryxd.run; \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(BUILDDIR)/ $(BUILDDIR)/apteryxd -b -p /tmp/apteryxd.pid -r /tmp/apteryxd.run && sleep 0.1; \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(BUILDDIR)/ $(TEST_WRAPPER) $(BUILDDIR)/$(1); \
+	export ASAN_OPTIONS=halt_on_error=0:verbosity=0:print_legend=0:symbolize=1:detect_stack_use_after_return=1; \
+	export LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(BUILDDIR)/; \
+	export LUA_CPATH=$(BUILDDIR)/?.so; \
+	$(BUILDDIR)/apteryxd -b -p /tmp/apteryxd.pid -r /tmp/apteryxd.run && sleep 0.1; \
+	$(TEST_WRAPPER) $(BUILDDIR)/$(1); \
 	kill -TERM `cat /tmp/apteryxd.pid`; \
 	wait
 
@@ -86,8 +89,8 @@ TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 $(eval $(TEST_ARGS):;@:)
 endif
 
-test: EXTRA_CFLAGS += -fprofile-arcs -ftest-coverage
-test: EXTRA_LDFLAGS += -fprofile-arcs -ftest-coverage
+test: EXTRA_CFLAGS += -fprofile-arcs -ftest-coverage -fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer
+test: EXTRA_LDFLAGS += -fprofile-arcs -ftest-coverage -fsanitize=address -static-libasan
 test: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
 	@echo "Running apteryx unit test: $<"
 	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
