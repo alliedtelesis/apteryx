@@ -8583,7 +8583,16 @@ run_unit_tests (const char *filter)
         CU_TestInfo *test = &suite->pTests[0];
         while (test && test->pName)
         {
-            if (all || (filter && strstr (test->pName, filter) != NULL))
+            if (
+#ifdef __SANITIZE_ADDRESS__
+                /* Do not run performance or fork tests if using the address sanitizer */
+                (all && !filter && !strstr (test->pName, "perf") &&
+                 !strstr (test->pName, "fork") && !strstr (test->pName, "deadlock")) ||
+#else
+                all ||
+#endif
+                (filter && strstr (test->pName, filter))
+                )
             {
                 if (CU_add_test(pSuite, test->pName, test->pTestFunc) == NULL)
                 {
