@@ -84,15 +84,23 @@ apteryxd = \
 	kill -TERM `cat /tmp/apteryxd.pid`; \
 	wait
 
+ifeq (uinttest,$(firstword $(MAKECMDGOALS)))
+TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+$(eval $(TEST_ARGS):;@:)
+endif
+unittest: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
+	@echo "Running apteryx unit test: $<"
+	$(Q)$(call apteryxd,apteryx -u"$(TEST_ARGS)")
+	@echo "Tests have been run!"
+
 ifeq (test,$(firstword $(MAKECMDGOALS)))
 TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 $(eval $(TEST_ARGS):;@:)
 endif
-
 test: EXTRA_CFLAGS += -fprofile-arcs -ftest-coverage -fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer
 test: EXTRA_LDFLAGS += -fprofile-arcs -ftest-coverage -fsanitize=address -static-libasan
 test: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
-	@echo "Running apteryx unit test: $<"
+	@echo "Running apteryx unit tests with gcov and address sanitizer: $<"
 	@rm -f $(BUILDDIR)/asan-log.*
 	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
 	@echo "Tests have been run!"
