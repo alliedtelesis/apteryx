@@ -26,7 +26,6 @@
 struct rpc_instance_s {
     /* Protect the instance */
     pthread_mutex_t lock;
-    int pid;
 
     /* General settings */
     int timeout;
@@ -224,7 +223,6 @@ rpc_init (int timeout, rpc_msg_handler handler)
 
     /* Create a new RPC instance */
     pthread_mutex_init (&rpc->lock, NULL);
-    rpc->pid = getpid ();
     pthread_sigmask (SIG_SETMASK, NULL, &rpc->worker_sigmask);
     rpc->timeout = timeout;
     rpc->gc_time = get_time_us ();
@@ -266,13 +264,6 @@ rpc_shutdown (rpc_instance rpc)
     int i;
 
     assert (rpc);
-
-    /* Check this instance belongs to us */
-    if (rpc->pid != getpid())
-    {
-        ERROR ("RPC: Attempt to shutdown instance (%p) that belongs to pid %d\n", rpc, rpc->pid);
-        return;
-    }
 
     DEBUG ("RPC: Shutdown Instance (%p)\n", rpc);
 

@@ -150,6 +150,20 @@ rpc_server_parent_get (rpc_server s)
     return s->parent;
 }
 
+static bool
+socket_is_active(socket_info sock)
+{
+    bool active = false;
+    int sockfd = socket (sock->family, SOCK_STREAM, 0);
+    if (sockfd >= 0) {
+        if (connect (sockfd, (struct sockaddr *) &sock->address, sock->address_len) == 0) {
+            active = true;
+        }
+        close (sockfd);
+    }
+    return active;
+}
+
 bool
 rpc_server_die (rpc_server s)
 {
@@ -166,7 +180,7 @@ rpc_server_die (rpc_server s)
     }
     g_list_free (s->clients);
     pthread_mutex_unlock (&s->lock);
-    if (s->sockinfo->family == AF_UNIX)
+    if (s->sockinfo->family == AF_UNIX && !socket_is_active (s->sockinfo))
     {
         unlink (s->sockinfo->address.addr_un.sun_path);
     }
