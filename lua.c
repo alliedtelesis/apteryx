@@ -49,6 +49,67 @@
 
 static lua_State *g_L = NULL;
 
+typedef enum {
+    LUA_CALLBACK_WATCH,
+    LUA_CALLBACK_REFRESH,
+    LUA_CALLBACK_PROVIDE,
+    LUA_CALLBACK_INDEX,
+    LUA_CALLBACK_VALIDATE,
+} lua_callback_type;
+
+typedef struct lua_callback_info {
+    lua_State *instance;
+    int ref;
+    lua_callback_type type;
+    char *path;
+} lua_callback_info;
+
+static GList *callbacks = NULL;
+static GHashTable *locks = NULL;
+static pthread_rwlock_t lock_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+int luaopen_apteryx (lua_State *L);
+static bool lua_apteryx_register_lock (lua_State *L);
+static void lua_apteryx_unregister_lock (lua_State *L);
+bool lua_apteryx_instance_lock (lua_State *L);
+void lua_apteryx_instance_unlock (lua_State *L);
+
+static lua_callback_info *
+remove_callback_info (lua_State *L, size_t ref, lua_callback_type type)
+{
+    GList *iter;
+    for (iter = callbacks; iter; iter = iter->next)
+    {
+        lua_callback_info *cb_info = iter->data;
+        if (cb_info->instance == L && cb_info->ref == ref && cb_info->type == type)
+        {
+            callbacks = g_list_delete_link (callbacks, iter);
+            return cb_info;
+        }
+    }
+    return NULL;
+}
+
+static void
+destroy_cb_info(lua_callback_info *cb_info)
+{
+    g_free(cb_info->path);
+    g_free(cb_info);
+}
+
+static lua_callback_info *
+new_lua_callback(lua_State *L, lua_callback_type type, const char *path, size_t ref)
+{
+    lua_callback_info *cb_info = g_malloc0 (sizeof (lua_callback_info));
+    cb_info->instance = L;
+    cb_info->ref = ref;
+    cb_info->type = type;
+    cb_info->path = g_strdup (path);
+
+    callbacks = g_list_prepend (callbacks, cb_info);
+    return cb_info;
+}
+
 static void
 lua_apteryx_error (lua_State *ls, int res)
 {
@@ -472,40 +533,50 @@ push_callback (lua_State* L, size_t ref)
 }
 
 static GList*
-lua_do_index (const char *path, size_t ref)
+lua_do_index (const char *path, lua_callback_info *cb_info)
 {
     int res = 0;
-    lua_State* L = g_L;
+    lua_State* L = cb_info->instance;
+    size_t ref = cb_info->ref;
+    GList *paths = NULL;
 
     ASSERT (L, return NULL, "Index: LUA is not multi-threaded (use apteryx.process)\n");
-    int ssize = lua_gettop (L);
-    GList *paths = NULL;
-    if (!push_callback (L, ref))
-        return NULL;
-    lua_pushstring (L, path);
-    res = lua_pcall (L, 1, 1, 0);
-    if (res != 0)
-        lua_apteryx_error (L, res);
-    if (lua_gettop (L))
-    {
-        if (lua_istable (L, -1))
+    if (lua_apteryx_instance_lock (L)) {
+        int ssize = lua_gettop (L);
+        if (!push_callback (L, ref))
         {
-            lua_pushnil (L);
-            while (lua_next(L, -2) != 0)
+             lua_apteryx_instance_unlock (L);
+             return NULL;
+        }
+        lua_pushstring (L, path);
+        res = lua_pcall (L, 1, 1, 0);
+        if (res != 0)
+            lua_apteryx_error (L, res);
+        if (lua_gettop (L))
+        {
+            if (lua_istable (L, -1))
             {
-                paths = g_list_append (paths, strdup (lua_tostring (L, -1)));
+                lua_pushnil (L);
+                while (lua_next(L, -2) != 0)
+                {
+                    paths = g_list_append (paths, strdup (lua_tostring (L, -1)));
+                    lua_pop (L, 1);
+                }
                 lua_pop (L, 1);
             }
-            lua_pop (L, 1);
+            else
+            {
+                ERROR ("LUA: Index did not return a table\n");
+                lua_pop (L, 1);
+            }
         }
-        else
+        lua_pop (L, 1); /* pop fn */
+        if (lua_gettop (L) != ssize)
         {
-            ERROR ("LUA: Index did not return a table\n");
-            lua_pop (L, 1);
+           ERROR ("Index: Stack changed\n");
         }
+        lua_apteryx_instance_unlock(L);
     }
-    lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == ssize, return paths, "Index: Stack changed\n");
     return paths;
 }
 
@@ -517,7 +588,9 @@ lua_apteryx_index (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, false, (void *) ref, 0, 0))
+    lua_callback_info *cb_info = new_lua_callback (L, LUA_CALLBACK_INDEX, path, ref);
+
+    if (!add_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, false, cb_info, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -536,33 +609,56 @@ lua_apteryx_unindex (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, (void *) ref))
+    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_INDEX);
+
+    if (!delete_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
-        return 1;
     }
-    lua_pushboolean (L, true);
+    else
+    {
+        lua_pushboolean (L, true);
+    }
+
+    destroy_cb_info(cb_info);
+
     return 1;
 }
 
 static bool
-lua_do_watch (const char *path, const char *value, size_t ref)
+lua_do_watch (const char *path, const char *value, lua_callback_info *cb_info)
 {
     int res = 0;
-    lua_State* L = g_L;
+    lua_State* L = cb_info->instance;
+    size_t ref = cb_info->ref;
 
     ASSERT (L, return false, "Watch: LUA is not multi-threaded (use apteryx.process)\n");
-    int ssize = lua_gettop (L);
-    if (!push_callback (L, ref))
-        return false;
-    lua_pushstring (L, path);
-    lua_pushstring (L, value);
-    res = lua_pcall (L, 2, 0, 0);
-    if (res != 0)
-        lua_apteryx_error (L, res);
-    lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == ssize, return true, "Watch: Stack changed\n");
+
+    if (lua_apteryx_instance_lock (L))
+    {
+        int ssize = lua_gettop (L);
+        if (!push_callback (L, ref))
+        {
+            lua_apteryx_instance_unlock (L);
+            return false;
+        }
+        lua_pushstring (L, path);
+        lua_pushstring (L, value);
+        res = lua_pcall (L, 2, 0, 0);
+        if (res != 0)
+        {
+            lua_apteryx_error (L, res);
+        }
+        lua_pop (L, 1); /* pop fn */
+
+        if (lua_gettop (L) != ssize)
+        {
+            ERROR ("Watch: Stack changed\n");
+        }
+        lua_apteryx_instance_unlock (L);
+    }
+
     return true;
 }
 
@@ -635,39 +731,56 @@ lua_apteryx_unwatch (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, (void *) ref) &&
-        !delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, (void *) ref))
+    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_WATCH);
+
+    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
-        return 1;
     }
-    lua_pushboolean (L, true);
+    else
+    {
+        lua_pushboolean (L, true);
+    }
+
+    destroy_cb_info (cb_info);
     return 1;
 }
 
 static uint64_t
-lua_do_refresh (const char *path, size_t ref)
+lua_do_refresh (const char *path, lua_callback_info *cb_info)
 {
     int res = 0;
-    lua_State* L = g_L;
+    lua_State* L = cb_info->instance;
+    size_t ref = cb_info->ref;
+    uint64_t timeout = 0;
 
     ASSERT (L, return 0, "Refresh: LUA is not multi-threaded (use apteryx.process)\n");
-    int ssize = lua_gettop (L);
-    uint64_t timeout = 0;
-    if (!push_callback (L, ref))
-        return 0;
-    lua_pushstring (L, path);
-    res = lua_pcall (L, 1, 1, 0);
-    if (res != 0)
-        lua_apteryx_error (L, res);
-    if (lua_gettop (L))
+    if (lua_apteryx_instance_lock (L))
     {
-        timeout = lua_tonumber (L, -1);
-        lua_pop (L, 1);
+        int ssize = lua_gettop (L);
+        if (!push_callback (L, ref))
+        {
+            lua_apteryx_instance_unlock (L);
+            return 0;
+        }
+        lua_pushstring (L, path);
+        res = lua_pcall (L, 1, 1, 0);
+        if (res != 0)
+            lua_apteryx_error (L, res);
+        if (lua_gettop (L))
+        {
+            timeout = lua_tonumber (L, -1);
+            lua_pop (L, 1);
+        }
+        lua_pop (L, 1); /* pop fn */
+
+        if (lua_gettop (L) != ssize)
+        {
+            ERROR("Refresh: Stack changed\n");
+        }
+        lua_apteryx_instance_unlock (L);
     }
-    lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == ssize, return timeout, "Refresh: Stack changed\n");
     return timeout;
 }
 
@@ -679,7 +792,9 @@ lua_apteryx_refresh (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, false, (void *) ref, 0, 0))
+    lua_callback_info *cb_info = new_lua_callback(L, LUA_CALLBACK_REFRESH, path, ref);
+
+    if (!add_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, false, cb_info, 0))
     {
         luaL_error (L, "Failed to register refresh\n");
         lua_pushboolean (L, false);
@@ -697,40 +812,54 @@ lua_apteryx_unrefresh (lua_State *L)
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
-
-    if (!delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, (void *) ref))
+    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_REFRESH);
+    if (!delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
-        return 1;
     }
-    lua_pushboolean (L, true);
+    else
+    {
+        lua_pushboolean (L, true);
+    }
+    destroy_cb_info (cb_info);
     return 1;
 }
 
 static int
-lua_do_validate (const char *path, const char *value, size_t ref)
+lua_do_validate (const char *path, const char *value, lua_callback_info *cb_info)
 {
     int res = 0;
-    lua_State* L = g_L;
+    lua_State* L = cb_info->instance;
+    size_t ref = cb_info->ref;
+    int rc = 0;
 
     ASSERT (L, return -1, "Validate: LUA is not multi-threaded (use apteryx.process)\n");
-    int ssize = lua_gettop (L);
-    int rc = 0;
-    if (!push_callback (L, ref))
-        return -1;
-    lua_pushstring (L, path);
-    lua_pushstring (L, value);
-    res = lua_pcall (L, 2, 1, 0);
-    if (res != 0)
-        lua_apteryx_error (L, res);
-    if (lua_gettop (L))
+    if(lua_apteryx_instance_lock (L))
     {
-        rc = lua_tonumber (L, -1);
-        lua_pop (L, 1);
+        int ssize = lua_gettop (L);
+        if (!push_callback (L, ref))
+        {
+            lua_apteryx_instance_unlock (L);
+            return -1;
+        }
+        lua_pushstring (L, path);
+        lua_pushstring (L, value);
+        res = lua_pcall (L, 2, 1, 0);
+        if (res != 0)
+            lua_apteryx_error (L, res);
+        if (lua_gettop (L))
+        {
+            rc = lua_tonumber (L, -1);
+            lua_pop (L, 1);
+        }
+        lua_pop (L, 1); /* pop fn */
+        if (lua_gettop (L) != ssize)
+        {
+            ERROR ("Validate: Stack changed\n");
+        }
+        lua_apteryx_instance_unlock (L);
     }
-    lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == ssize, return rc, "Validate: Stack changed\n");
     return rc;
 }
 
@@ -742,7 +871,9 @@ lua_apteryx_validate (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, true, (void *) ref, 0, 0))
+    lua_callback_info *cb_info = new_lua_callback (L, LUA_CALLBACK_VALIDATE, path, ref);
+
+    if (!add_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, true, cb_info, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -761,38 +892,53 @@ lua_apteryx_unvalidate (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, (void *) ref))
+    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_VALIDATE);
+    if (!delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
-        return 1;
     }
-    lua_pushboolean (L, true);
+    else
+    {
+        lua_pushboolean (L, true);
+    }
+    destroy_cb_info (cb_info);
     return 1;
 }
 
 static char*
-lua_do_provide (const char *path, size_t ref)
+lua_do_provide (const char *path, lua_callback_info *cb_info)
 {
     int res = 0;
-    lua_State* L = g_L;
+    lua_State* L = cb_info->instance;
+    size_t ref = cb_info->ref;
+    char *value = NULL;
 
     ASSERT (L, return NULL, "Provide: LUA is not multi-threaded (use apteryx.process)\n");
-    int ssize = lua_gettop (L);
-    char *value = NULL;
-    if (!push_callback (L, ref))
-        return NULL;
-    lua_pushstring (L, path);
-    res = lua_pcall (L, 1, 1, 0);
-    if (res != 0)
-        lua_apteryx_error (L, res);
-    if (lua_gettop (L))
+    if (lua_apteryx_instance_lock (L))
     {
-        value = strdup (lua_apteryx_tostring (L, -1));
-        lua_pop (L, 1);
+        int ssize = lua_gettop (L);
+        if (!push_callback (L, ref))
+        {
+            lua_apteryx_instance_unlock (L);
+            return NULL;
+        }
+        lua_pushstring (L, path);
+        res = lua_pcall (L, 1, 1, 0);
+        if (res != 0)
+            lua_apteryx_error (L, res);
+        if (lua_gettop (L))
+        {
+            value = strdup (lua_apteryx_tostring (L, -1));
+            lua_pop (L, 1);
+        }
+        lua_pop (L, 1); /* pop fn */
+        if (lua_gettop (L) != ssize)
+        {
+            ERROR("Provide: Stack changed\n");
+        }
+        lua_apteryx_instance_unlock (L);
     }
-    lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == ssize, return value, "Provide: Stack changed\n");
     return value;
 }
 
@@ -804,7 +950,9 @@ lua_apteryx_provide (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, false, (void *) ref, 0, 0))
+    lua_callback_info *cb_info = new_lua_callback(L, LUA_CALLBACK_PROVIDE, path, ref);
+
+    if (!add_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, false, cb_info, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -823,13 +971,17 @@ lua_apteryx_unprovide (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, (void *) ref))
+    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_PROVIDE);
+    if (!delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
-        return 1;
     }
-    lua_pushboolean (L, true);
+    else
+    {
+        lua_pushboolean (L, true);
+    }
+    destroy_cb_info(cb_info);
     return 1;
 }
 
@@ -843,7 +995,13 @@ lua_apteryx_process (lua_State *L)
     }
     bool poll = lua_gettop (L) == 1 ? lua_toboolean (L, 1) : true;
     g_L = L;
+    /* The lua stack calling in to this function will hold the lock -
+     * release it at the callbacks processed with apteryx_process will
+     * all require the lua instance lock.
+     */
+    lua_apteryx_instance_unlock (L);
     int fd = apteryx_process (poll);
+    lua_apteryx_instance_lock (L);
     lua_pushnumber (L, fd);
     g_L = NULL;
     return 1;
@@ -910,6 +1068,69 @@ lua_apteryx_mainloop (lua_State *L)
     return 0;
 }
 
+
+bool
+lua_apteryx_instance_lock (lua_State *L)
+{
+    bool lock_present = false;
+    pthread_rwlock_rdlock(&lock_lock);
+    pthread_mutex_t *lock = g_hash_table_lookup(locks, L);
+    if (lock)
+    {
+        pthread_mutex_lock(lock);
+        lock_present = true;
+    }
+    pthread_rwlock_unlock(&lock_lock);
+    return lock_present;
+}
+
+void
+lua_apteryx_instance_unlock (lua_State *L)
+{
+    pthread_rwlock_rdlock (&lock_lock);
+    pthread_mutex_t *lock = g_hash_table_lookup (locks, L);
+    if (lock)
+    {
+        pthread_mutex_unlock (lock);
+    }
+    pthread_rwlock_unlock (&lock_lock);
+}
+
+static bool
+lua_apteryx_register_lock (lua_State *L)
+{
+    bool created = false;
+    pthread_rwlock_wrlock (&lock_lock);
+    if (locks && g_hash_table_lookup (locks, L) == NULL)
+    {
+        pthread_mutex_t *new_lock = g_malloc0 (sizeof (pthread_mutex_t));
+        pthread_mutex_init (new_lock, NULL);
+        g_hash_table_insert (locks, L, new_lock);
+        created = true;
+    }
+    pthread_rwlock_unlock (&lock_lock);
+    return created;
+}
+
+static void
+lua_apteryx_unregister_lock (lua_State *L)
+{
+    pthread_rwlock_wrlock (&lock_lock);
+    if (locks)
+    {
+        g_hash_table_remove (locks, L);
+    }
+    pthread_rwlock_unlock (&lock_lock);
+}
+
+int
+lua_apteryx_run (lua_State *L)
+{
+    lua_apteryx_instance_unlock (L);
+    lua_pushboolean (L, true);
+    return 1;
+}
+
 int
 luaopen_libapteryx (lua_State *L)
 {
@@ -938,6 +1159,7 @@ luaopen_libapteryx (lua_State *L)
         { "unprovide", lua_apteryx_unprovide },
         { "process", lua_apteryx_process },
         { "mainloop", lua_apteryx_mainloop },
+        { "run", lua_apteryx_run },
         { NULL, NULL }
     };
 
@@ -947,16 +1169,81 @@ luaopen_libapteryx (lua_State *L)
         return 0;
     }
 
+    /* Create a lock for this lua instance */
+    if (lua_apteryx_register_lock(L))
+    {
+        lua_apteryx_instance_lock(L);
+    }
+
     /* Return the Apteryx object on the stack */
     luaL_newmetatable (L, "apteryx");
     luaL_setfuncs (L, _apteryx_fns, 0);
     return 1;
 }
 
+static void
+removing_state(lua_State *L)
+{
+    GList *next;
+    /* Strip out all the callbacks related to this lua_State that is shutting down*/
+    for (GList *iter = callbacks; iter; iter = next)
+    {
+        next = iter->next;
+        lua_callback_info *cb_info = iter->data;
+        if (cb_info->instance == L)
+        {
+            switch (cb_info->type)
+            {
+                case LUA_CALLBACK_WATCH:
+                    delete_callback (APTERYX_WATCHERS_PATH, cb_info->path, (void *)lua_do_watch, cb_info);
+                    break;
+                case LUA_CALLBACK_VALIDATE:
+                    delete_callback (APTERYX_VALIDATORS_PATH, cb_info->path, (void *)lua_do_validate, cb_info);
+                    break;
+                case LUA_CALLBACK_REFRESH:
+                    delete_callback (APTERYX_REFRESHERS_PATH, cb_info->path, (void *)lua_do_refresh, cb_info);
+                    break;
+                case LUA_CALLBACK_INDEX:
+                    delete_callback (APTERYX_INDEXERS_PATH, cb_info->path, (void *)lua_do_index, cb_info);
+                    break;
+                case LUA_CALLBACK_PROVIDE:
+                    delete_callback (APTERYX_PROVIDERS_PATH, cb_info->path, (void *)lua_do_provide, cb_info);
+                    break;
+                default:
+                    continue;
+            }
+        }
+        destroy_cb_info (cb_info);
+        callbacks = g_list_delete_link (callbacks, iter);
+    }
+}
+
+static void
+release_lock (pthread_mutex_t *lock)
+{
+    pthread_mutex_destroy (lock);
+    g_free (lock);
+}
+
 int
 luaopen_apteryx (lua_State *L)
 {
+    pthread_rwlock_wrlock(&lock_lock);
+    if (!locks)
+    {
+        locks = g_hash_table_new_full (g_direct_hash,
+                                       g_direct_equal,
+                                       (GDestroyNotify)removing_state,
+                                       (GDestroyNotify)release_lock);
+    }
+    pthread_rwlock_unlock (&lock_lock);
     return luaopen_libapteryx (L);
+}
+
+void
+lua_apteryx_close (lua_State *L)
+{
+    lua_apteryx_unregister_lock (L);
 }
 
 #endif /* HAVE_LUA */
