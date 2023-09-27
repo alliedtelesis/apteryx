@@ -81,8 +81,9 @@ apteryxd = \
 	export LUA_CPATH=$(BUILDDIR)/?.so; \
 	$(BUILDDIR)/apteryxd -b -p /tmp/apteryxd.pid -r /tmp/apteryxd.run && sleep 0.1; \
 	$(TEST_WRAPPER) $(BUILDDIR)/$(1); \
-	kill -TERM `cat /tmp/apteryxd.pid`; \
-	wait
+	APID=`cat /tmp/apteryxd.pid`; \
+	kill -TERM $$APID; \
+	while kill -0 $$APID 2> /dev/null; do sleep 1; done;
 
 ifeq (uinttest,$(firstword $(MAKECMDGOALS)))
 TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
@@ -102,12 +103,13 @@ test: EXTRA_LDFLAGS += -fprofile-arcs -ftest-coverage -fsanitize=address -static
 test: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
 	@echo "Running apteryx unit tests with gcov and address sanitizer: $<"
 	@rm -f $(BUILDDIR)/asan-log.*
+	@rm -f $(BUILDDIR)/*.gcda
 	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
 	@echo "Tests have been run!"
 	@echo "Processing gcov output"
-	@lcov -q --capture --directory . --output-file .test/coverage.info
-	@genhtml -q .test/coverage.info --output-directory .test/gcov
-	@echo "GCOV: google-chrome " $(PWD)"/.test/gcov/index.html"
+	@lcov -q --capture --directory $(BUILDDIR)/ --output-file $(BUILDDIR)/coverage.info
+	@genhtml -q $(BUILDDIR)/coverage.info --output-directory $(BUILDDIR)/gcov
+	@echo "GCOV: google-chrome "$(BUILDDIR)"/gcov/index.html"
 	@cat $(BUILDDIR)/asan-log.* 2>/dev/null | grep -v "False leaks are possible" | grep --color -E "ERROR|Direct leak|SUMMARY|$$" && exit 1 || true
 
 install: all
