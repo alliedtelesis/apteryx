@@ -68,7 +68,7 @@ $(BUILDDIR)/apteryxd: apteryxd.c hashtree.c database.c $(BUILDDIR)/rpc_transport
 
 $(BUILDDIR)/apteryx: apteryxc.c hashtree.c database.c callbacks.c $(BUILDDIR)/libapteryx.so $(EXTRA_CSRC)
 	@echo "Building $@"
-	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(apteryx_CFLAGS) -o $@ $^ -L. -lapteryx $(EXTRA_LDFLAGS) $(apteryx_LDFLAGS)
+	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(apteryx_CFLAGS) -o $@ $^ -lapteryx $(EXTRA_LDFLAGS) $(apteryx_LDFLAGS)
 
 apteryxd = \
 	if test -e /tmp/apteryxd.pid; then \
