@@ -293,7 +293,7 @@ void cb_foreach (struct callback_node *list, GFunc func, gpointer user_data);
 void cb_shutdown (struct callback_node *root);
 
 /* Callbacks to users */
-bool add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags);
+bool add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags, uint64_t timeout_ms);
 bool delete_callback (const char *type, const char *path, void *fn, void *data);
 
 /* Tests */

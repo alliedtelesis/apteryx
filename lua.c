@@ -519,7 +519,7 @@ lua_apteryx_index (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, false, (void *) ref, 0))
+    if (!add_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, false, (void *) ref, 0, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -576,7 +576,7 @@ lua_apteryx_watch (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, true, (void *) ref, 0))
+    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, true, (void *) ref, 0, 0))
     {
         luaL_error (L, "Failed to register watch\n");
         lua_pushboolean (L, false);
@@ -638,7 +638,7 @@ lua_apteryx_refresh (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, false, (void *) ref, 0))
+    if (!add_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, false, (void *) ref, 0, 0))
     {
         luaL_error (L, "Failed to register refresh\n");
         lua_pushboolean (L, false);
@@ -701,7 +701,7 @@ lua_apteryx_validate (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, true, (void *) ref, 0))
+    if (!add_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, true, (void *) ref, 0, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -763,7 +763,7 @@ lua_apteryx_provide (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, false, (void *) ref, 0))
+    if (!add_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, false, (void *) ref, 0, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);

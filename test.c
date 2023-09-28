@@ -5567,6 +5567,32 @@ test_watch_tree_one_level_miss ()
 }
 
 void
+test_watch_tree_after_quiet ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    GNode* node;
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (apteryx_watch_tree_full (path, test_watch_tree_callback, (TEST_SLEEP_TIMEOUT/2/1000)));
+    CU_ASSERT (apteryx_set_string (path, NULL, "1"));
+    CU_ASSERT (apteryx_set_string (path, NULL, "2"));
+    CU_ASSERT (apteryx_set_string (path, NULL, "3"));
+    CU_ASSERT (apteryx_set_string (path, NULL, "4"));
+    CU_ASSERT (apteryx_set_string (path, NULL, "5"));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_NON_LEAVES) == 6);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "5") == 0);
+    CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_tree_cleanup ();
+}
+
+void
 test_find_one_star ()
 {
     GNode* root = NULL;
@@ -7547,6 +7573,14 @@ test_single_watch_myself_blocked ()
     apteryx_process (false);
 }
 
+void
+test_single_watch_tree_after_quiet ()
+{
+    start_single_threading ();
+    test_watch_tree_after_quiet ();
+    stop_single_threading ();
+}
+
 #ifdef HAVE_LUA
 static bool
 _run_lua (char *script)
@@ -8350,6 +8384,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "watch tree one level", test_watch_tree_one_level },
     { "watch tree one level multi", test_watch_tree_one_level_multi },
     { "watch tree one level miss", test_watch_tree_one_level_miss },
+    { "watch tree after quiet", test_watch_tree_after_quiet },
     CU_TEST_INFO_NULL,
 };
 
@@ -8374,6 +8409,7 @@ static CU_TestInfo tests_single_threaded[] = {
     { "single-threaded provide no polling", test_single_provide_no_polling },
     { "single-threaded watch myself", test_single_watch_myself },
     { "single-threaded watch myself blocked", test_single_watch_myself_blocked },
+    { "single-threaded watch tree after quiet", test_single_watch_tree_after_quiet },
     CU_TEST_INFO_NULL,
 };
 
