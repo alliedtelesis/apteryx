@@ -30,13 +30,18 @@ struct rpc_instance_s {
     /* General settings */
     int timeout;
     uint64_t gc_time;
-    sigset_t worker_sigmask;
 
     /* Single service */
     rpc_msg_handler handler;
     rpc_service server;
+    /* Fast workers */
+    sigset_t worker_sigmask;
     GThreadPool *workers;
-    GThreadPool *slow_workers;
+    /* Slow worker and background task thread */
+    GMainContext *slow_context;
+    GMainLoop *slow_loop;
+    GThread *slow_thread;
+    /* Single threaded mode handler */
     int pollfd[2];
     GAsyncQueue *queue;
     uint32_t overflow;
@@ -128,6 +133,39 @@ worker_func (gpointer a, gpointer b)
     }
 }
 
+static gboolean
+slow_callback_fn (gpointer arg1)
+{
+    worker_func (arg1, NULL);
+    return G_SOURCE_REMOVE;
+}
+
+static gpointer
+slow_thread_fn (gpointer data)
+{
+    rpc_instance rpc = (rpc_instance) data;
+    g_main_loop_run (rpc->slow_loop);
+    g_main_loop_unref (rpc->slow_loop);
+    rpc->slow_loop = NULL;
+    g_main_context_unref (rpc->slow_context);
+    rpc->slow_context = NULL;
+    return NULL;
+}
+
+static void
+submit_slow_work (rpc_instance rpc, struct rpc_work_s *work)
+{
+    /* Start the slow worker thread on demand */
+    if (!rpc->slow_loop)
+    {
+        rpc->slow_context = g_main_context_new ();
+        rpc->slow_loop = g_main_loop_new (rpc->slow_context, FALSE);
+        rpc->slow_thread = g_thread_new ("apteryx_slow", slow_thread_fn, (gpointer)rpc);
+    }
+    /* Pass the work to the correct thread */
+    g_main_context_invoke_full (rpc->slow_context, G_PRIORITY_DEFAULT, slow_callback_fn, (gpointer) work, NULL);
+}
+
 static void
 request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
 {
@@ -167,7 +205,7 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
     }
 
     /* Both variants of watch callbacks need to be processed on the same thread -
-     * this is the single thread servicing the "slow_workers" pool.
+     * this is the single thread servicing the "slow workers".
      */
     if (*(unsigned char*)buffer == MODE_WATCH ||
         *(unsigned char*)buffer == MODE_WATCH_WITH_ACK)
@@ -186,8 +224,8 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
         }
     }
     /* Callbacks from local Apteryx threads */
-    else if (rpc->slow_workers && (watch || work->responded))
-        g_thread_pool_push (rpc->slow_workers, work, NULL);
+    else if (watch || work->responded)
+        submit_slow_work (rpc, work);
     else if (rpc->workers)
         g_thread_pool_push (rpc->workers, work, NULL);
     else
@@ -231,12 +269,6 @@ rpc_init (int timeout, rpc_msg_handler handler)
     rpc->clients = g_hash_table_new (g_str_hash, g_str_equal);
     rpc->workers = g_thread_pool_new ((GFunc)worker_func, (gpointer)&rpc->worker_sigmask,
                                       8, FALSE, NULL);
-    /* slow_workers handles the watch callbacks and jobs that have already been
-     * responded to and must be served by a single thread.
-     */
-    rpc->slow_workers = g_thread_pool_new ((GFunc)worker_func,
-                                           (gpointer)&rpc->worker_sigmask,
-                                           1, FALSE, NULL);
 
     DEBUG ("RPC: New Instance (%p)\n", rpc);
     return rpc;
@@ -273,8 +305,6 @@ rpc_shutdown (rpc_instance rpc)
         g_thread_pool_stop_unused_threads ();
         if (g_thread_pool_unprocessed (rpc->workers) == 0 &&
             g_thread_pool_get_num_threads (rpc->workers) == 0 &&
-            g_thread_pool_unprocessed (rpc->slow_workers) == 0 &&
-            g_thread_pool_get_num_threads (rpc->slow_workers) == 0 &&
             g_thread_pool_get_num_unused_threads () == 0)
         {
             break;
@@ -287,8 +317,12 @@ rpc_shutdown (rpc_instance rpc)
     }
     g_thread_pool_free (rpc->workers, FALSE, TRUE);
     rpc->workers = NULL;
-    g_thread_pool_free (rpc->slow_workers, FALSE, TRUE);
-    rpc->slow_workers = NULL;
+    if (rpc->slow_loop)
+    {
+        g_main_loop_quit (rpc->slow_loop);
+        g_thread_join (rpc->slow_thread);
+        rpc->slow_thread = NULL;
+    }
     if (rpc->queue)
     {
         g_async_queue_unref (rpc->queue);
