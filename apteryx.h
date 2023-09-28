@@ -589,6 +589,21 @@ bool apteryx_watch_tree (const char *path, apteryx_watch_tree_callback cb);
 bool apteryx_unwatch_tree (const char *path, apteryx_watch_tree_callback cb);
 
 /**
+ * Watch for changes in the path but only notify after a period of quiet
+ * Supports *(wildcard) at the end of path for all children under this path
+ * Supports /(level) at the end of path for children only under this current path (one level down)
+ * Whenever a change occurs in a monitor path, cb is called with the 
+ * longest common path to all recent changes
+ * @param path path to the value to be monitored
+ * @param cb function to call when the value changes
+ * @param quiet_ms only notify after this period of quiet time in milliseconds (0=no timeout)
+ * @return true on successful registration
+ */
+bool apteryx_watch_tree_full (const char *path, apteryx_watch_tree_callback cb, guint quiet_ms);
+/** UnWatch for changes in the path */
+bool apteryx_unwatch_tree_full (const char *path, apteryx_watch_tree_callback cb);
+
+/**
  * Callback function to be called to validate a new value
  * @param path path for the proposed value
  * @param value new proposed value

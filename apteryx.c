@@ -59,6 +59,7 @@ typedef struct _cb_t
     void *fn;
     void *data;
     uint32_t flags;
+    guint timeout_ms;
 } cb_t;
 static uint64_t next_ref = 0;
 static GList *cb_list = NULL;
@@ -201,6 +202,73 @@ handle_index (rpc_message msg)
     return true;
 }
 
+struct delayed_watch {
+    gpointer handle;
+    uint64_t ref;
+    void *fn;
+    GNode *root;
+    void *data;
+    guint timeout_ms;
+};
+static GList *dw_list = NULL;
+
+static gboolean
+dw_process (gpointer arg1)
+{
+    struct delayed_watch *dw = (struct delayed_watch *) arg1;
+
+    dw_list = g_list_remove (dw_list, dw);
+
+    DEBUG ("WATCH-TREE(delayed) CB (0x%"PRIx64")\n", dw->ref);
+    if (apteryx_debug) {
+        apteryx_print_tree (dw->root, stdout);
+    }
+    if (dw->data)
+        ((void*(*)(const GNode*, void*)) dw->fn) (dw->root, dw->data);
+    else
+        ((void*(*)(const GNode*)) dw->fn) (dw->root);
+    g_free (dw);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+dw_add (uint64_t ref, void *fn, GNode *root, void *data, guint timeout_ms)
+{
+    struct delayed_watch *dw = NULL;
+
+    /* Find existing delayed watch */
+    for (GList *iter = dw_list; iter; iter = g_list_next (iter))
+    {
+        dw = (struct delayed_watch *) iter->data;
+        if (dw->ref == ref && dw->fn == fn && dw->data == data && dw->timeout_ms == timeout_ms)
+            break;
+        dw = NULL;
+    }
+
+    /* If we found a match lets merge in the new data */
+    if (dw)
+    {
+        dw_list = g_list_remove (dw_list, dw);
+        rpc_del_callback (rpc, dw->handle);
+        // TODO: merge new data into old tree
+        apteryx_free_tree (dw->root);
+        g_free (dw);
+        dw = NULL;
+    }
+
+    /* Create a new timer for the requested timeout */
+    if (!dw)
+    {
+        struct delayed_watch *dw = (struct delayed_watch *) g_malloc0 (sizeof (struct delayed_watch));
+        dw->ref = ref;
+        dw->fn = fn;
+        dw->root = root;
+        dw->timeout_ms = timeout_ms;
+        dw_list = g_list_append (dw_list, dw);
+        dw->handle = rpc_add_callback (rpc, dw_process, (gpointer) dw,  timeout_ms);
+    }
+}
+
 static bool
 handle_watch (rpc_message msg)
 {
@@ -248,10 +316,24 @@ handle_watch (rpc_message msg)
             apteryx_path_to_node (root, path, value);
             path = rpc_msg_decode_string (msg);
         }
-        if (cb.data)
-            ((void*(*)(const GNode*, void*)) cb.fn) (root, cb.data);
+
+        /* Delay the callback if requested to */
+        if (cb.timeout_ms)
+        {
+            /* Delay the watch but pretend we have already done it */
+            dw_add (ref, cb.fn, root, cb.data, cb.timeout_ms);
+        }
         else
-            ((void*(*)(const GNode*)) cb.fn) (root);
+        {
+            DEBUG ("WATCH-TREE CB (0x%"PRIx64")\n", ref);
+            if (apteryx_debug) {
+                apteryx_print_tree (root, stdout);
+            }
+            if (cb.data)
+                ((void*(*)(const GNode*, void*)) cb.fn) (root, cb.data);
+            else
+                ((void*(*)(const GNode*)) cb.fn) (root);
+        }
     }
     pthread_mutex_lock (&pending_watches_lock);
     if (--pending_watch_count == 0)
@@ -1848,7 +1930,7 @@ apteryx_find_tree (GNode *root)
 }
 
 bool
-add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags)
+add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags, uint64_t timeout_ms)
 {
     size_t pid = getpid ();
     char _path[PATH_MAX];
@@ -1867,6 +1949,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     cb->value = value;
     cb->data = data;
     cb->flags = flags;
+    cb->timeout_ms = timeout_ms;
     cb_list = g_list_prepend (cb_list, (void *) cb);
     if (!bound)
     {
@@ -1937,7 +2020,7 @@ delete_callback (const char *type, const char *path, void *fn, void *data)
 bool
 apteryx_index (const char *path, apteryx_index_callback cb)
 {
-    return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb, false, NULL, 0);
+    return add_callback (APTERYX_INDEXERS_PATH, path, (void *)cb, false, NULL, 0, 0);
 }
 
 bool
@@ -1949,7 +2032,7 @@ apteryx_unindex (const char *path, apteryx_index_callback cb)
 bool
 apteryx_watch (const char *path, apteryx_watch_callback cb)
 {
-    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 0);
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 0, 0);
 }
 
 bool
@@ -1961,7 +2044,7 @@ apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 bool
 apteryx_watch_tree (const char *path, apteryx_watch_tree_callback cb)
 {
-    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 1);
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 1, 0);
 }
 
 bool
@@ -1971,9 +2054,21 @@ apteryx_unwatch_tree (const char *path, apteryx_watch_tree_callback cb)
 }
 
 bool
+apteryx_watch_tree_full (const char *path, apteryx_watch_tree_callback cb, guint quiet_ms)
+{
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 1, quiet_ms);
+}
+
+bool
+apteryx_unwatch_tree_full (const char *path, apteryx_watch_tree_callback cb)
+{
+    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, NULL);
+}
+
+bool
 apteryx_validate (const char *path, apteryx_validate_callback cb)
 {
-    return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb, true, NULL, 0);
+    return add_callback (APTERYX_VALIDATORS_PATH, path, (void *)cb, true, NULL, 0, 0);
 }
 
 bool
@@ -1985,7 +2080,7 @@ apteryx_unvalidate (const char *path, apteryx_validate_callback cb)
 bool
 apteryx_refresh (const char *path, apteryx_refresh_callback cb)
 {
-    return add_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb, false, NULL, 0);
+    return add_callback (APTERYX_REFRESHERS_PATH, path, (void *)cb, false, NULL, 0, 0);
 }
 
 bool
@@ -1997,7 +2092,7 @@ apteryx_unrefresh (const char *path, apteryx_refresh_callback cb)
 bool
 apteryx_provide (const char *path, apteryx_provide_callback cb)
 {
-    return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb, false, NULL, 0);
+    return add_callback (APTERYX_PROVIDERS_PATH, path, (void *)cb, false, NULL, 0, 0);
 }
 
 bool
@@ -2015,7 +2110,7 @@ apteryx_proxy (const char *path, const char *url)
     if (asprintf (&value, "%s:%s", url, path) <= 0)
         return false;
     res = add_callback (APTERYX_PROXIES_PATH, value,
-            (void *)(size_t)g_str_hash (url), false, NULL, 0);
+            (void *)(size_t)g_str_hash (url), false, NULL, 0, 0);
     free (value);
     return res;
 }
