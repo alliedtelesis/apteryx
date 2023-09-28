@@ -64,7 +64,7 @@ static uint64_t next_ref = 0;
 static GList *cb_list = NULL;
 
 static bool
-find_callback (uint64_t ref, void **fn, void **data, bool *val, uint32_t *flags)
+find_callback (uint64_t ref, cb_t *r_cb)
 {
     bool rc = false;
     GList *iter;
@@ -76,10 +76,7 @@ find_callback (uint64_t ref, void **fn, void **data, bool *val, uint32_t *flags)
         cb = (cb_t *) iter->data;
         if (cb->ref == ref)
         {
-            *fn = cb->fn;
-            *data = cb->data;
-            *val = cb->value;
-            *flags = cb->flags;
+            *r_cb = *cb;
             rc = true;
         }
     }
@@ -90,25 +87,22 @@ find_callback (uint64_t ref, void **fn, void **data, bool *val, uint32_t *flags)
 static void *
 call_callback (uint64_t ref, const char *path, const char *value)
 {
-    void *fn = NULL;
-    void *data = NULL;
-    bool val = false;
-    uint32_t flags = 0;
+    cb_t cb;
 
-    if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
+    if (!find_callback (ref, &cb) || cb.fn == NULL)
     {
         DEBUG ("CB[%"PRIu64"]: not found\n", ref);
         return NULL;
     }
 
-    if (val && data)
-        return ((void*(*)(const char*, const char*, void*)) fn) (path, value, data);
-    else if (val)
-        return ((void*(*)(const char*, const char*)) fn) (path, value);
-    else if (data)
-        return ((void*(*)(const char*, void*)) fn) (path, data);
+    if (cb.value && cb.data)
+        return ((void*(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
+    else if (cb.value)
+        return ((void*(*)(const char*, const char*)) cb.fn) (path, value);
+    else if (cb.data)
+        return ((void*(*)(const char*, void*)) cb.fn) (path, cb.data);
     else
-        return ((void*(*)(const char*)) fn) (path);
+        return ((void*(*)(const char*)) cb.fn) (path);
 }
 
 /**
@@ -117,25 +111,22 @@ call_callback (uint64_t ref, const char *path, const char *value)
 static uint64_t
 call_uint64_callback (uint64_t ref, const char *path, const char *value)
 {
-    void *fn = NULL;
-    void *data = NULL;
-    bool val = false;
-    uint32_t flags = 0;
+    cb_t cb;
 
-    if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
+    if (!find_callback (ref, &cb) || cb.fn == NULL)
     {
         DEBUG ("CB[%"PRIu64"]: not found\n", ref);
         return 0;
     }
 
-    if (val && data)
-        return ((uint64_t(*)(const char*, const char*, void*)) fn) (path, value, data);
-    else if (val)
-        return ((uint64_t(*)(const char*, const char*)) fn) (path, value);
-    else if (data)
-        return ((uint64_t(*)(const char*, void*)) fn) (path, data);
+    if (cb.value && cb.data)
+        return ((uint64_t(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
+    else if (cb.value)
+        return ((uint64_t(*)(const char*, const char*)) cb.fn) (path, value);
+    else if (cb.data)
+        return ((uint64_t(*)(const char*, void*)) cb.fn) (path, cb.data);
     else
-        return ((uint64_t(*)(const char*)) fn) (path);
+        return ((uint64_t(*)(const char*)) cb.fn) (path);
 }
 
 static const char *
@@ -213,16 +204,13 @@ handle_index (rpc_message msg)
 static bool
 handle_watch (rpc_message msg)
 {
+    cb_t cb;
     uint64_t ref;
-    void *fn = NULL;
-    void *data = NULL;
-    bool val = false;
-    uint32_t flags = 0;
     const char *path;
     const char *value;
 
     ref = rpc_msg_decode_uint64 (msg);
-    if (!find_callback (ref, &fn, &data, &val, &flags) || fn == NULL)
+    if (!find_callback (ref, &cb) || cb.fn == NULL)
     {
         DEBUG ("WATCH[%"PRIu64"]: cb not found\n", ref);
         /* Not much we can do but pretend we completed the callback */
@@ -233,7 +221,7 @@ handle_watch (rpc_message msg)
     pthread_mutex_lock (&pending_watches_lock);
     ++pending_watch_count;
     pthread_mutex_unlock (&pending_watches_lock);
-    if (flags == 0)
+    if (cb.flags == 0)
     {
         path = rpc_msg_decode_string (msg);
         value = rpc_msg_decode_string (msg);
@@ -242,10 +230,10 @@ handle_watch (rpc_message msg)
             DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, ref);
             if (value[0] == '\0')
                 value = NULL;
-            if (data)
-                ((void*(*)(const char*, const char*, void*)) fn) (path, value, data);
+            if (cb.data)
+                ((void*(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
             else
-                ((void*(*)(const char*, const char*)) fn) (path, value);
+                ((void*(*)(const char*, const char*)) cb.fn) (path, value);
             path = rpc_msg_decode_string (msg);
             value = rpc_msg_decode_string (msg);
         }
@@ -260,10 +248,10 @@ handle_watch (rpc_message msg)
             apteryx_path_to_node (root, path, value);
             path = rpc_msg_decode_string (msg);
         }
-        if (data)
-            ((void*(*)(const GNode*, void*)) fn) (root, data);
+        if (cb.data)
+            ((void*(*)(const GNode*, void*)) cb.fn) (root, cb.data);
         else
-            ((void*(*)(const GNode*)) fn) (root);
+            ((void*(*)(const GNode*)) cb.fn) (root);
     }
     pthread_mutex_lock (&pending_watches_lock);
     if (--pending_watch_count == 0)
