@@ -12,6 +12,13 @@ ifneq ($(V),1)
 	Q=@
 endif
 
+ifdef TESTS
+TEST_ARGS=$(TESTS)
+endif
+ifdef TEST
+TEST_ARGS=$(TEST)
+endif
+
 DESTDIR?=./
 PREFIX?=/usr/
 LIBDIR?=lib
@@ -85,26 +92,18 @@ apteryxd = \
 	kill -TERM $$APID; \
 	while kill -0 $$APID 2> /dev/null; do sleep 1; done;
 
-ifeq (uinttest,$(firstword $(MAKECMDGOALS)))
-TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-$(eval $(TEST_ARGS):;@:)
-endif
-unittest: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
+unit: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
 	@echo "Running apteryx unit test: $<"
 	$(Q)$(call apteryxd,apteryx -u"$(TEST_ARGS)")
 	@echo "Tests have been run!"
 
-ifeq (test,$(firstword $(MAKECMDGOALS)))
-TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-$(eval $(TEST_ARGS):;@:)
-endif
 test: EXTRA_CFLAGS += -fprofile-arcs -ftest-coverage -fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer
 test: EXTRA_LDFLAGS += -fprofile-arcs -ftest-coverage -fsanitize=address -static-libasan
 test: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
 	@echo "Running apteryx unit tests with gcov and address sanitizer: $<"
 	@rm -f $(BUILDDIR)/asan-log.*
 	@rm -f $(BUILDDIR)/*.gcda
-	$(Q)$(call apteryxd,apteryx -u$(TEST_ARGS))
+	$(Q)$(call apteryxd,apteryx -u"$(TEST_ARGS)")
 	@echo "Tests have been run!"
 	@echo "Processing gcov output"
 	@lcov -q --capture --directory $(BUILDDIR)/ --output-file $(BUILDDIR)/coverage.info

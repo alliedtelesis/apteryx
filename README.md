@@ -111,7 +111,16 @@ apteryx -g /clock/time
 
 ## Unit tests
 ```
-make test
+# Run unit tests on the release binary
+make unit [TESTS="filter to match one or more tests"]
+```
+```
+# Run the unit tests on the gcov and address sanitiser compiled binary
+make test [TESTS="filter to match one or more tests"]
+```
+```
+# GCOV output
+google-chrome  .test/gcov/index.html
 ```
 
 ## Client
