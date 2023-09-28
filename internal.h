@@ -246,6 +246,8 @@ int rpc_server_process (rpc_instance rpc, bool poll);
 rpc_client rpc_client_existing (rpc_instance rpc, const char *url);
 rpc_client rpc_client_connect (rpc_instance rpc, const char *url);
 void rpc_client_release (rpc_instance rpc, rpc_client client, bool keep);
+gpointer rpc_add_callback (rpc_instance rpc, GSourceFunc cb, gpointer data, guint timeout_ms);
+void rpc_del_callback (rpc_instance rpc, gpointer handle);
 
 /* Apteryx configuration */
 void config_init (void);

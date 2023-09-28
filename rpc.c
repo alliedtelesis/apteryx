@@ -74,11 +74,15 @@ typedef struct rpc_client_t
 
 /* Server work */
 struct rpc_work_s {
+    rpc_instance rpc;
     rpc_socket sock;
     rpc_id id;
     rpc_msg_handler handler;
     rpc_message_t msg;
     bool responded;
+    GSource *source;
+    GSourceFunc cb;
+    gpointer data;
 };
 
 static void
@@ -94,7 +98,12 @@ static void
 worker_func (gpointer a, gpointer b)
 {
     struct rpc_work_s *work = (struct rpc_work_s *)a;
-    if (work)
+    if (work && work->cb)
+    {
+        work->cb (work->data);
+        g_free (work);
+    }
+    else if (work)
     {
         rpc_socket sock = work->sock;
         rpc_msg_handler handler = work->handler;
@@ -136,7 +145,21 @@ worker_func (gpointer a, gpointer b)
 static gboolean
 slow_callback_fn (gpointer arg1)
 {
-    worker_func (arg1, NULL);
+    struct rpc_work_s *work = (struct rpc_work_s *) arg1;
+    rpc_instance rpc = work->rpc;
+
+    /* Timeout callback but in single thread mode */
+    if (rpc->queue)
+    {
+        uint8_t dummy = 0;
+        g_async_queue_push (rpc->queue, (gpointer) work);
+        if (write (rpc->pollfd[1], &dummy, 1) != 1)
+        {
+            g_atomic_int_inc (&rpc->overflow);
+        }
+    }
+    else
+        worker_func (arg1, NULL);
     return G_SOURCE_REMOVE;
 }
 
@@ -153,7 +176,7 @@ slow_thread_fn (gpointer data)
 }
 
 static void
-submit_slow_work (rpc_instance rpc, struct rpc_work_s *work)
+submit_slow_work (rpc_instance rpc, struct rpc_work_s *work, guint timeout_ms)
 {
     /* Start the slow worker thread on demand */
     if (!rpc->slow_loop)
@@ -162,8 +185,40 @@ submit_slow_work (rpc_instance rpc, struct rpc_work_s *work)
         rpc->slow_loop = g_main_loop_new (rpc->slow_context, FALSE);
         rpc->slow_thread = g_thread_new ("apteryx_slow", slow_thread_fn, (gpointer)rpc);
     }
-    /* Pass the work to the correct thread */
-    g_main_context_invoke_full (rpc->slow_context, G_PRIORITY_DEFAULT, slow_callback_fn, (gpointer) work, NULL);
+
+    if (timeout_ms)
+    {
+        /* Create a timeout callback on the slow worker thread */
+        work->source = g_timeout_source_new (timeout_ms);
+        g_source_set_priority (work->source, G_PRIORITY_DEFAULT);
+        g_source_set_callback (work->source, slow_callback_fn, (gpointer) work, NULL);
+        g_source_attach (work->source, rpc->slow_context);
+        g_source_unref (work->source);
+    }
+    else
+    {
+        /* Pass the work to the slow worker thread */
+        g_main_context_invoke_full (rpc->slow_context, G_PRIORITY_DEFAULT, slow_callback_fn, (gpointer) work, NULL);
+    }
+}
+
+gpointer
+rpc_add_callback (rpc_instance rpc, GSourceFunc cb, gpointer data, guint timeout_ms)
+{
+    struct rpc_work_s *work = (struct rpc_work_s *) g_malloc0 (sizeof(*work));
+    work->rpc = rpc;
+    work->cb = cb;
+    work->data = data;
+    submit_slow_work (rpc, work, timeout_ms);
+    return (gpointer) work;
+}
+
+void
+rpc_del_callback (rpc_instance rpc, gpointer handle)
+{
+    struct rpc_work_s *work = (struct rpc_work_s *) handle;
+    g_source_destroy (work->source);
+    g_free (work);
 }
 
 static void
@@ -186,6 +241,7 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
     /* Store what we need to process this later */
     rpc_socket_ref (sock);
     work = g_malloc0 (sizeof(*work));
+    work->rpc = rpc;
     work->sock = sock;
     work->id = id;
     work->handler = rpc->handler;
@@ -225,7 +281,7 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
     }
     /* Callbacks from local Apteryx threads */
     else if (watch || work->responded)
-        submit_slow_work (rpc, work);
+        submit_slow_work (rpc, work, 0);
     else if (rpc->workers)
         g_thread_pool_push (rpc->workers, work, NULL);
     else
