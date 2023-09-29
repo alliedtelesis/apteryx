@@ -380,6 +380,8 @@ char *apteryx_node_path (GNode *node);
 GNode *apteryx_path_node (GNode *node, const char *path);
 /** Print a tree to fp */
 void apteryx_print_tree (GNode *root, FILE *fp);
+/* Merge src tree into dst tree - assumes full tree with '/' root and takes ownership of src */
+GNode* apteryx_merge_tree (GNode *dst, GNode *src);
 
 /**
  * Convert a path into a full N-ary tree. Each node is separated by a slash.

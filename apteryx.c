@@ -250,8 +250,7 @@ dw_add (uint64_t ref, void *fn, GNode *root, void *data, guint timeout_ms)
     {
         dw_list = g_list_remove (dw_list, dw);
         rpc_del_callback (rpc, dw->handle);
-        // TODO: merge new data into old tree
-        apteryx_free_tree (dw->root);
+        root = apteryx_merge_tree (dw->root, root);
         g_free (dw);
         dw = NULL;
     }
@@ -259,7 +258,7 @@ dw_add (uint64_t ref, void *fn, GNode *root, void *data, guint timeout_ms)
     /* Create a new timer for the requested timeout */
     if (!dw)
     {
-        struct delayed_watch *dw = (struct delayed_watch *) g_malloc0 (sizeof (struct delayed_watch));
+        dw = (struct delayed_watch *) g_malloc0 (sizeof (struct delayed_watch));
         dw->ref = ref;
         dw->fn = fn;
         dw->root = root;
@@ -1197,6 +1196,61 @@ _set_multi (GNode *node, gpointer data)
         free (path);
     }
     return FALSE;
+}
+
+static void
+merge_node_into_parent (GNode *parent, GNode *node)
+{
+    for (GNode *pchild = parent->children; pchild; pchild = pchild->next)
+    {
+        if (g_strcmp0 (pchild->data, node->data) == 0)
+        {
+            /* Unlink all the children and add to the original parent */
+            GList *children = NULL;
+            for (GNode *nchild = node->children; nchild; nchild = nchild->next)
+            {
+                children = g_list_append (children, nchild);
+            }
+            for (GList *nchild = children; nchild; nchild = nchild->next)
+            {
+                g_node_unlink (nchild->data);
+                merge_node_into_parent (pchild, nchild->data);
+            }
+            g_list_free (children);
+            node->children = NULL;
+            free ((void *)node->data);
+            g_node_destroy (node);
+            return;
+        }
+    }
+    if (parent && node)
+    {
+        /* Replace values if needed */
+        if (parent->children && !node->children)
+        {
+            free ((void *)parent->children->data);
+            g_node_destroy (parent->children);
+            parent->children = NULL;
+        }
+        g_node_prepend (parent, node);
+    }
+}
+
+/* Merge src into dst */
+GNode*
+apteryx_merge_tree (GNode *dst, GNode *src)
+{
+    GNode *pchild = src->children;
+    while (pchild)
+    {
+        GNode *next = pchild->next;
+        merge_node_into_parent (dst, pchild);
+        pchild = next;
+    }
+    src->children = NULL;
+    free ((void *)src->data);
+    g_node_destroy (src);
+    return dst;
 }
 
 bool

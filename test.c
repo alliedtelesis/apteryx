@@ -5570,7 +5570,7 @@ void
 test_watch_tree_after_quiet ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
-    GNode* node;
+    GNode *node;
 
     _cb_count = 0;
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
@@ -5587,8 +5587,44 @@ test_watch_tree_after_quiet ()
     CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
     CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "5") == 0);
-    CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
+    CU_ASSERT (apteryx_unwatch_tree_full (path, test_watch_tree_callback));
     apteryx_set_string (path, NULL, NULL);
+    _watch_tree_cleanup ();
+}
+
+void
+test_watch_tree_after_quiet_merged ()
+{
+    const char *path = TEST_PATH"/entity/zones";
+    GNode *node, *child;
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_watch_tree_full (TEST_PATH"/entity/zones/*", test_watch_tree_callback, (TEST_SLEEP_TIMEOUT/2/1000)));
+    CU_ASSERT (apteryx_set_string (path, "zone1", "1"));
+    CU_ASSERT (apteryx_set_string (path, "zone2", "2"));
+    CU_ASSERT (apteryx_set_string (path, "zone3", "3"));
+    CU_ASSERT (apteryx_set_string (path, "zone4", "4"));
+    CU_ASSERT (apteryx_set_string (path, "zone5", "5"));
+    CU_ASSERT (apteryx_set_string (path, "zone5", "6"));
+    CU_ASSERT (apteryx_set_string (path, "zone3", NULL));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_NON_LEAVES) == 9);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 5);
+    CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
+    CU_ASSERT ((child = apteryx_find_child (node, "zone1")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "zone2")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "2") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "zone3")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "zone4")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "4") == 0);
+    CU_ASSERT ((child = apteryx_find_child (node, "zone5")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "6") == 0);
+    CU_ASSERT (apteryx_unwatch_tree_full (TEST_PATH"/entity/zones/*", test_watch_tree_callback));
+    apteryx_prune (path);
     _watch_tree_cleanup ();
 }
 
@@ -8385,6 +8421,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "watch tree one level multi", test_watch_tree_one_level_multi },
     { "watch tree one level miss", test_watch_tree_one_level_miss },
     { "watch tree after quiet", test_watch_tree_after_quiet },
+    { "watch tree after quiet merged", test_watch_tree_after_quiet_merged },
     CU_TEST_INFO_NULL,
 };
 
