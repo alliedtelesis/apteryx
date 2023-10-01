@@ -1471,6 +1471,18 @@ add_null_data (GNode *node, gpointer data)
     return false;
 }
 
+static gboolean
+remove_null_data (GNode *node, gpointer data)
+{
+    /* This turns the end of this tree into leaves */
+    if (node->data == NULL)
+    {
+        g_node_unlink (node);
+        g_node_destroy (node);
+    }
+    return false;
+}
+
 GNode *
 apteryx_query (GNode *root)
 {
@@ -1526,6 +1538,9 @@ apteryx_query (GNode *root)
 
     rpc_msg_encode_uint8 (&msg, MODE_QUERY);
     rpc_msg_encode_tree (&msg, root);
+
+    /* Now that the node has been encoded, strip the NULL nodes back off again */
+    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, remove_null_data, NULL);
 
     if (!rpc_msg_send (rpc_client, &msg))
     {
