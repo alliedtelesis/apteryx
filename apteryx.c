@@ -262,6 +262,7 @@ dw_add (uint64_t ref, void *fn, GNode *root, void *data, guint timeout_ms)
         dw->ref = ref;
         dw->fn = fn;
         dw->root = root;
+        dw->data = data;
         dw->timeout_ms = timeout_ms;
         dw_list = g_list_append (dw_list, dw);
         dw->handle = rpc_add_callback (rpc, dw_process, (gpointer) dw,  timeout_ms);

@@ -614,8 +614,11 @@ lua_apteryx_watch_tree (lua_State *L)
     luaL_checktype (L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
+    lua_Integer timeout_ms = 0;
+    if (lua_gettop (L) == 3 && lua_isinteger (L, 3))
+        timeout_ms = lua_tointeger (L, 3);
 
-    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, true, (void *) ref, 1, 0))
+    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, true, (void *) ref, 1, (uint64_t) timeout_ms))
     {
         luaL_error (L, "Failed to register watch\n");
         lua_pushboolean (L, false);
