@@ -7911,6 +7911,49 @@ test_lua_watch_tree (void)
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_lua_watch_tree_after_quiet (void)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "tree = nil                                                   \n"
+            "cb_count = 0                                                 \n"
+            "function test_watch (t)                                        "
+            "    cb_count = cb_count + 1                                    "
+            "    tree = t                                                   "
+            "end                                                          \n"
+            "apteryx.watch_tree('"TEST_PATH"/zones/*', test_watch, 50)    \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/zones/zone1', '1')                  \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/zones/zone2', '2')                  \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/zones/zone3', '3')                  \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/zones/zone4', '4')                  \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/zones/zone5', '5')                  \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/zones/zone5', '6')                  \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/zones/zone3', '')                   \n"
+            "apteryx.process()                                            \n"
+            "os.execute('sleep 0.1')                                      \n"
+            "apteryx.process()                                            \n"
+            "assert (cb_count == 1)                                       \n"
+            "assert (tree and tree.test and tree.test.zones)              \n"
+            "assert (tree.test.zones.zone1 == '1')                        \n"
+            "assert (tree.test.zones.zone2 == '2')                        \n"
+            "assert (tree.test.zones.zone3 == '')                         \n"
+            "assert (tree.test.zones.zone4 == '4')                        \n"
+            "assert (tree.test.zones.zone5 == '6')                        \n"
+            "apteryx.unwatch('"TEST_PATH"/zones/*', test_watch)           \n"
+            "apteryx.prune('"TEST_PATH"/zones')                           \n"
+            "apteryx.process(false)                                       \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int
 test_lua_refresh_thread (void *data)
 {
@@ -8540,6 +8583,7 @@ CU_TestInfo tests_lua[] = {
     { "lua basic watch", test_lua_basic_watch },
     { "lua multiple watchers", test_lua_multiple_watchers },
     { "lua watch tree", test_lua_watch_tree },
+    { "lua watch tree after quiet", test_lua_watch_tree_after_quiet },
     { "lua basic refresh", test_lua_basic_refresh },
     { "lua basic provide", test_lua_basic_provide },
     { "lua basic index", test_lua_basic_index },
