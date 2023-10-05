@@ -568,6 +568,26 @@ lua_do_watch (const char *path, const char *value, size_t ref)
     return true;
 }
 
+static bool
+lua_do_watch_tree (GNode *tree, size_t ref)
+{
+    int res = 0;
+    lua_State* L = g_L;
+
+    ASSERT (L, return false, "Watch: LUA is not multi-threaded (use apteryx.process)\n");
+    int ssize = lua_gettop (L);
+    if (!push_callback (L, ref))
+        return false;
+    lua_apteryx_tree2dict (L, tree);
+    apteryx_free_tree (tree);
+    res = lua_pcall (L, 1, 0, 0);
+    if (res != 0)
+        lua_apteryx_error (L, res);
+    lua_pop (L, 1); /* pop fn */
+    ASSERT (lua_gettop (L) == ssize, return true, "Watch: Stack changed\n");
+    return true;
+}
+
 static int
 lua_apteryx_watch (lua_State *L)
 {
@@ -588,6 +608,25 @@ lua_apteryx_watch (lua_State *L)
 }
 
 static int
+lua_apteryx_watch_tree (lua_State *L)
+{
+    luaL_checktype (L, 1, LUA_TSTRING);
+    luaL_checktype (L, 2, LUA_TFUNCTION);
+    const char *path = lua_tostring (L, 1);
+    size_t ref = ref_callback (L, 2);
+
+    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, true, (void *) ref, 1, 0))
+    {
+        luaL_error (L, "Failed to register watch\n");
+        lua_pushboolean (L, false);
+        return 1;
+    }
+
+    lua_pushboolean (L, true);
+    return 1;
+}
+
+static int
 lua_apteryx_unwatch (lua_State *L)
 {
     luaL_checktype(L, 1, LUA_TSTRING);
@@ -595,7 +634,8 @@ lua_apteryx_unwatch (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, (void *) ref))
+    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, (void *) ref) &&
+        !delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, (void *) ref))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
@@ -887,6 +927,7 @@ luaopen_libapteryx (lua_State *L)
         { "index", lua_apteryx_index },
         { "unindex", lua_apteryx_unindex },
         { "watch", lua_apteryx_watch },
+        { "watch_tree", lua_apteryx_watch_tree },
         { "unwatch", lua_apteryx_unwatch },
         { "refresh", lua_apteryx_refresh },
         { "unrefresh", lua_apteryx_unrefresh },

@@ -7886,6 +7886,31 @@ test_lua_multiple_watchers ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_lua_watch_tree (void)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "local tree = nil                                             \n"
+            "function test_watch (t)                                        "
+            "    tree = t                                                   "
+            "end                                                          \n"
+            "apteryx.watch_tree('"TEST_PATH"/t', test_watch)              \n"
+            "apteryx.process()                                            \n"
+            "t={a='a', b={a='ba', b='bb'}, c = 'c'}                       \n"
+            "apteryx.set_tree('"TEST_PATH"/t', t);                        \n"
+            "apteryx.process()                                            \n"
+            "assert (tree and tree['test'] and tree['test'].t)            \n"
+            "t2 = tree['test'].t                                          \n"
+            "assert (#t2 == #t and #t2.b == #t.b)                         \n"
+            "assert (t2.a == t.a and t2.b.a == t.b.a and t2.c == t.c)     \n"
+            "apteryx.unwatch('"TEST_PATH"/t', test_watch)                 \n"
+            "apteryx.prune('"TEST_PATH"/t')                               \n"
+            "apteryx.process(false)                                       \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int
 test_lua_refresh_thread (void *data)
 {
@@ -8514,6 +8539,7 @@ CU_TestInfo tests_lua[] = {
     { "lua basic timestamp", test_lua_basic_timestamp },
     { "lua basic watch", test_lua_basic_watch },
     { "lua multiple watchers", test_lua_multiple_watchers },
+    { "lua watch tree", test_lua_watch_tree },
     { "lua basic refresh", test_lua_basic_refresh },
     { "lua basic provide", test_lua_basic_provide },
     { "lua basic index", test_lua_basic_index },
