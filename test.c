@@ -7829,6 +7829,37 @@ test_lua_basic_watch (void)
 }
 
 void
+test_lua_repeat_watchers (void)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "cb_count = 0                                                 \n"
+            "function test_watch (path, value)                              "
+            "    cb_count = cb_count + 1                                    "
+            "end                                                          \n"
+            "apteryx.watch('"TEST_PATH"/watch/1', test_watch)             \n"
+            "apteryx.process()                                            \n"
+            "apteryx.watch('"TEST_PATH"/watch/2', test_watch)             \n"
+            "apteryx.process()                                            \n"
+            "apteryx.watch('"TEST_PATH"/watch/3', test_watch)             \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch/1', '1')                      \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch/2', '2')                      \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch/3', '3')                      \n"
+            "apteryx.process()                                            \n"
+            "assert (cb_count == 3)                                       \n"
+            "apteryx.unwatch('"TEST_PATH"/watch/1', test_watch)           \n"
+            "apteryx.unwatch('"TEST_PATH"/watch/2', test_watch)           \n"
+            "apteryx.unwatch('"TEST_PATH"/watch/3', test_watch)           \n"
+            "apteryx.prune('"TEST_PATH"/watch')                           \n"
+            "apteryx.process(false)                                       \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_lua_multiple_watchers ()
 {
         CU_ASSERT (_run_lua (
@@ -7949,6 +7980,43 @@ test_lua_watch_tree_after_quiet (void)
             "assert (tree.test.zones.zone5 == '6')                        \n"
             "apteryx.unwatch('"TEST_PATH"/zones/*', test_watch)           \n"
             "apteryx.prune('"TEST_PATH"/zones')                           \n"
+            "apteryx.process(false)                                       \n"
+    ));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_lua_multiple_watch_tree_after_quiet (void)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "cb_count1 = 0                                                \n"
+            "cb_count2 = 0                                                \n"
+            "function test_watch1 (t)                                       "
+            "    cb_count1 = cb_count1 + 1                                  "
+            "end                                                          \n"
+            "function test_watch2 (t)                                       "
+            "    cb_count2 = cb_count2 + 1                                  "
+            "end                                                          \n"
+            "apteryx.watch_tree('"TEST_PATH"/watch1/*', test_watch1, 50)  \n"
+            "apteryx.watch_tree('"TEST_PATH"/watch1/*', test_watch2, 50)  \n"
+            "apteryx.watch_tree('"TEST_PATH"/watch2/*', test_watch2, 50)  \n"
+            "apteryx.process()                                            \n"
+            "apteryx.set('"TEST_PATH"/watch1/1', '1')                     \n"
+            "apteryx.set('"TEST_PATH"/watch1/1', '2')                     \n"
+            "apteryx.set('"TEST_PATH"/watch1/2', '3')                     \n"
+            "apteryx.set('"TEST_PATH"/watch2/2', '1')                     \n"
+            "apteryx.set('"TEST_PATH"/watch2/2', '2')                     \n"
+            "for i=1,8 do apteryx.process() end                           \n"
+            "os.execute('sleep 0.1')                                      \n"
+            "for i=1,5 do apteryx.process() end                           \n"
+            "assert (cb_count1 == 1)                                      \n"
+            "assert (cb_count2 == 2)                                      \n"
+            "apteryx.unwatch('"TEST_PATH"/watch1/*', test_watch1)         \n"
+            "apteryx.unwatch('"TEST_PATH"/watch1/*', test_watch2)         \n"
+            "apteryx.unwatch('"TEST_PATH"/watch2/*', test_watch2)         \n"
+            "apteryx.prune('"TEST_PATH"/watch1')                          \n"
+            "apteryx.prune('"TEST_PATH"/watch2')                          \n"
             "apteryx.process(false)                                       \n"
     ));
     CU_ASSERT (assert_apteryx_empty ());
@@ -8581,9 +8649,11 @@ CU_TestInfo tests_lua[] = {
     { "lua basic string query", test_lua_basic_string_query},
     { "lua basic timestamp", test_lua_basic_timestamp },
     { "lua basic watch", test_lua_basic_watch },
+    { "lua repeat watchers", test_lua_repeat_watchers },
     { "lua multiple watchers", test_lua_multiple_watchers },
     { "lua watch tree", test_lua_watch_tree },
     { "lua watch tree after quiet", test_lua_watch_tree_after_quiet },
+    { "lua multiple watch tree after quiet", test_lua_multiple_watch_tree_after_quiet },
     { "lua basic refresh", test_lua_basic_refresh },
     { "lua basic provide", test_lua_basic_provide },
     { "lua basic index", test_lua_basic_index },
