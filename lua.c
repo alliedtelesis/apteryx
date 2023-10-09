@@ -408,20 +408,18 @@ find_callback (lua_State *L, int index)
 {
     int ref = 0;
     luaL_checktype (L, -1, LUA_TTABLE);
-    lua_pushvalue (L, -1);
-    lua_pushnil (L);
+    /* lua_next pops requested key and pushes next key and value */
+    lua_pushnil (L); /* push nil key to get first table entry */
     while (lua_next (L, -2))
     {
-        lua_pushvalue (L, -2);
-        if (lua_rawequal (L, index, -2))
+        if (lua_rawequal (L, index, -1))
         {
-            ref = lua_tonumber (L, -1);
-            lua_pop (L, 2);
+            ref = lua_tonumber (L, -2);
+            lua_pop (L, 2); /* pop key and value */
             break;
         }
-        lua_pop(L, 2);
+        lua_pop(L, 1); /* pop value but leave key on stack for lua_next */
     }
-    lua_pop(L, 1);
     return ref;
 }
 
