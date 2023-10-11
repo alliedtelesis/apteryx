@@ -80,7 +80,6 @@ struct rpc_work_s {
     rpc_msg_handler handler;
     rpc_message_t msg;
     bool responded;
-    GSource *source;
     GSourceFunc cb;
     gpointer data;
 };
@@ -89,8 +88,11 @@ static void
 work_destroy (gpointer data)
 {
     struct rpc_work_s *work = (struct rpc_work_s *)data;
-    rpc_msg_reset (&work->msg);
-    rpc_socket_deref (work->sock);
+    if (!work->cb)
+    {
+        rpc_msg_reset (&work->msg);
+        rpc_socket_deref (work->sock);
+    }
     g_free (work);
 }
 
@@ -100,8 +102,8 @@ worker_func (gpointer a, gpointer b)
     struct rpc_work_s *work = (struct rpc_work_s *)a;
     if (work && work->cb)
     {
-        work->cb (work->data);
-        g_free (work);
+        if (work->cb (work->data) == G_SOURCE_REMOVE)
+            work_destroy (work);
     }
     else if (work)
     {
@@ -148,6 +150,13 @@ slow_callback_fn (gpointer arg1)
     struct rpc_work_s *work = (struct rpc_work_s *) arg1;
     rpc_instance rpc = work->rpc;
 
+    /* Destroy GSource under the safety of the rpc lock */
+    pthread_mutex_lock (&rpc->lock);
+    GSource *source = g_main_context_find_source_by_funcs_user_data (rpc->slow_context, &g_timeout_funcs, (gpointer) work);
+    if (source)
+        g_source_destroy (source);
+    pthread_mutex_unlock (&rpc->lock);
+
     /* Timeout callback but in single thread mode */
     if (rpc->queue)
     {
@@ -186,14 +195,15 @@ submit_slow_work (rpc_instance rpc, struct rpc_work_s *work, guint timeout_ms)
         rpc->slow_thread = g_thread_new ("apteryx_slow", slow_thread_fn, (gpointer)rpc);
     }
 
+    /* Pass to the slow worker thread either via a timeout or invoke directly */
     if (timeout_ms)
     {
         /* Create a timeout callback on the slow worker thread */
-        work->source = g_timeout_source_new (timeout_ms);
-        g_source_set_priority (work->source, G_PRIORITY_DEFAULT);
-        g_source_set_callback (work->source, slow_callback_fn, (gpointer) work, NULL);
-        g_source_attach (work->source, rpc->slow_context);
-        g_source_unref (work->source);
+        GSource *source = g_timeout_source_new (timeout_ms);
+        g_source_set_priority (source, G_PRIORITY_DEFAULT);
+        g_source_set_callback (source, slow_callback_fn, (gpointer) work, NULL);
+        g_source_attach (source, rpc->slow_context);
+        g_source_unref (source);
     }
     else
     {
@@ -206,19 +216,57 @@ gpointer
 rpc_add_callback (rpc_instance rpc, GSourceFunc cb, gpointer data, guint timeout_ms)
 {
     struct rpc_work_s *work = (struct rpc_work_s *) g_malloc0 (sizeof(*work));
+    assert (timeout_ms > 0);
     work->rpc = rpc;
     work->cb = cb;
     work->data = data;
+    pthread_mutex_lock (&rpc->lock);
     submit_slow_work (rpc, work, timeout_ms);
+    pthread_mutex_unlock (&rpc->lock);
+    DEBUG ("RPC-CB[%p]: ADD callback with timeout %dms\n", work, timeout_ms);
     return (gpointer) work;
 }
 
 void
-rpc_del_callback (rpc_instance rpc, gpointer handle)
+rpc_restart_callback (rpc_instance rpc, gpointer handle, guint timeout_ms)
 {
     struct rpc_work_s *work = (struct rpc_work_s *) handle;
-    g_source_destroy (work->source);
-    g_free (work);
+    GSource *source;
+
+    pthread_mutex_lock (&rpc->lock);
+    source = g_main_context_find_source_by_funcs_user_data (rpc->slow_context, &g_timeout_funcs, (gpointer) work);
+    if (source && !g_source_is_destroyed (source))
+    {
+        DEBUG ("RPC-CB[%p]: RESTART callback with timeout %dms\n", work, timeout_ms);
+        g_source_destroy (source);
+        submit_slow_work (rpc, work, timeout_ms);
+    }
+    else
+    {
+        DEBUG ("RPC-CB[%p]: RESTART - already completed sorry ...\n", work);
+    }
+    pthread_mutex_unlock (&rpc->lock);
+}
+
+void
+rpc_cancel_callback (rpc_instance rpc, gpointer handle)
+{
+    struct rpc_work_s *work = (struct rpc_work_s *) handle;
+    GSource *source;
+
+    pthread_mutex_lock (&rpc->lock);
+    source = g_main_context_find_source_by_funcs_user_data (rpc->slow_context, &g_timeout_funcs, (gpointer) work);
+    if (source && !g_source_is_destroyed (source))
+    {
+        DEBUG ("RPC-CB[%p]: CANCEL callback\n", work);
+        g_source_destroy (source);
+        work_destroy (work);
+    }
+    else
+    {
+        DEBUG ("RPC-CB[%p]: CANCEL - already completed sorry ...\n", work);
+    }
+    pthread_mutex_unlock (&rpc->lock);
 }
 
 static void
@@ -281,7 +329,11 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
     }
     /* Callbacks from local Apteryx threads */
     else if (watch || work->responded)
+    {
+        pthread_mutex_lock (&rpc->lock);
         submit_slow_work (rpc, work, 0);
+        pthread_mutex_unlock (&rpc->lock);
+    }
     else if (rpc->workers)
         g_thread_pool_push (rpc->workers, work, NULL);
     else

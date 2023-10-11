@@ -245,18 +245,13 @@ dw_add (uint64_t ref, void *fn, GNode *root, void *data, guint timeout_ms)
         dw = NULL;
     }
 
-    /* If we found a match lets merge in the new data */
+    /* If we found a match lets merge in the new data and restart the timer */
     if (dw)
     {
-        dw_list = g_list_remove (dw_list, dw);
-        rpc_del_callback (rpc, dw->handle);
-        root = apteryx_merge_tree (dw->root, root);
-        g_free (dw);
-        dw = NULL;
+        dw->root = apteryx_merge_tree (dw->root, root);
+        rpc_restart_callback (rpc, dw->handle, timeout_ms);
     }
-
-    /* Create a new timer for the requested timeout */
-    if (!dw)
+    else
     {
         dw = (struct delayed_watch *) g_malloc0 (sizeof (struct delayed_watch));
         dw->ref = ref;
