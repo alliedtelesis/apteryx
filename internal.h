@@ -239,6 +239,7 @@ bool rpc_msg_send (rpc_client client, rpc_message msg);
 void rpc_msg_reset (rpc_message msg);
 
 rpc_instance rpc_init (int timeout, rpc_msg_handler handler);
+void rpc_halt (rpc_instance rpc);
 void rpc_shutdown (rpc_instance rpc);
 bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);
 bool rpc_server_release (rpc_instance rpc, const char *guid);

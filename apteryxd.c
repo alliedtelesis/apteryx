@@ -2438,6 +2438,7 @@ exit:
     {
         rpc_server_release (rpc, url);
         rpc_shutdown (rpc);
+        rpc = NULL;
     }
 
     db_shutdown ();
