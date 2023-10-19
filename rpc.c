@@ -398,6 +398,35 @@ destroy_rpc_client (gpointer key, gpointer value, gpointer rpc)
     return true;
 }
 
+static void
+halt_client (gpointer _unused, gpointer _client, gpointer _also_unused)
+{
+    rpc_client_t *client = (rpc_client_t*)_client;
+
+    if (client && client->sock && client->sock->thread)
+    {
+        pthread_cancel (client->sock->thread);
+        pthread_join (client->sock->thread, NULL);
+    }
+}
+
+void
+rpc_halt (rpc_instance rpc)
+{
+    if (rpc)
+    {
+        pthread_mutex_lock (&rpc->lock);
+        if (rpc->workers)
+            g_thread_pool_set_max_threads (rpc->workers, 0, NULL);
+
+        if (rpc->clients)
+        {
+            g_hash_table_foreach(rpc->clients, halt_client, NULL);
+        }
+        pthread_mutex_unlock (&rpc->lock);
+    }
+}
+
 void
 rpc_shutdown (rpc_instance rpc)
 {
@@ -443,9 +472,11 @@ rpc_shutdown (rpc_instance rpc)
     /* Remove all clients */
     g_hash_table_foreach_remove (rpc->clients, (GHRFunc)destroy_rpc_client, rpc);
     g_hash_table_destroy (rpc->clients);
+    rpc->clients = NULL;
 
     /* Free instance */
     g_free ((void*) rpc);
+    rpc = NULL;
 }
 
 bool

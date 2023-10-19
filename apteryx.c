@@ -35,7 +35,7 @@
 #include <glib.h>
 
 /* Flag the destructor so things get tidied up when the shared library is unloaded */
-bool apteryx_shutdown_force (void) __attribute__((destructor));
+bool apteryx_halt (void) __attribute__((destructor));
 
 /* Configuration */
 bool apteryx_debug = false;                      /* Debug enabled */
@@ -515,6 +515,7 @@ apteryx_shutdown (void)
     /* Shutdown */
     DEBUG ("SHUTDOWN: Shutting down\n");
     rpc_shutdown (rpc);
+    rpc = NULL;
     bound = false;
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
@@ -527,6 +528,14 @@ apteryx_shutdown_force (void)
     DEBUG ("SHUTDOWN: (Forced)\n");
     while (ref_count > 0)
         apteryx_shutdown ();
+    return true;
+}
+
+bool
+apteryx_halt (void)
+{
+    DEBUG ("SHUTDOWN: stopping threads prior to process exit\n");
+    rpc_halt (rpc);
     return true;
 }
 
