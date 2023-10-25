@@ -1663,9 +1663,6 @@ apteryx_query_full (GNode *root)
     rpc_msg_encode_uint8 (&msg, MODE_QUERY);
     rpc_msg_encode_tree (&msg, root);
 
-    /* Now that the node has been encoded, strip the NULL nodes back off again */
-    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, remove_null_data, NULL);
-
     if (!rpc_msg_send (rpc_client, &msg))
     {
         ERROR ("QUERY: No response Path(%s)\n", path);
@@ -1740,13 +1737,19 @@ apteryx_query_full (GNode *root)
 GNode *
 apteryx_query (GNode *root)
 {
+    GNode *query_result;
     /* the g_node tree that gets passed in here it different from an apteryx tree
      * used for get / set tree operations - value leaf nodes don't get created.
      * We need them for the encode tree, so add them now.
      */
     ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
     g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, add_null_data, NULL);
-    return apteryx_query_full (root);
+
+    query_result = apteryx_query_full (root);
+
+    /* Now that the node has been encoded, strip the NULL nodes back off again */
+    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, remove_null_data, NULL);
+    return query_result;
 }
 
 GList *
