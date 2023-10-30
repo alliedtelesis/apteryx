@@ -208,7 +208,12 @@ submit_slow_work (rpc_instance rpc, struct rpc_work_s *work, guint timeout_ms)
     else
     {
         /* Pass the work to the slow worker thread */
-        g_main_context_invoke_full (rpc->slow_context, G_PRIORITY_DEFAULT, slow_callback_fn, (gpointer) work, NULL);
+        GSource *source;
+        source = g_idle_source_new ();
+        g_source_set_priority (source, G_PRIORITY_DEFAULT);
+        g_source_set_callback (source, slow_callback_fn, work, NULL);
+        g_source_attach (source, rpc->slow_context);
+        g_source_unref (source);
     }
 }
 
