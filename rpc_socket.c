@@ -251,14 +251,18 @@ rpc_socket_die (rpc_socket sock)
     close (sock->sock);
     usleep (1000);
     pthread_mutex_unlock (&sock->in_lock);
-    if (!pthread_equal (pthread_self (), sock->thread))
+    if (sock->thread)
     {
-        pthread_cancel (sock->thread);
-        pthread_join (sock->thread, NULL);
-    }
-    else
-    {
-        pthread_detach (sock->thread);
+        if (!pthread_equal (pthread_self (), sock->thread))
+        {
+            pthread_cancel (sock->thread);
+            pthread_join (sock->thread, NULL);
+        }
+        else
+        {
+            pthread_detach (sock->thread);
+        }
+        sock->thread = 0;
     }
     pthread_mutex_lock (&sock->in_lock);
     for (GList *itr = sock->in_queue; itr; itr = itr->next)
