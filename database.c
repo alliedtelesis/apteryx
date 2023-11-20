@@ -121,7 +121,7 @@ db_memuse (const char *path)
 static void
 _db_update_timestamps (struct database_node *node, uint64_t ts)
 {
-    node->timestamp = ts;
+    node->timestamp = 0;
     GList *children = hashtree_children_get (&node->hashtree_node);
     for (GList *iter = children; iter; iter = g_list_next (iter))
     {
