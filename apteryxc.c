@@ -87,7 +87,7 @@ static char *provide_value = NULL;
 static char*
 provide_callback (const char *path)
 {
-    return strdup ((char *) provide_value);
+    return strdup ("Scott");
 }
 
 struct stat_t
