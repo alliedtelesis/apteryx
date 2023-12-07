@@ -90,6 +90,16 @@ remove_callback_info (lua_State *L, size_t ref, lua_callback_type type)
     return NULL;
 }
 
+static bool
+callback_valid (lua_callback_info *cb_info)
+{
+    bool result;
+    pthread_mutex_lock(&callback_lock);
+    result = !!g_list_find(callbacks, cb_info);
+    pthread_mutex_unlock(&callback_lock);
+    return result;
+}
+
 static void
 destroy_cb_info(lua_callback_info *cb_info)
 {
