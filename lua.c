@@ -64,6 +64,7 @@ typedef struct lua_callback_info {
     char *path;
 } lua_callback_info;
 
+static pthread_mutex_t callback_lock = PTHREAD_MUTEX_INITIALIZER;
 static GList *callbacks = NULL;
 static GHashTable *locks = NULL;
 static pthread_rwlock_t lock_lock = PTHREAD_RWLOCK_INITIALIZER;
@@ -78,15 +79,18 @@ static lua_callback_info *
 remove_callback_info (lua_State *L, size_t ref, lua_callback_type type)
 {
     GList *iter;
+    pthread_mutex_lock(&callback_lock);
     for (iter = callbacks; iter; iter = iter->next)
     {
         lua_callback_info *cb_info = iter->data;
         if (cb_info->instance == L && cb_info->ref == ref && cb_info->type == type)
         {
             callbacks = g_list_delete_link (callbacks, iter);
+            pthread_mutex_unlock(&callback_lock);
             return cb_info;
         }
     }
+    pthread_mutex_unlock(&callback_lock);
     return NULL;
 }
 
@@ -116,7 +120,9 @@ new_lua_callback(lua_State *L, lua_callback_type type, const char *path, size_t 
     cb_info->type = type;
     cb_info->path = g_strdup (path);
 
+    pthread_mutex_lock(&callback_lock);
     callbacks = g_list_prepend (callbacks, cb_info);
+    pthread_mutex_unlock(&callback_lock);
     return cb_info;
 }
 
