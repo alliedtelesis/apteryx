@@ -76,14 +76,15 @@ bool lua_apteryx_instance_lock (lua_State *L);
 void lua_apteryx_instance_unlock (lua_State *L);
 
 static lua_callback_info *
-remove_callback_info (lua_State *L, size_t ref, lua_callback_type type)
+remove_callback_info (lua_State *L, size_t ref, const char *path, lua_callback_type type)
 {
     GList *iter;
     pthread_mutex_lock(&callback_lock);
     for (iter = callbacks; iter; iter = iter->next)
     {
         lua_callback_info *cb_info = iter->data;
-        if (cb_info->instance == L && cb_info->ref == ref && cb_info->type == type)
+        if (cb_info->instance == L && cb_info->ref == ref && cb_info->type == type &&
+            g_strcmp0(cb_info->path, path) == 0)
         {
             callbacks = g_list_delete_link (callbacks, iter);
             pthread_mutex_unlock(&callback_lock);
@@ -606,7 +607,7 @@ lua_apteryx_index (lua_State *L)
 
     lua_callback_info *cb_info = new_lua_callback (L, LUA_CALLBACK_INDEX, path, ref);
 
-    if (!add_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, false, cb_info, 0))
+    if (!add_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, false, cb_info, 0, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -625,7 +626,7 @@ lua_apteryx_unindex (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_INDEX);
+    lua_callback_info *cb_info = remove_callback_info (L, ref, path, LUA_CALLBACK_INDEX);
 
     if (!delete_callback (APTERYX_INDEXERS_PATH, path, (void *)lua_do_index, cb_info))
     {
@@ -679,22 +680,43 @@ lua_do_watch (const char *path, const char *value, lua_callback_info *cb_info)
 }
 
 static bool
-lua_do_watch_tree (GNode *tree, size_t ref)
+lua_do_watch_tree (GNode *tree, lua_callback_info *cb_info)
 {
     int res = 0;
-    lua_State* L = g_L;
+    
+    ASSERT (callback_valid(cb_info), return false, "Watch: cb_info released already\n");
+
+    lua_State* L = cb_info->instance;
+    size_t ref = cb_info->ref;
 
     ASSERT (L, return false, "Watch: LUA is not multi-threaded (use apteryx.process)\n");
-    int ssize = lua_gettop (L);
-    if (!push_callback (L, ref))
-        return false;
-    lua_apteryx_tree2dict (L, tree);
-    apteryx_free_tree (tree);
-    res = lua_pcall (L, 1, 0, 0);
-    if (res != 0)
-        lua_apteryx_error (L, res);
-    lua_pop (L, 1); /* pop fn */
-    ASSERT (lua_gettop (L) == ssize, return true, "Watch: Stack changed\n");
+
+    if (lua_apteryx_instance_lock (L))
+    {
+        int ssize = lua_gettop (L);
+        if (!push_callback (L, ref))
+        {
+            printf("%s: unable to push callback", __FUNCTION__);
+            lua_apteryx_instance_unlock (L);
+            return false;
+        }
+
+        lua_apteryx_tree2dict (L, tree);
+        apteryx_free_tree (tree);
+        res = lua_pcall (L, 1, 0, 0);
+        if (res != 0)
+        {
+            lua_apteryx_error (L, res);
+        }
+        lua_pop (L, 1); /* pop fn */
+
+        if (lua_gettop (L) != ssize)
+        {
+            ERROR ("Watch: Stack changed\n");
+        }
+        lua_apteryx_instance_unlock (L);
+    }
+
     return true;
 }
 
@@ -706,7 +728,9 @@ lua_apteryx_watch (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, true, (void *) ref, 0, 0))
+    lua_callback_info *cb_info = new_lua_callback (L, LUA_CALLBACK_WATCH, path, ref);
+
+    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, true, (void *) cb_info, 0, 0))
     {
         luaL_error (L, "Failed to register watch\n");
         lua_pushboolean (L, false);
@@ -728,7 +752,9 @@ lua_apteryx_watch_tree (lua_State *L)
     if (lua_gettop (L) == 3 && lua_isinteger (L, 3))
         timeout_ms = lua_tointeger (L, 3);
 
-    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, true, (void *) ref, 1, (uint64_t) timeout_ms))
+    lua_callback_info *cb_info = new_lua_callback (L, LUA_CALLBACK_WATCH, path, ref);
+
+    if (!add_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, true, (void *) cb_info, 1, (uint64_t) timeout_ms))
     {
         luaL_error (L, "Failed to register watch\n");
         lua_pushboolean (L, false);
@@ -747,9 +773,10 @@ lua_apteryx_unwatch (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_WATCH);
+    lua_callback_info *cb_info = remove_callback_info (L, ref, path, LUA_CALLBACK_WATCH);
 
-    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, cb_info))
+    if (!delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch, cb_info) &&
+        !delete_callback (APTERYX_WATCHERS_PATH, path, (void *)lua_do_watch_tree, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
         lua_pushboolean (L, false);
@@ -810,7 +837,7 @@ lua_apteryx_refresh (lua_State *L)
 
     lua_callback_info *cb_info = new_lua_callback(L, LUA_CALLBACK_REFRESH, path, ref);
 
-    if (!add_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, false, cb_info, 0))
+    if (!add_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, false, cb_info, 0, 0))
     {
         luaL_error (L, "Failed to register refresh\n");
         lua_pushboolean (L, false);
@@ -828,7 +855,7 @@ lua_apteryx_unrefresh (lua_State *L)
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
-    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_REFRESH);
+    lua_callback_info *cb_info = remove_callback_info (L, ref, path, LUA_CALLBACK_REFRESH);
     if (!delete_callback (APTERYX_REFRESHERS_PATH, path, (void *)lua_do_refresh, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
@@ -889,7 +916,7 @@ lua_apteryx_validate (lua_State *L)
 
     lua_callback_info *cb_info = new_lua_callback (L, LUA_CALLBACK_VALIDATE, path, ref);
 
-    if (!add_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, true, cb_info, 0))
+    if (!add_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, true, cb_info, 0, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -908,7 +935,7 @@ lua_apteryx_unvalidate (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_VALIDATE);
+    lua_callback_info *cb_info = remove_callback_info (L, ref, path, LUA_CALLBACK_VALIDATE);
     if (!delete_callback (APTERYX_VALIDATORS_PATH, path, (void *)lua_do_validate, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
@@ -968,7 +995,7 @@ lua_apteryx_provide (lua_State *L)
 
     lua_callback_info *cb_info = new_lua_callback(L, LUA_CALLBACK_PROVIDE, path, ref);
 
-    if (!add_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, false, cb_info, 0))
+    if (!add_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, false, cb_info, 0, 0))
     {
         luaL_error (L, "Failed to register callback\n");
         lua_pushboolean (L, false);
@@ -987,7 +1014,7 @@ lua_apteryx_unprovide (lua_State *L)
     const char *path = lua_tostring (L, 1);
     size_t ref = ref_callback (L, 2);
 
-    lua_callback_info *cb_info = remove_callback_info (L, ref, LUA_CALLBACK_PROVIDE);
+    lua_callback_info *cb_info = remove_callback_info (L, ref, path, LUA_CALLBACK_PROVIDE);
     if (!delete_callback (APTERYX_PROVIDERS_PATH, path, (void *)lua_do_provide, cb_info))
     {
         luaL_error (L, "Failed to unregister callback\n");
