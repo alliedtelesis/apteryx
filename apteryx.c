@@ -46,10 +46,6 @@ static rpc_instance rpc = NULL;         /* RPC Service */
 static bool bound = false;              /* Do we have a listen socket open */
 static bool have_callbacks = false;     /* Have we ever registered any callbacks */
 
-static pthread_mutex_t pending_watches_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t no_pending_watches = PTHREAD_COND_INITIALIZER;
-static int pending_watch_count = 0;
-
 /* Callback */
 typedef struct _cb_t
 {
@@ -281,9 +277,6 @@ handle_watch (rpc_message msg)
         return true;
     }
 
-    pthread_mutex_lock (&pending_watches_lock);
-    ++pending_watch_count;
-    pthread_mutex_unlock (&pending_watches_lock);
     if (cb.flags == 0)
     {
         path = rpc_msg_decode_string (msg);
@@ -330,10 +323,6 @@ handle_watch (rpc_message msg)
                 ((void*(*)(const GNode*)) cb.fn) (root);
         }
     }
-    pthread_mutex_lock (&pending_watches_lock);
-    if (--pending_watch_count == 0)
-        pthread_cond_signal(&no_pending_watches);
-    pthread_mutex_unlock (&pending_watches_lock);
     rpc_msg_reset (msg);
     return true;
 }
@@ -355,16 +344,6 @@ handle_validate (rpc_message msg)
         value = NULL;
 
     DEBUG ("VALIDATE CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, ref);
-
-    /* We want to wait for all pending watches to be processed */
-    pthread_mutex_lock (&pending_watches_lock);
-    if (pending_watch_count)
-    {
-        pthread_cond_wait (&no_pending_watches, &pending_watches_lock);
-        pthread_mutex_unlock (&pending_watches_lock);
-    }
-    else
-        pthread_mutex_unlock (&pending_watches_lock);
 
     /* Process callback */
     result = (uint32_t) (size_t) call_callback (ref, path, value);
