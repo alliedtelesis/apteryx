@@ -2308,58 +2308,54 @@ test_validate_wildcard_internal()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
-static int already_set = 0;
-static int failed = 0;
-
 static int
 test_validate_thread_client (void *data)
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
-
-    if(!apteryx_set_string (path, NULL, (char*)data))
-        failed = errno;
+    const char *value = (char*)data;
+    bool res = apteryx_set_string (path, NULL, value);
+    if (g_strcmp0 (value, "down") == 0)
+    {
+        CU_ASSERT (res == false && errno == -EPERM);
+    }
+    else
+    {
+        CU_ASSERT (res);
+    }
     return 0;
 }
 
 int
 test_validate_conflicting_callback(const char *path, const char *value)
 {
-    return !already_set ? 0 : -EPERM;
-}
-
-static bool
-test_validate_test_watch_callback (const char *path, const char *value)
-{
-    /* Block long enough to serialise the 2nd validate, avoiding RPC timeout */
-    usleep (RPC_TIMEOUT_US - 10000);
-    already_set++;
-    return true;
+    if (g_strcmp0 (value, "down") == 0)
+        return -EPERM;
+    return 0;
 }
 
 void
 test_validate_conflicting ()
 {
-    pthread_t client1, client2;
+    pthread_t clients[32];
     const char *path = TEST_PATH"/entity/zones/private/state";
-
-    failed = 0;
-    already_set = 0;
-
-    _path = _value = NULL;
+    char *value;
 
     CU_ASSERT (apteryx_validate (path, test_validate_conflicting_callback));
-    CU_ASSERT (apteryx_watch (path, test_validate_test_watch_callback));
     usleep (TEST_SLEEP_TIMEOUT);
-    pthread_create (&client1, NULL, (void *) &test_validate_thread_client, "up");
-    pthread_create (&client2, NULL, (void *) &test_validate_thread_client, "down");
-    pthread_join (client1, NULL);
-    pthread_join (client2, NULL);
-    CU_ASSERT (failed == -EPERM || failed == -ETIMEDOUT);
-    usleep (TEST_SLEEP_TIMEOUT);
+    for (int i=0; i<32; i++)
+    {
+        pthread_create (&clients[i], NULL, (void *) &test_validate_thread_client, (i % 2 == 0) ? "up" : "down");
+    }
+    for (int i=0; i<32; i++)
+    {
+        pthread_join (clients[i], NULL);
+    }
+    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT (value && strcmp (value, "up") == 0);
+    free ((void *) value);
 
     CU_ASSERT (apteryx_unvalidate (path, test_validate_conflicting_callback));
-    CU_ASSERT (apteryx_unwatch (path, test_validate_test_watch_callback));
-    apteryx_set_string (path, NULL, NULL);
+    apteryx_set (path, NULL);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -2391,8 +2387,7 @@ test_validate_tree ()
 static bool
 test_set_from_watch_cb (const char *path, const char *value)
 {
-    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public", "name", "public") == false);
-    CU_ASSERT (errno == -ETIMEDOUT);
+    CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/public", "name", "public"));
     return true;
 }
 
@@ -2406,6 +2401,7 @@ test_validate_from_watch_callback ()
     CU_ASSERT (apteryx_unvalidate (TEST_PATH"/entity/zones/public/*", test_validate_callback));
     CU_ASSERT (apteryx_unwatch (TEST_PATH"/entity/zones/private/*", test_set_from_watch_cb));
     CU_ASSERT (apteryx_set_string (TEST_PATH"/entity/zones/private", "link", NULL));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/entity/zones"));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
