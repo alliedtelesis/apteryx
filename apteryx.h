@@ -340,7 +340,12 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
     g_node_destroy (root);
  */
 #define APTERYX_NODE(p,n) \
-    (p ? (g_node_prepend_data (p, (gpointer)n)) : (g_node_new (n)))
+    ({ \
+        GNode *_p = p; \
+        _p ? (g_node_prepend_data (_p, (gpointer)n)) : (g_node_new (n)); \
+        _p; \
+    })
+
 #define APTERYX_LEAF(p,n,v) \
     (g_node_prepend_data (g_node_prepend_data (p, (gpointer)n), (gpointer)v))
 #define APTERYX_LEAF_INT(ROOT,KEY,VALUE) \
