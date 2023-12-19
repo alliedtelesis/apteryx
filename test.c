@@ -3786,18 +3786,26 @@ test_tree_sort_children ()
 void
 test_tree_docs ()
 {
-    GNode* root = APTERYX_NODE (NULL, "/interfaces/eth0");
-    GNode* state = APTERYX_NODE (root, "state");
+    char *expect = ""
+        "/interfaces\n"
+        "  eth0\n"
+        "    state\n"
+        "      duplex\n"
+        "        full\n"
+        "      speed\n"
+        "        1000\n"
+        "      state\n"
+        "        up\n";
+    GNode* root = APTERYX_NODE (NULL, "/interfaces");
+    GNode* state = APTERYX_NODE (APTERYX_NODE (root, "eth0"), "state");
     APTERYX_LEAF (state, "state", "up");
     APTERYX_LEAF (state, "speed", "1000");
     APTERYX_LEAF (state, "duplex", "full");
-    printf ("\nNumber of nodes = %d\n", APTERYX_NUM_NODES (root));
-    printf ("Number of paths = %d\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
-    for (GNode *node = g_node_first_child (state); node; node = g_node_next_sibling (node)) {
-        char* path = apteryx_node_path (node);
-        printf ("%s = %s\n", path, APTERYX_VALUE (node));
-        free (path);
-    }
+    CU_ASSERT (APTERYX_NUM_NODES (root) == 6);
+    CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAVES) == 3);
+    char *buffer = dump_apteryx_tree (root);
+    CU_ASSERT (g_strcmp0 (buffer, expect) == 0);
+    free (buffer);
     g_node_destroy (root);
 }
 
@@ -4151,8 +4159,6 @@ test_query2node_empty_root_slash ()
     GNode *root = g_node_new (g_strdup ("/"));
     CU_ASSERT (apteryx_query_to_node (root, "/test/system/time"));
     char *buffer = dump_apteryx_tree (root);
-    printf("\nE:\n%s", expect);
-    printf("\nB:\n%s", buffer);
     CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
     free (buffer);
     apteryx_free_tree (root);
@@ -5888,7 +5894,6 @@ test_query_animals_with_a_leather_ball()
     iroot = APTERYX_NODE(iroot, "material");
     APTERYX_LEAF(iroot, "leather", "leather");
 
-    apteryx_print_tree(root, stdout);
     rroot = apteryx_query_full(root);
     /* Only 1 pet has a leather ball */
     CU_ASSERT (rroot && g_node_n_children (rroot) == 1);
@@ -9536,7 +9541,7 @@ static CU_TestInfo tests_api_proxy[] = {
 };
 
 static CU_TestInfo tests_api_tree[] = {
-    { "doc example", test_tree_docs },
+    { "tree doc example", test_tree_docs },
     { "tree nodes", test_tree_nodes },
     { "tree nodes deep", test_tree_nodes_deep },
     { "tree nodes wide", test_tree_nodes_wide },

@@ -325,8 +325,8 @@ bool apteryx_cas_int (const char *path, const char *key, int32_t value, uint64_t
  *   e.g. a->b->c->d == /a/b/c = d.
  * - Creator owns the GNode data (names and values).
  * Example:
-    GNode* root = APTERYX_NODE (NULL, "/interfaces/eth0");
-    GNode* state = APTERYX_NODE (root, "state");
+    GNode* root = APTERYX_NODE (NULL, "/interfaces");
+    GNode* state = APTERYX_NODE (APTERYX_NODE (root, "eth0"), "state");
     APTERYX_LEAF (state, "state", "up");
     APTERYX_LEAF (state, "speed", "1000");
     APTERYX_LEAF (state, "duplex", "full");
