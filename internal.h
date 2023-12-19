@@ -121,6 +121,7 @@ typedef struct _cb_info_t
 
     struct callback_node *node;
     int refcnt;
+    uint64_t timestamp;
     uint64_t timeout;
     uint32_t count;
     uint32_t min;
@@ -198,7 +199,6 @@ GNode *db_query (GNode *query);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
 uint64_t db_memuse (const char *path);
-void db_update_timestamps (const char *path, uint64_t ts);
 
 /* RPC API */
 #define RPC_TIMEOUT_US 1000000

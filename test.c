@@ -2776,6 +2776,196 @@ test_refresh_wildcards ()
     apteryx_unrefresh (path, test_refresh_tree_callback);
 }
 
+static uint64_t
+test_refresh_state_callback (const char *path)
+{
+    _cb_count++;
+    if (strstr (path, "speed") == NULL)
+    {
+        if (_cb_count <= 2)
+            apteryx_set_int (TEST_PATH"/interfaces/eth0", "state", 1);
+        else
+            apteryx_set_int (TEST_PATH"/interfaces/eth0", "state", 2);
+    }
+    return _cb_timeout;
+}
+
+static uint64_t
+test_refresh_speed_callback (const char *path)
+{
+    _cb_count++;
+    if (strstr (path, "state") == NULL)
+    {
+        if (_cb_count <= 2)
+            apteryx_set_int (TEST_PATH"/interfaces/eth0", "speed", 100);
+        else
+            apteryx_set_int (TEST_PATH"/interfaces/eth0", "speed", 200);
+    }
+    return _cb_timeout;
+}
+
+void
+test_refresh_multiple ()
+{
+    const char *path1 = TEST_PATH"/interfaces/*/state";
+    const char *path2 = TEST_PATH"/interfaces/*/speed";
+    GNode *root, *child;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    _cb_delay = 0;
+
+    CU_ASSERT (apteryx_refresh (path1, test_refresh_state_callback));
+    CU_ASSERT (apteryx_refresh (path2, test_refresh_speed_callback));
+
+    /* Phase 1 ... no timeout set */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
+    if (root)
+        apteryx_free_tree (root);
+    /* Phase 2 ... timeout not reached */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
+    if (root)
+        apteryx_free_tree (root);
+    usleep (TEST_SLEEP_TIMEOUT);
+    /* Phase 3 ... timeout reached */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 4);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "2") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "200") == 0);
+    if (root)
+        apteryx_free_tree (root);
+
+    apteryx_unrefresh (path2, test_refresh_speed_callback);
+    apteryx_unrefresh (path1, test_refresh_state_callback);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_different_depths ()
+{
+    const char *path1 = TEST_PATH"/interfaces/*";
+    const char *path2 = TEST_PATH"/interfaces/*/speed";
+    GNode *root, *child;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    _cb_delay = 0;
+
+    CU_ASSERT (apteryx_refresh (path1, test_refresh_state_callback));
+    CU_ASSERT (apteryx_refresh (path2, test_refresh_speed_callback));
+
+    apteryx_set (TEST_PATH"/interfaces/eth0/speed", "500");
+    usleep (TEST_SLEEP_TIMEOUT);
+
+    /* Phase 1 ... no timeout set */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
+    if (root)
+        apteryx_free_tree (root);
+    /* Phase 2 ... timeout not reached */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
+    if (root)
+        apteryx_free_tree (root);
+    usleep (TEST_SLEEP_TIMEOUT);
+    /* Phase 3 ... timeout reached */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 4);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "2") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "200") == 0);
+    if (root)
+        apteryx_free_tree (root);
+
+    apteryx_unrefresh (path2, test_refresh_speed_callback);
+    apteryx_unrefresh (path1, test_refresh_state_callback);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_more_specific ()
+{
+    const char *path1 = TEST_PATH"/interfaces/eth0/*";
+    const char *path2 = TEST_PATH"/interfaces/eth0/speed";
+    GNode *root, *child;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    _cb_delay = 0;
+
+    CU_ASSERT (apteryx_refresh (path1, test_refresh_state_callback));
+    CU_ASSERT (apteryx_refresh (path2, test_refresh_speed_callback));
+
+    /* Phase 1 ... no timeout set */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
+    if (root)
+        apteryx_free_tree (root);
+    /* Phase 2 ... timeout not reached */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
+    if (root)
+        apteryx_free_tree (root);
+    usleep (TEST_SLEEP_TIMEOUT);
+    /* Phase 3 ... timeout reached */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 4);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "2") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "200") == 0);
+    if (root)
+        apteryx_free_tree (root);
+
+    apteryx_unrefresh (path2, test_refresh_speed_callback);
+    apteryx_unrefresh (path1, test_refresh_state_callback);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_refresh_trunk ()
 {
@@ -2952,7 +3142,7 @@ test_refresh_path_empty ()
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
     apteryx_unrefresh (path, test_refresh_no_change_callback);
     CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (_cb_count == 1);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3015,7 +3205,7 @@ test_refresh_tree_no_change ()
 
     apteryx_unrefresh (TEST_PATH"/zones/*", test_refresh_no_change_callback);
     CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (_cb_count == 1);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -9301,6 +9491,9 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh collision", test_refresh_collision },
     { "refresh concurrent", test_refresh_concurrent },
     { "refresh various wildcards", test_refresh_wildcards },
+    { "refresh multiple", test_refresh_multiple },
+    { "refresh different depths", test_refresh_different_depths },
+    { "refresh more specific", test_refresh_more_specific },
     CU_TEST_INFO_NULL,
 };
 

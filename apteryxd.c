@@ -456,7 +456,6 @@ call_refreshers (const char *path, bool dry_run)
 {
     GList *refreshers = NULL;
     GList *iter = NULL;
-    uint64_t timestamp;
     uint64_t now;
     uint64_t timeout = 0;
     bool refresh_due = false;
@@ -468,8 +467,6 @@ call_refreshers (const char *path, bool dry_run)
 
     /* Get the time of the request */
     now = calculate_timestamp ();
-    /* Get the latest timestamp for the path */
-    timestamp = db_timestamp (path);
 
     /* Call each refresher */
     for (iter = refreshers; iter; iter = g_list_next (iter))
@@ -480,24 +477,17 @@ call_refreshers (const char *path, bool dry_run)
         uint64_t start, duration;
         bool res;
 
-        if (pthread_mutex_trylock (&refresher->lock))
-        {
-            /* If this refresher was being called when we came in, take the lock once
-             * the last call has finished, and get the new timestamp.
-             */
-            pthread_mutex_lock (&refresher->lock);
-            timestamp = db_timestamp (path);
-        }
+        pthread_mutex_lock (&refresher->lock);
 
         /* Check if it is time to refresh */
-        if (now < (timestamp + refresher->timeout))
+        if (now < (refresher->timestamp + refresher->timeout))
         {
             DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
-                   path, now, timestamp, refresher->timeout);
+                   path, now, refresher->timestamp, refresher->timeout);
             goto unlock;
         }
         DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
-               path, now, timestamp, refresher->timeout);
+               path, now, refresher->timestamp, refresher->timeout);
 
         /* Check for local refresher */
         if (refresher->id == getpid ())
@@ -546,8 +536,7 @@ call_refreshers (const char *path, bool dry_run)
                 DEBUG ("REFRESH again in %"PRIu64"us\n", timeout);
                 if (refresher->timeout == 0 || timeout < refresher->timeout)
                     refresher->timeout = timeout;
-                /* Make sure the DB has up to date timestamps */
-                db_update_timestamps (path, now);
+                refresher->timestamp = now;
             }
             rpc_msg_reset (&msg);
 
