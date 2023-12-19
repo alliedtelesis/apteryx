@@ -665,7 +665,9 @@ bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
 
 /**
  * Callback function to be called when a library user
- * makes a get to a "refreshed" path.
+ * makes a get to a "refreshed" path. Note that the callback
+ * is not called again (for any matching path) until timeout
+ * has elapsed.
  * @param path path to the value to be refreshed
  * @return timeout in microseconds to next refresh
  */
@@ -676,10 +678,9 @@ typedef uint64_t (*apteryx_refresh_callback) (const char *path);
  * Whenever a get is performed on the given path, callback is
  * called to refresh the values of the tree.
  * examples: (using contrived usage example)
- * - apteryx_refresh ("/hw/interfaces/\*\/counters/\*", refresh_intf_tx_counters, 50);
+ * - apteryx_refresh ("/hw/interfaces/\*\/counters/\*", refresh_intf_tx_counters);
  * @param path path to the value that others will request
  * @param cb function to be called if others request the path
- * @param timeout time after refresh is requred
  * @return true on successful registration
  */
 bool apteryx_refresh (const char *path, apteryx_refresh_callback cb);

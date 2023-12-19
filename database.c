@@ -118,32 +118,6 @@ db_memuse (const char *path)
     return memuse;
 }
 
-static void
-_db_update_timestamps (struct database_node *node, uint64_t ts)
-{
-    node->timestamp = ts;
-    GList *children = hashtree_children_get (&node->hashtree_node);
-    for (GList *iter = children; iter; iter = g_list_next (iter))
-    {
-        _db_update_timestamps ((struct database_node *) iter->data, ts);
-    }
-    g_list_free (children);
-}
-
-void
-db_update_timestamps (const char *path, uint64_t ts)
-{
-    pthread_rwlock_rdlock (&db_lock);
-    struct hashtree_node *node = hashtree_path_to_node (root, path);
-    if (node)
-    {
-        _db_update_timestamps ((struct database_node *) node, ts);
-    }
-    pthread_rwlock_unlock (&db_lock);
-    return;
-}
-
-
 /* Search for or create a node for node under db_node. node
  * may have a name with slashes in it - we will need to set up the chain
  * of database_nodes to reach the end value.
