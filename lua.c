@@ -683,8 +683,13 @@ static bool
 lua_do_watch_tree (GNode *tree, lua_callback_info *cb_info)
 {
     int res = 0;
-    
-    ASSERT (callback_valid(cb_info), return false, "Watch: cb_info released already\n");
+
+    if (!callback_valid (cb_info))
+    {
+        ERROR ("Watch: cb_info released already\n");
+        apteryx_free_tree (tree);
+        return false;
+    }
 
     lua_State* L = cb_info->instance;
     size_t ref = cb_info->ref;
