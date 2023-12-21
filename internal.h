@@ -238,7 +238,7 @@ char* rpc_msg_decode_string (rpc_message msg);
 bool rpc_msg_send (rpc_client client, rpc_message msg);
 void rpc_msg_reset (rpc_message msg);
 
-rpc_instance rpc_init (int timeout, rpc_msg_handler handler);
+rpc_instance rpc_init (int timeout, bool reuse_sock, rpc_msg_handler handler);
 void rpc_halt (rpc_instance rpc);
 void rpc_shutdown (rpc_instance rpc);
 bool rpc_server_bind (rpc_instance rpc, const char *guid, const char *url);

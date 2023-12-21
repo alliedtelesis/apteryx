@@ -8280,7 +8280,7 @@ void
 test_rpc_init ()
 {
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     rpc_shutdown (rpc);
 }
 
@@ -8289,7 +8289,7 @@ test_rpc_bind ()
 {
     char *url = APTERYX_SERVER".test";
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT (rpc_server_release (rpc, url));
     rpc_shutdown (rpc);
@@ -8302,7 +8302,7 @@ test_rpc_connect ()
     rpc_client rpc_client;
     rpc_instance rpc;
 
-    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
     rpc_client_release (rpc, rpc_client, false);
@@ -8320,7 +8320,7 @@ test_rpc_ping ()
     rpc_instance rpc;
     char *value;
 
-    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
     rpc_msg_encode_uint8 (&msg, MODE_TEST);
@@ -8339,7 +8339,7 @@ test_rpc_double_bind ()
 {
     char *url = APTERYX_SERVER".test";
     rpc_instance rpc;
-    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT (!rpc_server_bind (rpc,  url, url));
     CU_ASSERT (rpc_server_release (rpc, url));
@@ -8380,7 +8380,7 @@ test_rpc_perf ()
     char *value;
     int i;
 
-    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, test_handler)) != NULL);
+    CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
     CU_ASSERT ((rpc_client = rpc_client_connect (rpc, url)) != NULL);
 
