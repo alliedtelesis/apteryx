@@ -2377,10 +2377,11 @@ termination_handler (void)
 void
 help (void)
 {
-    printf ("Usage: apteryxd [-h] [-b] [-d] [-p <pidfile>] [-r <runfile>] [-l <url>]\n"
+    printf ("Usage: apteryxd [-h] [-b] [-d] [-s] [-p <pidfile>] [-r <runfile>] [-l <url>]\n"
             "  -h   show this help\n"
             "  -b   background mode\n"
             "  -d   enable verbose debug\n"
+            "  -s   reuse client sockets for callbacks\n"
             "  -p   use <pidfile> (background mode only)\n"
             "  -r   use <runfile>\n"
             "  -l   listen on URL <url> (defaults to "APTERYX_SERVER")\n");
@@ -2393,6 +2394,7 @@ main (int argc, char **argv)
     const char *run_file = NULL;
     const char *url = APTERYX_SERVER;
     bool background = false;
+    bool reuse_sock = false;
     pthread_mutexattr_t callback_recursive;
     FILE *fp;
     int i;
@@ -2407,6 +2409,9 @@ main (int argc, char **argv)
             break;
         case 'b':
             background = true;
+            break;
+        case 's':
+            reuse_sock = true;
             break;
         case 'p':
             pid_file = optarg;
@@ -2508,7 +2513,7 @@ main (int argc, char **argv)
     pthread_mutex_init (&validating, &callback_recursive);
 
     /* Init the RPC for the server instance */
-    rpc = rpc_init (RPC_TIMEOUT_US, msg_handler);
+    rpc = rpc_init (RPC_TIMEOUT_US, reuse_sock, msg_handler);
     if (rpc == NULL)
     {
         ERROR ("Failed to initialise RPC service\n");
@@ -2523,7 +2528,7 @@ main (int argc, char **argv)
     }
 
     /* Init the RPC for the proxy client */
-    proxy_rpc = rpc_init (RPC_TIMEOUT_US, NULL);
+    proxy_rpc = rpc_init (RPC_TIMEOUT_US, false, NULL);
     if (proxy_rpc == NULL)
     {
         ERROR ("Failed to initialise proxy RPC service\n");

@@ -29,6 +29,7 @@ struct rpc_instance_s {
 
     /* General settings */
     int timeout;
+    bool reuse_sock;
     uint64_t gc_time;
 
     /* Single service */
@@ -359,7 +360,7 @@ error:
 }
 
 rpc_instance
-rpc_init (int timeout, rpc_msg_handler handler)
+rpc_init (int timeout, bool reuse_sock, rpc_msg_handler handler)
 {
     assert (timeout > 0);
 
@@ -379,6 +380,7 @@ rpc_init (int timeout, rpc_msg_handler handler)
     pthread_mutex_init (&rpc->lock, NULL);
     pthread_sigmask (SIG_SETMASK, NULL, &rpc->worker_sigmask);
     rpc->timeout = timeout;
+    rpc->reuse_sock = reuse_sock;
     rpc->gc_time = get_time_us ();
     rpc->handler = handler;
     rpc->server = server;
@@ -689,6 +691,43 @@ rpc_client_existing_s (rpc_instance rpc, const char *url)
         client_release (rpc, client, false);
     }
 
+    /* Find an existing connection to one of our servers */
+    if (rpc->reuse_sock && rpc->server && rpc->server->servers)
+    {
+        for (GList *s = rpc->server->servers; s; s = s->next)
+        {
+            rpc_server server = (rpc_server) s->data;
+            for (GList *c = server->clients; c; c = c->next)
+            {
+                rpc_socket sock = (rpc_socket) c->data;
+                if (sock->dead)
+                    continue;
+                char *surl = g_strdup_printf ("%s.%d", server->url, sock->pid);
+                DEBUG ("Compare client: %s to %s\n", url, surl);
+                if (g_strcmp0 (url, surl) == 0)
+                {
+                    /* Create client */
+                    client = g_malloc0 (sizeof (rpc_client_t));
+                    client->sock = sock;
+                    client->refcount = 1;
+                    client->url = surl;
+                    client->timeout = rpc->timeout;
+                    client->pid = getpid ();
+                    rpc_socket_ref (sock);
+
+                    DEBUG ("RPC[%d]: Reuse client to %s\n", sock->sock, url);
+
+                    /* Add it to the list of clients */
+                    g_hash_table_insert (rpc->clients, g_strdup (url), client);
+
+                    client->refcount++;
+                    return client;
+                }
+                free (surl);
+            }
+        }
+    }
+
     return NULL;
 }
 
@@ -727,6 +766,12 @@ rpc_client_connect (rpc_instance rpc, const char *url)
         /* Found a client */
         pthread_mutex_unlock (&rpc->lock);
         return client;
+    }
+
+    /* Catch old style client callbacks */
+    if (g_str_has_prefix (url, "unix:") && g_strcmp0 (url, APTERYX_SERVER) != 0)
+    {
+        ERROR ("RPC: Client socket to %s has been lost!\n", url);
     }
 
     /* Create a new socket */
