@@ -7903,6 +7903,22 @@ test_deadlock_callback (const char *path, const char *value)
     return true;
 }
 
+static int
+count_threads (const char *name)
+{
+    char *cmd = g_strdup_printf ("ps H -o 'tid comm' %d | grep %s | wc -l", (int) getpid(), name);
+    
+    FILE *file = popen (cmd, "r");
+    int count = 0;
+    if (file)
+    {
+        CU_ASSERT (fscanf (file, "%d", &count) == 1);
+        pclose (file);
+    }
+    free (cmd);
+    return count;
+}
+
 void
 test_deadlock ()
 {
@@ -7919,6 +7935,8 @@ test_deadlock ()
     CU_ASSERT (apteryx_prune(TEST_PATH));
     usleep (1000);
     apteryx_shutdown ();
+    CU_ASSERT (count_threads ("rpc") == 0);
+    CU_ASSERT (count_threads ("pool") == 0);
     apteryx_init (false);
 
     usleep (5 * 1000 * 1000);
@@ -7957,6 +7975,8 @@ test_deadlock2 ()
     CU_ASSERT (apteryx_prune (TEST_PATH));
     usleep (200);
     apteryx_shutdown ();
+    CU_ASSERT (count_threads ("rpc") == 0);
+    CU_ASSERT (count_threads ("pool") == 0);
     apteryx_init (false);
 
     usleep (5 * 1000 * 1000);
