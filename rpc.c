@@ -41,6 +41,7 @@ struct rpc_instance_s {
     GMainContext *slow_context;
     GMainLoop *slow_loop;
     GThread *slow_thread;
+    int slow_count;
     /* Single threaded mode handler */
     int pollfd[2];
     GAsyncQueue *queue;
@@ -124,7 +125,7 @@ worker_func (gpointer a, gpointer b)
         DEBUG ("RPC[%d]: processing message from %d\n", sock->sock, sock->pid);
         if (!handler (msg))
         {
-            ERROR ("RPC[%i]: handler failed\n", sock->sock);
+            DEBUG ("RPC[%i]: handler failed\n", sock->sock);
             work_destroy (work);
             return;
         }
@@ -169,6 +170,7 @@ slow_callback_fn (gpointer arg1)
     }
     else
         worker_func (arg1, NULL);
+    g_atomic_int_dec_and_test (&rpc->slow_count);
     return G_SOURCE_REMOVE;
 }
 
@@ -196,6 +198,7 @@ submit_slow_work (rpc_instance rpc, struct rpc_work_s *work, guint timeout_ms)
     }
 
     /* Pass to the slow worker thread either via a timeout or invoke directly */
+    g_atomic_int_inc (&rpc->slow_count);
     if (timeout_ms)
     {
         /* Create a timeout callback on the slow worker thread */
@@ -461,6 +464,18 @@ rpc_shutdown (rpc_instance rpc)
     rpc->workers = NULL;
     if (rpc->slow_loop)
     {
+        for (i=0; i<10; i++)
+        {
+            if (g_atomic_int_get(&rpc->slow_count) == 0)
+            {
+                break;
+            }
+            else if (i >= 9)
+            {
+                ERROR ("RPC: Slow thread not shutting down\n");
+            }
+            g_usleep (RPC_TIMEOUT_US / 10);
+        }
         g_main_loop_quit (rpc->slow_loop);
         g_thread_join (rpc->slow_thread);
         rpc->slow_thread = NULL;
