@@ -247,6 +247,7 @@ rpc_restart_callback (rpc_instance rpc, gpointer handle, guint timeout_ms)
     {
         DEBUG ("RPC-CB[%p]: RESTART callback with timeout %dms\n", work, timeout_ms);
         g_source_destroy (source);
+        g_atomic_int_dec_and_test (&rpc->slow_count);
         submit_slow_work (rpc, work, timeout_ms);
     }
     else
@@ -268,6 +269,7 @@ rpc_cancel_callback (rpc_instance rpc, gpointer handle)
     {
         DEBUG ("RPC-CB[%p]: CANCEL callback\n", work);
         g_source_destroy (source);
+        g_atomic_int_dec_and_test (&rpc->slow_count);
         work_destroy (work);
     }
     else
@@ -472,7 +474,7 @@ rpc_shutdown (rpc_instance rpc)
             }
             else if (i >= 9)
             {
-                ERROR ("RPC: Slow thread not shutting down\n");
+                ERROR ("RPC: Slow thread not shutting down (%d more jobs)\n", g_atomic_int_get (&rpc->slow_count));
             }
             g_usleep (RPC_TIMEOUT_US / 10);
         }
