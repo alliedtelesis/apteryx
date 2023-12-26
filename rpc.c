@@ -771,7 +771,7 @@ rpc_client_connect (rpc_instance rpc, const char *url)
     }
 
     /* Catch old style client callbacks */
-    if (g_str_has_prefix (url, "unix:") && g_strcmp0 (url, APTERYX_SERVER) != 0)
+    if (rpc->reuse_sock && g_str_has_prefix (url, "unix:") && g_strcmp0 (url, APTERYX_SERVER) != 0)
     {
         ERROR ("RPC: Client socket to %s has been lost!\n", url);
     }
