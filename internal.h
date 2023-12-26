@@ -121,6 +121,7 @@ typedef struct _cb_info_t
 
     struct callback_node *node;
     int refcnt;
+    char *last_path;
     uint64_t timestamp;
     uint64_t timeout;
     uint32_t count;

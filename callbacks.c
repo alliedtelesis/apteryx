@@ -164,6 +164,10 @@ cb_free (gpointer data, void *param)
     {
         g_free ((void *) cb->uri);
     }
+    if (cb->last_path)
+    {
+        g_free ((void *) cb->last_path);
+    }
     pthread_mutex_destroy (&cb->lock);
     g_free (cb);
 }

@@ -479,15 +479,24 @@ call_refreshers (const char *path, bool dry_run)
 
         pthread_mutex_lock (&refresher->lock);
 
-        /* Check if it is time to refresh */
-        if (now < (refresher->timestamp + refresher->timeout))
+        /* We can skip this refresher if the refresher has been called recently AND
+         * the last call was for a path equal to or less specific than this one */
+        if (now < (refresher->timestamp + refresher->timeout) &&
+            strncmp (refresher->last_path, path, strlen (refresher->last_path) - 1) == 0)
         {
             DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
                    path, now, refresher->timestamp, refresher->timeout);
             goto unlock;
         }
-        DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
-               path, now, refresher->timestamp, refresher->timeout);
+        if (now >= (refresher->timestamp + refresher->timeout))
+        {
+            DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
+                path, now, refresher->timestamp, refresher->timeout);
+        }
+        else
+        {
+            DEBUG ("Refreshing %s (< %s)\n", path, refresher->last_path);
+        }
 
         /* Check for local refresher */
         if (refresher->id == getpid ())
@@ -536,7 +545,12 @@ call_refreshers (const char *path, bool dry_run)
                 DEBUG ("REFRESH again in %"PRIu64"us\n", timeout);
                 if (refresher->timeout == 0 || timeout < refresher->timeout)
                     refresher->timeout = timeout;
+                /* Record the last time we ran this refresher */
                 refresher->timestamp = now;
+                /* Record the path we refreshed */
+                if (refresher->last_path)
+                    free (refresher->last_path);
+                refresher->last_path = g_strdup (path);
             }
             rpc_msg_reset (&msg);
 
