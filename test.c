@@ -2544,6 +2544,7 @@ test_refresh ()
     CU_ASSERT (value && strcmp (value, "0") == 0);
     if (value)
         free ((void *) value);
+    CU_ASSERT (_cb_count == 1);
     apteryx_unrefresh (path, test_refresh_callback);
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (assert_apteryx_empty ());
@@ -2563,10 +2564,12 @@ test_refresh_unneeded ()
     CU_ASSERT (value && strcmp (value, "0") == 0);
     if (value)
         free ((void *) value);
+    CU_ASSERT (_cb_count == 1);
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "0") == 0);
     if (value)
         free ((void *) value);
+    CU_ASSERT (_cb_count == 1);
     apteryx_unrefresh (path, test_refresh_callback);
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (assert_apteryx_empty ());
@@ -2586,15 +2589,18 @@ test_refresh_timeout ()
     CU_ASSERT (value && strcmp (value, "0") == 0);
     if (value)
         free ((void *) value);
+    CU_ASSERT (_cb_count == 1);
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "0") == 0);
     if (value)
         free ((void *) value);
+    CU_ASSERT (_cb_count == 1);
     usleep (_cb_timeout);
     CU_ASSERT ((value = apteryx_get (path)) != NULL);
     CU_ASSERT (value && strcmp (value, "1") == 0);
     if (value)
         free ((void *) value);
+    CU_ASSERT (_cb_count == 2);
     apteryx_unrefresh (path, test_refresh_callback);
     CU_ASSERT (apteryx_set (path, NULL));
     CU_ASSERT (assert_apteryx_empty ());
@@ -2643,7 +2649,7 @@ test_refresh_collision ()
     CU_ASSERT (_cb_count == 3);
 
     _cb_count = 0;
-    /* We should get 3 refreshes, one for each callback above.
+    /* We should get 6 refreshes, one for each path for each callback above.
      * "one_hundred" is provided by one, and the other two collide
      * trying to set the "collision" field
      */
@@ -2651,7 +2657,7 @@ test_refresh_collision ()
     CU_ASSERT (_cb_count == 3);
     CU_ASSERT (200 == apteryx_get_int (TEST_PATH"/interfaces/eth0","collision") ||
                300 == apteryx_get_int (TEST_PATH"/interfaces/eth0","collision"));
-    CU_ASSERT (_cb_count == 3);
+    CU_ASSERT (_cb_count == 6);
 
     apteryx_unrefresh (path, test_refresh_a_callback);
     apteryx_unrefresh (path, test_refresh_b_callback);
@@ -2738,6 +2744,7 @@ test_refresh_wildcards ()
     CU_ASSERT (root == NULL);
     if (root)
         apteryx_free_tree (root);
+    CU_ASSERT (_cb_count == 0);
     apteryx_prune (TEST_PATH);
 
     /* Once there is something stored in /interfaces/eth0 we can get past
@@ -2747,26 +2754,36 @@ test_refresh_wildcards ()
     _cb_count = 0;
     root = apteryx_get_tree (TEST_PATH"/interfaces");
     CU_ASSERT (root != NULL);
-    CU_ASSERT (_cb_count > 0);
     if (root)
         apteryx_free_tree (root);
+    /* With timeout of zero we exepct a callbacks for;
+     * /test/interfaces/eth0/state
+     * /test/interfaces/eth0/state/state
+     * /test/interfaces/eth0/state/speed
+     * /test/interfaces/eth0/state/duplex
+     */
+    CU_ASSERT (_cb_count == 4);
     apteryx_prune (TEST_PATH);
 
     /* Even without any data in the tree, if we have no more wildcards
      * in path (on the end is fine) we can traverse down the refresh
      * path to call it (over the state key).
      */
+    _cb_count = 0;
     root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
     CU_ASSERT (root != NULL);
     if (root)
         apteryx_free_tree (root);
+    CU_ASSERT (_cb_count == 4);
     apteryx_prune (TEST_PATH);
 
     /* This one is probably the simplest case and tested elsewhere */
+    _cb_count = 0;
     root = apteryx_get_tree (TEST_PATH"/interfaces/eth0/state");
     CU_ASSERT (root != NULL);
     if (root)
         apteryx_free_tree (root);
+    CU_ASSERT (_cb_count == 4);
     apteryx_prune (TEST_PATH);
 
     apteryx_unrefresh (path, test_refresh_tree_callback);
@@ -2910,10 +2927,11 @@ test_refresh_different_depths ()
 }
 
 void
-test_refresh_more_specific ()
+test_refresh_more_specific_first ()
 {
     const char *path1 = TEST_PATH"/interfaces/eth0/*";
     const char *path2 = TEST_PATH"/interfaces/eth0/speed";
+    char *value;
     GNode *root, *child;
 
     _cb_count = 0;
@@ -2923,28 +2941,81 @@ test_refresh_more_specific ()
     CU_ASSERT (apteryx_refresh (path1, test_refresh_state_callback));
     CU_ASSERT (apteryx_refresh (path2, test_refresh_speed_callback));
 
-    /* Phase 1 ... no timeout set */
+    /* Phase 1 ... no timeout set - get specific */
+    value = apteryx_get (TEST_PATH"/interfaces/eth0/speed");
+    CU_ASSERT (value != NULL);
+    /* Both called but only speed set */
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (value && strcmp (value, "100") == 0);
+    if (value)
+        free (value);
+    /* Phase 2 ... timeout not reached - get trunk */
     root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
     CU_ASSERT (root != NULL);
-    CU_ASSERT (_cb_count == 2);
+    /* Only wildcard called as the requested path is shorter */
+    CU_ASSERT (_cb_count == 3);
     CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
-    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
-    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
-    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
-    if (root)
-        apteryx_free_tree (root);
-    /* Phase 2 ... timeout not reached */
-    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
-    CU_ASSERT (root != NULL);
-    CU_ASSERT (_cb_count == 2);
-    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
-    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "2") == 0);
     CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
     CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
     if (root)
         apteryx_free_tree (root);
     usleep (TEST_SLEEP_TIMEOUT);
     /* Phase 3 ... timeout reached */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    /* Both called after timeout */
+    CU_ASSERT (_cb_count == 5);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "2") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "200") == 0);
+    if (root)
+        apteryx_free_tree (root);
+
+    apteryx_unrefresh (path2, test_refresh_speed_callback);
+    apteryx_unrefresh (path1, test_refresh_state_callback);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_more_specific_second ()
+{
+    const char *path1 = TEST_PATH"/interfaces/eth0/*";
+    const char *path2 = TEST_PATH"/interfaces/eth0/speed";
+    GNode *root, *child;
+    char *value;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    _cb_delay = 0;
+
+    CU_ASSERT (apteryx_refresh (path1, test_refresh_state_callback));
+    CU_ASSERT (apteryx_refresh (path2, test_refresh_speed_callback));
+
+    /* Phase 1 ... no timeout set - get trunk */
+    root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
+    CU_ASSERT (root != NULL);
+    /* Both called and both set */
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT ((child = apteryx_find_child (root, "state")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "1") == 0);
+    CU_ASSERT ((child = apteryx_find_child (root, "speed")) != NULL);
+    CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "100") == 0);
+    if (root)
+        apteryx_free_tree (root);
+    /* Phase 2 ... timeout not reached - get specific */
+    value = apteryx_get (TEST_PATH"/interfaces/eth0/speed");
+    CU_ASSERT (value != NULL);
+    /* Neither called */
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (value && strcmp (value, "100") == 0);
+    if (value)
+        free (value);
+    usleep (TEST_SLEEP_TIMEOUT);
+    /* Phase 3 ... timeout reached - both called */
     root = apteryx_get_tree (TEST_PATH"/interfaces/eth0");
     CU_ASSERT (root != NULL);
     CU_ASSERT (_cb_count == 4);
@@ -2997,6 +3068,51 @@ test_refresh_tree ()
     apteryx_unrefresh (path, test_refresh_tree_callback);
     CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
     CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static uint64_t
+test_refresh_counters_callback (const char *path)
+{
+    char *iface = g_strdup (path + strlen (TEST_PATH"/interfaces/"));
+    *(strchr (iface, '/')) = '\0';
+    path = g_strdup_printf (TEST_PATH"/interfaces/%s/counters", iface);
+    GNode* root = APTERYX_NODE (NULL, (gpointer) path);
+    APTERYX_LEAF (root, "tx", "1");
+    APTERYX_LEAF (root, "rx", "2");
+    apteryx_set_tree (root);
+    g_node_destroy (root);
+    _cb_count++;
+    free ((void *) path);
+    free ((void *) iface);
+    return _cb_timeout;
+}
+
+void
+test_refresh_multiple_branches ()
+{
+    const char *path = TEST_PATH"/interfaces/*/counters";
+    GNode *root;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    _cb_delay = 0;
+
+    CU_ASSERT (apteryx_refresh (path, test_refresh_counters_callback));
+
+    apteryx_set (TEST_PATH"/interfaces/eth0/state", "up");
+    apteryx_set (TEST_PATH"/interfaces/eth1/state", "up");
+    apteryx_set (TEST_PATH"/interfaces/eth2/state", "up");
+
+    root = apteryx_get_tree (TEST_PATH"/interfaces");
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (_cb_count == 3);
+    if (root)
+        apteryx_free_tree (root);
+
+    apteryx_unrefresh (path, test_refresh_counters_callback);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3136,9 +3252,51 @@ test_refresh_path_empty ()
     CU_ASSERT (apteryx_refresh (path, test_refresh_no_change_callback));
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
     CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    /* While there is nothing in the DB to hang a timestamp
+       on we exepect the refresher to be called once per timeout */
+    CU_ASSERT (_cb_count == 1);
+    usleep (_cb_timeout);
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
+    CU_ASSERT (_cb_count == 2);
     apteryx_unrefresh (path, test_refresh_no_change_callback);
     CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_refresh_path_other_old ()
+{
+    const char *path1 = TEST_PATH"/interfaces/eth0/*";
+    const char *path2 = TEST_PATH"/interfaces/eth0/speed";
+    const char *path3 = TEST_PATH"/interfaces/eth0/state";
+    GNode *tree = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path1, test_refresh_no_change_callback));
+    CU_ASSERT (apteryx_set (path2, "fast"));
+    usleep (_cb_timeout);
+    CU_ASSERT ((tree = apteryx_get_tree (TEST_PATH"/interfaces")) != NULL);
+    apteryx_free_tree (tree);
+    /* Refresher called because speed is old */
     CU_ASSERT (_cb_count == 1);
+    CU_ASSERT ((tree = apteryx_get_tree (TEST_PATH"/interfaces")) != NULL);
+    apteryx_free_tree (tree);
+    /* Refresher called because speed is old */
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (apteryx_set (path3, "up"));
+    CU_ASSERT ((tree = apteryx_get_tree (TEST_PATH"/interfaces")) != NULL);
+    apteryx_free_tree (tree);
+    /* Refresher called because speed is old */
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT ((tree = apteryx_get_tree (TEST_PATH"/interfaces")) != NULL);
+    apteryx_free_tree (tree);
+    /* Refresher called because speed is old */
+    CU_ASSERT (_cb_count == 1);
+    apteryx_unrefresh (path1, test_refresh_no_change_callback);
+    CU_ASSERT (apteryx_set (path2, NULL));
+    CU_ASSERT (apteryx_set (path3, NULL));
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -3190,6 +3348,9 @@ test_refresh_tree_no_change ()
     CU_ASSERT (value && strcmp (value, "0") == 0);
     if (value)
         free ((void *) value);
+    /* Only expect the refresher to be called once */
+    CU_ASSERT (_cb_count == 1);
+
     CU_ASSERT ((paths = apteryx_search (TEST_PATH"/zones/")) != NULL);
     CU_ASSERT (g_list_length (paths) == 1);
     CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/zones/private", (GCompareFunc) strcmp) != NULL);
@@ -3198,10 +3359,11 @@ test_refresh_tree_no_change ()
     CU_ASSERT (g_list_length (paths) == 1);
     CU_ASSERT (g_list_find_custom (paths, TEST_PATH"/zones/private", (GCompareFunc) strcmp) != NULL);
     g_list_free_full (paths, free);
+    /* Expect the refresher to be called again once for the shorter path */
+    CU_ASSERT (_cb_count == 2);
 
     apteryx_unrefresh (TEST_PATH"/zones/*", test_refresh_no_change_callback);
     CU_ASSERT (apteryx_set (path, NULL));
-    CU_ASSERT (_cb_count == 1);
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -9507,6 +9669,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh traverse", test_refresh_traverse },
     { "refresh traverse deeper", test_refresh_traverse_deeper },
     { "refresh path empty", test_refresh_path_empty },
+    { "refresh path other old", test_refresh_path_other_old },
     { "refresh no change", test_refresh_no_change },
     { "refresh tree no change", test_refresh_tree_no_change },
     { "refresh collision", test_refresh_collision },
@@ -9514,7 +9677,9 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh various wildcards", test_refresh_wildcards },
     { "refresh multiple", test_refresh_multiple },
     { "refresh different depths", test_refresh_different_depths },
-    { "refresh more specific", test_refresh_more_specific },
+    { "refresh more specific first", test_refresh_more_specific_first },
+    { "refresh more specific second", test_refresh_more_specific_second },
+    { "refresh multiple branches", test_refresh_multiple_branches },
     CU_TEST_INFO_NULL,
 };
 

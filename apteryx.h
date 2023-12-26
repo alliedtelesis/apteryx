@@ -665,9 +665,16 @@ bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
 
 /**
  * Callback function to be called when a library user
- * makes a get to a "refreshed" path. Note that the callback
- * is not called again (for any matching path) until timeout
- * has elapsed.
+ * makes a get to a "refreshed" path. The callback
+ * is not called again for that path or any child paths
+ * until timeout has elapsed.
+ * The callback may be called again within the
+ * timeout duration if a request for a parent path
+ * matches the refresher path. e.g.
+ * REFRESH /interfaces/*
+ * GET /interfaces/eth0/state -> called
+ * GET /interfaces/eth0/state -> not called
+ * GET /interfaces/eth0 -> called
  * @param path path to the value to be refreshed
  * @return timeout in microseconds to next refresh
  */
