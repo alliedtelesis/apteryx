@@ -95,6 +95,7 @@ struct stat_t
     char *guid;
     uint64_t pid;
     uint64_t callback;
+    uint64_t ns;
     uint64_t hash;
     uint64_t count;
     uint64_t min;
@@ -123,8 +124,8 @@ _parse_stats (GNode *node, gpointer data)
     {
         struct stat_t *stat = g_malloc0 (sizeof (struct stat_t));
         stat->guid = g_strdup (APTERYX_NAME (node));
-        if (sscanf (APTERYX_NAME (node), "%" PRIX64 "-%" PRIx64 "-%" PRIx64 "",
-                    &stat->pid, &stat->callback, &stat->hash) != 3 ||
+        if (sscanf (APTERYX_NAME (node), APTERYX_GUID_FORMAT,
+                    &stat->ns, &stat->pid, &stat->callback, &stat->hash) != 4 ||
             sscanf (APTERYX_VALUE (node), "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "",
                     &stat->count, &stat->min, &stat->avg, &stat->max) != 4 ||
             stat->count == 0)
@@ -139,11 +140,16 @@ _parse_stats (GNode *node, gpointer data)
 }
 
 static const char*
-procname (const int pid)
+procname (const uint64_t ns, const uint64_t pid)
 {
     static char name[1024];
     name[0] = '\0';
-    sprintf (name, "/proc/%d/cmdline", pid);
+    if (ns != getns ())
+    {
+        sprintf (name, APTERYX_CLIENT_ID, ns, pid);
+        return name;
+    }
+    sprintf (name, "/proc/%"PRIu64"/cmdline", pid);
     FILE* f = fopen (name,"r");
     if (f)
     {
@@ -168,7 +174,7 @@ _print_stats (struct stat_t *stat, char *rpath)
     char *path = apteryx_get (cpath);
     g_free (cpath);
     printf (" %-*s %-*s%*" PRIu64 " %" PRIu64 "/%" PRIu64 "/%" PRIu64 "\n",
-            15, procname(stat->pid), 64, path, 8, stat->count, stat->min, stat->avg, stat->max);
+            15, procname(stat->ns, stat->pid), 64, path, 8, stat->count, stat->min, stat->avg, stat->max);
     g_free (path);
     return;
 }

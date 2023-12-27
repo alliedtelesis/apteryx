@@ -123,7 +123,7 @@ worker_func (gpointer a, gpointer b)
             usleep (rand() & RPC_TEST_DELAY_MASK);
 
         /* Process the callback */
-        DEBUG ("RPC[%d]: processing message from %d\n", sock->sock, sock->pid);
+        DEBUG ("RPC[%d]: processing message from "APTERYX_CLIENT_ID"\n", sock->sock, sock->ns, sock->pid);
         if (!handler (msg))
         {
             DEBUG ("RPC[%i]: handler failed\n", sock->sock);
@@ -704,7 +704,7 @@ rpc_client_existing_s (rpc_instance rpc, const char *url)
                 rpc_socket sock = (rpc_socket) c->data;
                 if (sock->dead)
                     continue;
-                char *surl = g_strdup_printf ("%s.%d", server->url, sock->pid);
+                char *surl = g_strdup_printf ("%s."APTERYX_CLIENT_ID, server->url, sock->ns, sock->pid);
                 DEBUG ("Compare client: %s to %s\n", url, surl);
                 if (g_strcmp0 (url, surl) == 0)
                 {

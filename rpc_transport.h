@@ -35,7 +35,8 @@ struct rpc_socket_s {
     GList *in_queue;
     int waiting;
     bool dead;
-    int pid;
+    uint64_t pid;
+    uint64_t ns;
 };
 
 struct rpc_server_s {
@@ -90,7 +91,7 @@ rpc_socket rpc_socket_connect_service (const char *url, rpc_callback request_cal
 
 size_t rpc_socket_hdr_size (void);
 
-rpc_socket rpc_socket_create (int fd, rpc_callback cb, rpc_server parent, int pid);
+rpc_socket rpc_socket_create (int fd, rpc_callback cb, rpc_server parent, int pid, uint64_t ns);
 bool rpc_socket_process (rpc_socket sock);
 void rpc_socket_ref (rpc_socket sock);
 void rpc_socket_deref (rpc_socket sock);
