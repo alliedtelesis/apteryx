@@ -2399,7 +2399,7 @@ main (int argc, char **argv)
     FILE *fp;
     int i;
     /* Parse options */
-    while ((i = getopt (argc, argv, "hdbp:r:l:")) != -1)
+    while ((i = getopt (argc, argv, "hdbsp:r:l:")) != -1)
     {
         switch (i)
         {
