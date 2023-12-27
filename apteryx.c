@@ -455,7 +455,7 @@ apteryx_init (bool debug_enabled)
         if (have_callbacks)
         {
             /* Bind to the default uri for this client */
-            if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+            if (asprintf ((char **) &uri, APTERYX_CLIENT, getns (), (uint64_t) getpid ()) <= 0
                     || !rpc_server_bind (rpc, uri, uri))
             {
                 ERROR ("Failed to bind uri %s\n", uri);
@@ -2026,7 +2026,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
         char * uri = NULL;
 
         /* Bind to the default uri for this client */
-        if (asprintf ((char **) &uri, APTERYX_SERVER".%"PRIu64, (uint64_t) getpid ()) <= 0
+        if (asprintf ((char **) &uri, APTERYX_CLIENT, getns (), (uint64_t) getpid ()) <= 0
                 || !rpc_server_bind (rpc, uri, uri))
         {
             ERROR ("Failed to bind uri %s\n", uri);
@@ -2040,8 +2040,8 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     }
     pthread_mutex_unlock (&lock);
 
-    if (sprintf (_path, "%s/%zX-%"PRIX64"-%zX",
-            type, (size_t)pid, cb->ref, (size_t)g_str_hash (path)) <= 0)
+    if (sprintf (_path, "%s/"APTERYX_GUID_FORMAT,
+            type, getns (), (uint64_t)pid, cb->ref, (uint64_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
         return false;
@@ -2079,8 +2079,8 @@ delete_callback (const char *type, const char *path, void *fn, void *data)
     free ((void *) cb->path);
     free (cb);
 
-    if (sprintf (_path, "%s/%zX-%"PRIX64"-%zX",
-            type, (size_t)getpid (), ref, (size_t)g_str_hash (path)) <= 0)
+    if (sprintf (_path, "%s/"APTERYX_GUID_FORMAT,
+            type, getns (), (uint64_t)getpid (), ref, (uint64_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, NULL))
         return false;

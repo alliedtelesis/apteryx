@@ -73,6 +73,63 @@ parse_url (const char *url)
     return sock;
 }
 
+static bool
+get_peer_details (int fd, uint64_t *pid, uint64_t *ns)
+{
+    struct ucred ucred;
+    socklen_t uclen = sizeof(struct ucred);
+    struct stat st = { 0 };
+    char *path;
+
+    *pid = 0;
+    *ns = 0;
+
+    /* Get socket peer pid */
+    if (getsockopt (fd, SOL_SOCKET, SO_PEERCRED, &ucred, &uclen))
+    {
+        ERROR ("RPC: Failed to get socket peer pid: %s\n", strerror (errno));
+        return false;
+    }
+    *pid = (uint64_t) ucred.pid;
+
+    /* Get socket peer namespace */
+    path = g_strdup_printf ("/proc/%"PRIu64"/ns/mnt", *pid);
+    if (stat (path, &st))
+    {
+        ERROR ("RPC: Failed to get socket peer namespace: %s\n", strerror (errno));
+        free (path);
+        return false;
+    }
+    *ns = (uint64_t) st.st_ino;
+    free (path);
+
+    /* Check if we are in a different namespace */
+    if (*ns != getns ())
+    {
+        char *cmd = g_strdup_printf ("grep NSpid /proc/%"PRIu64"/status | cut -f3", *pid);
+        FILE *file = popen (cmd, "r");
+        uint64_t nspid = 0;
+        if (!file || fscanf (file, "%"PRIu64, &nspid) != 1)
+        {
+            ERROR ("RPC: Failed to get socket pid in other namespace: %s\n", strerror (errno));
+            if (file)
+                pclose (file);
+            free (cmd);
+            return false;
+        }
+        if (file)
+            pclose (file);
+        free (cmd);
+
+        DEBUG ("RPC: Peer namespace different (here:%"PRIX64".%"PRIu64" there:%"PRIX64".%"PRIu64")\n",
+               getns (), *pid, *ns, nspid);
+
+        *pid = nspid;
+    }
+
+    return true;
+}
+
 static void *
 accept_thread (void *p)
 {
@@ -89,15 +146,10 @@ accept_thread (void *p)
         int new_fd = accept (s->sock, &addr, &len);
         if (new_fd != -1)
         {
-            struct ucred ucred;
-            socklen_t uclen = sizeof(struct ucred);
-            if (getsockopt(new_fd, SOL_SOCKET, SO_PEERCRED, &ucred, &uclen) != 0)
-            {
-                ERROR ("RPC: Failed to get socket credentials: %s\n", strerror (errno));
-                ucred.pid = 0;
-            }
-            DEBUG ("RPC: New client (fd=%i, pid=%ld)\n", new_fd, (long) ucred.pid);
-            rpc_socket r = rpc_socket_create (new_fd, s->request_cb, s, ucred.pid);
+            uint64_t pid, ns;
+            get_peer_details (new_fd, &pid, &ns);
+            DEBUG ("RPC: New client (fd=%i, id=%"PRIX64".%"PRIu64")\n", new_fd, ns, pid);
+            rpc_socket r = rpc_socket_create (new_fd, s->request_cb, s, pid, ns);
             r->priv = s->parent->priv;
             pthread_mutex_lock (&s->lock);
             GList *iter = NULL;
@@ -372,7 +424,7 @@ rpc_socket_connect_service (const char *url, rpc_callback cb)
     DEBUG ("RPC[%d]: Connected to Server\n", fd);
 
     /* Create client */
-    client = rpc_socket_create (fd, cb, NULL, 0);
+    client = rpc_socket_create (fd, cb, NULL, 0, getns ());
     g_free (sock);
 
     return client;

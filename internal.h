@@ -29,6 +29,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
@@ -38,7 +39,12 @@
 #include "rpc_transport.h"
 
 /* Default UNIX socket path */
-#define APTERYX_SERVER  "unix:///tmp/apteryx"
+#define APTERYX_SERVER      "unix:///tmp/apteryx"
+#define APTERYX_CLIENT_ID   "%"PRIX64".%"PRIu64
+#define APTERYX_CLIENT      APTERYX_SERVER"."APTERYX_CLIENT_ID
+
+/* Callback GUID format <namespace>-<nspid>-<client-reference>-<path-hash> */
+#define APTERYX_GUID_FORMAT     "%"PRIX64"-%"PRIu64"-%"PRIX64"-%"PRIX64""
 
 /* Debug */
 extern bool apteryx_debug;
@@ -49,6 +55,24 @@ get_time_us (void)
     struct timeval tv;
     gettimeofday (&tv, NULL);
     return (tv.tv_sec * (uint64_t) 1000000 + tv.tv_usec);
+}
+
+/* Use the inode number of the namespace for mnt as our ns reference */
+static inline uint64_t
+getns (void)
+{
+    static uint64_t _ns = 0;
+    if (_ns == 0)
+    {
+        char *path = g_strdup_printf ("/proc/%d/ns/mnt", getpid ());
+        struct stat st = { 0 };
+        if (stat (path, &st) == 0)
+        {
+            _ns = (uint64_t) st.st_ino;
+        }
+        free (path);
+    }
+    return _ns;
 }
 
 #define DEBUG(fmt, args...) \
@@ -116,6 +140,7 @@ typedef struct _cb_info_t
     const char *guid;
     const char *path;
     const char *uri;
+    uint64_t ns;
     uint64_t id;
     uint64_t ref;
 
@@ -277,7 +302,7 @@ bool config_tree_has_validators (const char *path);
 /* Callbacks to clients */
 struct callback_node *cb_init (void);
 cb_info_t *cb_create (struct callback_node *list, const char *guid, const char *path,
-                      uint64_t id, uint64_t callback);
+                      uint64_t id, uint64_t callback, uint64_t ns);
 void cb_disable (cb_info_t *cb);
 void cb_take (cb_info_t *cb);
 void cb_release (cb_info_t *cb);

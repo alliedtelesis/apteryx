@@ -8350,7 +8350,7 @@ void
 test_rpc_fork ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
-    char *filename = g_strdup_printf ("/tmp/apteryx.%"PRIu64, (uint64_t) getpid ());
+    char *filename = g_strdup_printf ("/tmp/apteryx."APTERYX_CLIENT_ID, getns (), (uint64_t) getpid ());
 
     /* Add a watcher so that the callback socket is created */
     CU_ASSERT (apteryx_watch (path, test_watch_callback));

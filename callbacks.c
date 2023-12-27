@@ -36,14 +36,15 @@ static pthread_mutex_t tree_lock = PTHREAD_MUTEX_INITIALIZER;
 
 cb_info_t *
 cb_create (struct callback_node *tree_root, const char *guid, const char *path,
-           uint64_t id, uint64_t callback)
+           uint64_t id, uint64_t callback, uint64_t ns)
 {
     cb_info_t *cb = (cb_info_t *) g_malloc0 (sizeof (cb_info_t));
     cb->active = true;
     cb->guid = g_strdup (guid);
     cb->path = g_strdup (path);
+    cb->ns = ns ?: getns ();
     cb->id = id;
-    cb->uri = g_strdup_printf (APTERYX_SERVER ".%" PRIu64, cb->id);
+    cb->uri = g_strdup_printf (APTERYX_CLIENT, cb->ns, cb->id);
     cb->ref = callback;
     g_atomic_int_set (&cb->refcnt, 1);
 
@@ -596,7 +597,7 @@ test_cb_match ()
     cb_info_t *cb = NULL;
     /* Wildcard in path */
     struct callback_node *watches_list = cb_init ();
-    cb = cb_create (watches_list, "tester", "/firewall/rules/*/app", 1, 0);
+    cb = cb_create (watches_list, "tester", "/firewall/rules/*/app", 1, 0, 0);
     cb_release (cb);
     matches = cb_match (watches_list, "/firewall/rules/10/app");
     CU_ASSERT (matches != NULL);
@@ -611,7 +612,7 @@ test_cb_match ()
 
     /* directory */
     watches_list = cb_init ();
-    cb = cb_create (watches_list, "tester", "/firewall/rules/10/", 2, 0);
+    cb = cb_create (watches_list, "tester", "/firewall/rules/10/", 2, 0, 0);
     cb_release (cb);
 
     matches = cb_match (watches_list, "/firewall/rules/10/app");
@@ -626,7 +627,7 @@ test_cb_match ()
     cb_shutdown (watches_list);
 
     watches_list = cb_init ();
-    cb = cb_create (watches_list, "tester", "/firewall/rules/10/app", 3, 0);
+    cb = cb_create (watches_list, "tester", "/firewall/rules/10/app", 3, 0, 0);
     cb_release (cb);
     matches = cb_match (watches_list, "/firewall/rules/10/app");
     CU_ASSERT (matches != NULL);
@@ -640,7 +641,7 @@ test_cb_match ()
     cb_shutdown (watches_list);
 
     watches_list = cb_init ();
-    cb = cb_create (watches_list, "tester", "/firewall/rules/10", 4, 0);
+    cb = cb_create (watches_list, "tester", "/firewall/rules/10", 4, 0, 0);
     cb_release (cb);
 
     matches = cb_match (watches_list, "/firewall/rules/10/app");
@@ -654,7 +655,7 @@ test_cb_match ()
     cb_shutdown (watches_list);
 
     watches_list = cb_init ();
-    cb = cb_create (watches_list, "tester", "/firewall/rules/*", 5, 0);
+    cb = cb_create (watches_list, "tester", "/firewall/rules/*", 5, 0, 0);
     cb_release (cb);
 
     matches = cb_match (watches_list, "/firewall/rules/10/app");
@@ -678,7 +679,7 @@ test_cb_release ()
 {
     cb_info_t *cb;
     struct callback_node *watches_list = cb_init ();
-    cb = cb_create (watches_list, "abc", "/test", 1, 0);
+    cb = cb_create (watches_list, "abc", "/test", 1, 0, 0);
     cb_release (cb);
     CU_ASSERT (g_atomic_int_get (&cb->refcnt) == 1);
     cb_release (cb);
@@ -691,7 +692,7 @@ test_cb_disable ()
 {
     cb_info_t *cb;
     struct callback_node *watches_list = cb_init ();
-    cb = cb_create (watches_list, "abc", "/test", 1, 0);
+    cb = cb_create (watches_list, "abc", "/test", 1, 0, 0);
 
     cb_disable (cb);
     CU_ASSERT (!hashtree_empty (&watches_list->hashtree_node));
@@ -723,7 +724,7 @@ match_perf_test (PERF_TEST_INDEX index)
     {
         sprintf (path, "/database/test%d/test%d", i, i);
         sprintf (guid, "%zX", (size_t) g_str_hash (path));
-        cb = cb_create (watches_list, guid, path, 1, 0);
+        cb = cb_create (watches_list, guid, path, 1, 0, 0);
         cb_release (cb);
     }
     CU_ASSERT (!hashtree_empty (&watches_list->hashtree_node));
@@ -774,7 +775,7 @@ _cb_exist_locking_thrasher (void *list)
     while (test_running)
     {
         cb_info_t *cb =
-            cb_create (test_list, "tester", "/test/callback/path/down/*/someplace", 1, 0);
+            cb_create (test_list, "tester", "/test/callback/path/down/*/someplace", 1, 0, 0);
         cb_release (cb);
         /* remove this callback */
         cb_release (cb);
