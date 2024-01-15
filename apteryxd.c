@@ -459,11 +459,16 @@ call_refreshers (const char *path, bool dry_run)
     uint64_t now;
     uint64_t timeout = 0;
     bool refresh_due = false;
+    char *rpath = NULL;
 
     /* Retrieve a list of refreshers for this path */
     refreshers = config_get_refreshers (path);
     if (!refreshers)
         return false;
+
+    /* We only want to pass the path without any trailing /'s to the client */
+    if (*(path + strlen (path) - 1) == '/')
+        path = rpath = g_strndup (path, strlen (path) - 1);
 
     /* Get the time of the request */
     now = calculate_timestamp ();
@@ -552,10 +557,7 @@ call_refreshers (const char *path, bool dry_run)
                 /* Record the path we refreshed (without any trailing /'s)*/
                 if (refresher->last_path)
                     free (refresher->last_path);
-                if (*(path + strlen (path) - 1) == '/')
-                    refresher->last_path = g_strndup (path, strlen (path) - 1);
-                else
-                    refresher->last_path = g_strdup (path);
+                refresher->last_path = g_strdup (path);
             }
             rpc_msg_reset (&msg);
 
@@ -575,6 +577,8 @@ call_refreshers (const char *path, bool dry_run)
         pthread_mutex_unlock (&refresher->lock);
     }
     g_list_free_full (refreshers, (GDestroyNotify) cb_release);
+    if (rpath)
+        free (rpath);
     return refresh_due;
 }
 
