@@ -9404,6 +9404,42 @@ test_lua_basic_provide (void)
 }
 
 static int
+test_lua_provide_nil_thread (void *data)
+{
+    CU_ASSERT (_run_lua (
+            "apteryx = require('apteryx')                                 \n"
+            "function test_provide (path)                                   "
+            "    assert (path == '"TEST_PATH"/provide')                     "
+            "    return nil                                                 "
+            "end                                                          \n"
+            "apteryx.provide('"TEST_PATH"/provide', test_provide)         \n"
+            "for i=1,5 do                                                  "
+            "    apteryx.process()                                          "
+            "    os.execute('sleep 0.1')                                    "
+            "end                                                          \n"
+            "apteryx.unprovide('"TEST_PATH"/provide', test_provide)       \n"
+            "apteryx.process(false)                                       \n"
+    ));
+    return 0;
+}
+
+void
+test_lua_provide_nil (void)
+{
+    pthread_t client;
+    char *value = NULL;
+
+    pthread_create (&client, NULL, (void *) &test_lua_provide_nil_thread, (void *) NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT ((value = apteryx_get (TEST_PATH"/provide")) == NULL);
+    if (value)
+        free ((void *) value);
+    pthread_join (client, NULL);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+static int
 test_lua_index_thread (void *data)
 {
     CU_ASSERT (_run_lua (
@@ -10016,6 +10052,7 @@ CU_TestInfo tests_lua[] = {
     { "lua watch delayed thrash", test_lua_watch_delayed_thrash },
     { "lua basic refresh", test_lua_basic_refresh },
     { "lua basic provide", test_lua_basic_provide },
+    { "lua provide nil", test_lua_provide_nil },
     { "lua basic index", test_lua_basic_index },
     { "lua basic validate", test_lua_basic_validate },
     { "lua load memory usage", test_lua_load_memory },
