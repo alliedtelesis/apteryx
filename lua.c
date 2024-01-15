@@ -977,7 +977,9 @@ lua_do_provide (const char *path, lua_callback_info *cb_info)
             lua_apteryx_error (L, res);
         if (lua_gettop (L))
         {
-            value = strdup (lua_apteryx_tostring (L, -1));
+            const char *v = lua_apteryx_tostring (L, -1);
+            if (v)
+                value = strdup (v);
             lua_pop (L, 1);
         }
         lua_pop (L, 1); /* pop fn */
