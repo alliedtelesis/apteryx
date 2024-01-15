@@ -3367,6 +3367,29 @@ test_refresh_tree_no_change ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static uint64_t
+test_refresh_no_slash_callback (const char *path)
+{
+    _cb_count++;
+    CU_ASSERT (*(path + strlen (path) - 1) != '/');
+    return 0;
+}
+
+void
+test_refresh_no_slash ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_no_slash_callback));
+    
+    CU_ASSERT (apteryx_get (path) == NULL);
+    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0") == NULL);
+    CU_ASSERT (_cb_count == 2);
+
+    apteryx_unrefresh (path, test_refresh_no_slash_callback);
+}
+
 static char*
 test_provide_callback_up (const char *path)
 {
@@ -9672,6 +9695,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh path other old", test_refresh_path_other_old },
     { "refresh no change", test_refresh_no_change },
     { "refresh tree no change", test_refresh_tree_no_change },
+    { "refresh no slash", test_refresh_no_slash },
     { "refresh collision", test_refresh_collision },
     { "refresh concurrent", test_refresh_concurrent },
     { "refresh various wildcards", test_refresh_wildcards },
