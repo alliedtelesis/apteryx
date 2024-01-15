@@ -3033,6 +3033,73 @@ test_refresh_more_specific_second ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static uint64_t
+test_refresh_substring_callback (const char *path)
+{
+    _cb_count++;
+    int speed = _cb_count * 100;
+    if (strstr (path, "fast") != NULL)
+        speed *= 10;
+    apteryx_set_int (path, NULL, speed);
+    return _cb_timeout;
+}
+
+void
+test_refresh_node_substring ()
+{
+    const char *path1 = TEST_PATH"/interfaces/eth0/speed";
+    const char *path2 = TEST_PATH"/interfaces/eth0/speed-fast";
+    char *value;
+
+    _cb_count = 0;
+    _cb_timeout = TEST_SLEEP_TIMEOUT / 2;
+    _cb_delay = 0;
+
+    CU_ASSERT (apteryx_refresh (TEST_PATH"/interfaces/eth0/*", test_refresh_substring_callback));
+
+    /* Only path1 refreshed */
+    value = apteryx_get (path1);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (value && strcmp (value, "100") == 0);
+    if (value)
+        free (value);
+
+    /* Only path2 refreshed */
+    value = apteryx_get (path2);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (value && strcmp (value, "2000") == 0);
+    if (value)
+        free (value);
+
+    /* This tests the current behaviour that is perhaps not ideal.
+       It would be better if neither of these refreshers was called.
+       But path1 will be refreshed as it does not match the refreshers
+       last path */
+
+    /* Nothing refreshed */
+    value = apteryx_get (path2);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (value && strcmp (value, "2000") == 0);
+    if (value)
+        free (value);
+
+    /* path1 refreshed as it does not match the refreshers last path */
+    value = apteryx_get (path1);
+    CU_ASSERT (value != NULL);
+    CU_ASSERT (_cb_count == 3);
+    CU_ASSERT (value && strcmp (value, "300") == 0);
+    if (value)
+        free (value);
+
+    apteryx_unrefresh (TEST_PATH"/interfaces/eth0/*", test_refresh_substring_callback);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_refresh_trunk ()
 {
@@ -9703,6 +9770,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh different depths", test_refresh_different_depths },
     { "refresh more specific first", test_refresh_more_specific_first },
     { "refresh more specific second", test_refresh_more_specific_second },
+    { "refresh node substring", test_refresh_node_substring },
     { "refresh multiple branches", test_refresh_multiple_branches },
     CU_TEST_INFO_NULL,
 };
