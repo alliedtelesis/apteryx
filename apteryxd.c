@@ -482,7 +482,9 @@ call_refreshers (const char *path, bool dry_run)
         /* We can skip this refresher if the refresher has been called recently AND
          * the last call was for a path equal to or less specific than this one */
         if (now < (refresher->timestamp + refresher->timeout) &&
-            strncmp (refresher->last_path, path, strlen (refresher->last_path) - 1) == 0)
+            (strncmp (refresher->last_path, path, strlen (refresher->last_path)) == 0 &&
+             (*(path + strlen (refresher->last_path)) == '/' ||
+              *(path + strlen (refresher->last_path)) == '\0')))
         {
             DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
                    path, now, refresher->timestamp, refresher->timeout);
@@ -547,10 +549,13 @@ call_refreshers (const char *path, bool dry_run)
                     refresher->timeout = timeout;
                 /* Record the last time we ran this refresher */
                 refresher->timestamp = now;
-                /* Record the path we refreshed */
+                /* Record the path we refreshed (without any trailing /'s)*/
                 if (refresher->last_path)
                     free (refresher->last_path);
-                refresher->last_path = g_strdup (path);
+                if (*(path + strlen (path) - 1) == '/')
+                    refresher->last_path = g_strndup (path, strlen (path) - 1);
+                else
+                    refresher->last_path = g_strdup (path);
             }
             rpc_msg_reset (&msg);
 
