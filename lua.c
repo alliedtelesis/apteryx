@@ -1102,6 +1102,7 @@ lua_apteryx_mainloop (lua_State *L)
     }
 
     running = true;
+    lua_apteryx_instance_unlock (L);
     while (running && fd >= 0)
     {
         g_L = L;
