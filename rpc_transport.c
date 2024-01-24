@@ -96,7 +96,7 @@ get_peer_details (int fd, uint64_t *pid, uint64_t *ns)
     path = g_strdup_printf ("/proc/%"PRIu64"/ns/mnt", *pid);
     if (stat (path, &st))
     {
-        ERROR ("RPC: Failed to get socket peer namespace: %s\n", strerror (errno));
+        DEBUG ("RPC: Failed to get socket peer(pid=%"PRIu64") namespace: %s\n", *pid, strerror (errno));
         free (path);
         return false;
     }
@@ -146,8 +146,10 @@ accept_thread (void *p)
         int new_fd = accept (s->sock, &addr, &len);
         if (new_fd != -1)
         {
-            uint64_t pid, ns;
-            get_peer_details (new_fd, &pid, &ns);
+            uint64_t pid = 0;
+            uint64_t ns = 0;
+            if (s->sockinfo && s->sockinfo->family == AF_UNIX)
+                get_peer_details (new_fd, &pid, &ns);
             DEBUG ("RPC: New client (fd=%i, id=%"PRIX64".%"PRIu64")\n", new_fd, ns, pid);
             rpc_socket r = rpc_socket_create (new_fd, s->request_cb, s, pid, ns);
             r->priv = s->parent->priv;
