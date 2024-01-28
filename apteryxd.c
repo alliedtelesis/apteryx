@@ -535,7 +535,14 @@ call_refreshers (const char *path, bool dry_run, bool direct_request)
             }
             rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
             rpc_msg_encode_uint64 (&msg, refresher->ref);
-            rpc_msg_encode_string (&msg, path);
+            if ((refresher->type == '/' || refresher->type == '*') && !direct_request)
+            {
+                char *with_slash = g_strdup_printf("%s/", path);
+                rpc_msg_encode_string (&msg, with_slash);
+                g_free(with_slash);
+            }
+            else
+                rpc_msg_encode_string (&msg, path);
             start = get_time_us ();
             res = rpc_msg_send (rpc_client, &msg);
             duration = get_time_us () - start;
