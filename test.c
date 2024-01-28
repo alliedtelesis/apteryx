@@ -3138,6 +3138,42 @@ test_refresh_tree ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+void
+test_refresh_directory ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state/";
+    GNode *value = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_tree_callback));
+    CU_ASSERT ((value = apteryx_get_tree (TEST_PATH"/interfaces/eth0/state")) != NULL);
+    if (value)
+        apteryx_free_tree (value);
+    apteryx_prune(path);
+    CU_ASSERT (_cb_count == 1);
+    _cb_count = 0;
+    usleep(_cb_timeout);
+
+    CU_ASSERT ((value = apteryx_get_tree (TEST_PATH"/interfaces/eth0")) != NULL);
+    if (value)
+        apteryx_free_tree (value);
+    apteryx_prune(path);
+    CU_ASSERT (_cb_count == 1);
+    _cb_count = 0;
+    usleep(_cb_timeout);
+
+    CU_ASSERT ((value = apteryx_get_tree (TEST_PATH"/interfaces/eth0/state/speed")) != NULL);
+    if (value)
+        apteryx_free_tree (value);
+    CU_ASSERT (_cb_count == 1);
+    _cb_count = 0;
+
+    apteryx_unrefresh (path, test_refresh_tree_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static uint64_t
 test_refresh_counters_callback (const char *path)
 {
@@ -9789,6 +9825,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh timeout", test_refresh_timeout },
     { "refresh trunk", test_refresh_trunk },
     { "refresh tree", test_refresh_tree },
+    { "refresh directory", test_refresh_directory },
     { "refresh during get_tree", test_refresh_during_get_tree },
     { "refresh search", test_refresh_search },
     { "refresh subpath search", test_refresh_subpath_search },
