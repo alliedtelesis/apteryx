@@ -452,7 +452,7 @@ calculate_timestamp (void)
 }
 
 static bool
-call_refreshers (const char *path, bool dry_run)
+call_refreshers (const char *path, bool dry_run, bool direct_request)
 {
     GList *refreshers = NULL;
     GList *iter = NULL;
@@ -1307,7 +1307,7 @@ get_value (const char *path)
     if ((value = proxy_get (path)) == NULL)
     {
         /* Call refreshers */
-        call_refreshers (path, false);
+        call_refreshers (path, false, true);
 
         /* Provide second */
         if ((value = provide_get (path)) == NULL)
@@ -1374,7 +1374,7 @@ search_path (const char *path)
         else
         {
             /* Call refreshers */
-            call_refreshers (path, false);
+            call_refreshers (path, false, false);
 
             /* Search database next */
             results = db_search (path);
@@ -1591,12 +1591,19 @@ _traverse_paths (GNode **root, const char *path, char cb_lookup)
 }
 
 static void
-refreshers_traverse (const char *top_path, char cb_lookup)
+refreshers_traverse (const char *top_path, char cb_lookup, bool top_level)
 {
     GList *iter, *paths = NULL;
     gchar *needle = g_strdup_printf("%s/", top_path);
 
-    call_refreshers (needle, false);
+    call_refreshers (needle, false, false);
+    /* At the top level we need to do a direct call for the path to catch
+     * a get tree for exactly a refreshed path.
+     */
+    if (top_level)
+    {
+        call_refreshers (top_path, false, true);
+    }
 
     if (!config_tree_has_refreshers (top_path))
     {
@@ -1628,7 +1635,7 @@ refreshers_traverse (const char *top_path, char cb_lookup)
     for (iter = paths; iter; iter = g_list_next (iter))
     {
         const char *path = (const char *) iter->data;
-        refreshers_traverse (path, cb_lookup);
+        refreshers_traverse (path, cb_lookup, false);
     }
     g_list_free_full (paths, g_free);
 }
@@ -1711,7 +1718,7 @@ handle_traverse (rpc_message msg)
     DEBUG ("TRAVERSE: %s\n", path);
 
     /* Call refreshers */
-    refreshers_traverse (path, cb_all);
+    refreshers_traverse (path, cb_all, true);
 
     /* Proxy first */
     if (!proxy_traverse (&paths, &values, path))
@@ -1914,7 +1921,7 @@ static void _refresh_paths (GNode *node, gpointer data)
         /* Match everything from here down and go no further */
         // TODO handle mid path wildcards that might not match further down
         _node_to_path (node->parent, &path);
-        refreshers_traverse (path, cb_all);
+        refreshers_traverse (path, cb_all, false);
         free (path);
         return;
     }
@@ -1924,7 +1931,7 @@ static void _refresh_paths (GNode *node, gpointer data)
     {
         /* Match this exactly and go no further */
         _node_to_path (node, &path);
-        call_refreshers (path, false);
+        call_refreshers (path, false, false);
         free (path);
         return;
     }
@@ -2313,7 +2320,7 @@ handle_timestamp (rpc_message msg)
     if ((value = proxy_timestamp (path)) == 0)
     {
         /* Lookup value */
-        if (call_refreshers (path, true) || config_tree_has_providers (path))
+        if (call_refreshers (path, true, false) || config_tree_has_providers (path))
         {
             value = calculate_timestamp ();
         }
