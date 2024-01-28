@@ -3475,23 +3475,74 @@ test_refresh_no_slash_callback (const char *path)
 {
     _cb_count++;
     CU_ASSERT (*(path + strlen (path) - 1) != '/');
-    return 0;
+    return _cb_timeout;
 }
 
 void
 test_refresh_no_slash ()
 {
-    const char *path = TEST_PATH"/interfaces/eth0/state";
+    const char *path = TEST_PATH"/interfaces/eth0";
 
     _cb_count = 0;
     CU_ASSERT (apteryx_refresh (path, test_refresh_no_slash_callback));
-    
+
     CU_ASSERT (apteryx_get (path) == NULL);
+    usleep(_cb_timeout * 2);
     CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0") == NULL);
     CU_ASSERT (_cb_count == 2);
 
     apteryx_unrefresh (path, test_refresh_no_slash_callback);
 }
+
+static uint64_t
+test_refresh_path_matches_wildcard_callback (const char *path)
+{
+    CU_ASSERT (strstr(path, TEST_PATH"/interfaces/eth0/") == path);
+    _cb_count++;
+    return _cb_timeout;
+}
+
+static uint64_t
+test_refresh_path_matches_directory_callback (const char *path)
+{
+    CU_ASSERT (strstr(path, TEST_PATH"/interfaces/eth0/") == path);
+    _cb_count++;
+    return _cb_timeout;
+}
+
+static uint64_t
+test_refresh_path_matches_exact_callback (const char *path)
+{
+    CU_ASSERT (strstr(path, TEST_PATH"/interfaces/eth0/name") == path);
+    _cb_count++;
+    return _cb_timeout;
+}
+
+void
+test_refresh_path_matches ()
+{
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    CU_ASSERT (apteryx_refresh (TEST_PATH"/interfaces/eth0/*", test_refresh_path_matches_wildcard_callback));
+    CU_ASSERT (apteryx_refresh (TEST_PATH"/interfaces/eth0/", test_refresh_path_matches_directory_callback));
+    CU_ASSERT (apteryx_refresh (TEST_PATH"/interfaces/eth0/name", test_refresh_path_matches_exact_callback));
+
+    CU_ASSERT (apteryx_get (TEST_PATH"/interfaces/eth0/name") == NULL);
+    CU_ASSERT(_cb_count == 3);
+    usleep(_cb_timeout);
+
+    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0") == NULL);
+    CU_ASSERT(_cb_count == 6);
+    usleep(_cb_timeout);
+
+    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0/name") == NULL);
+    CU_ASSERT(_cb_count == 9);
+
+    apteryx_unrefresh (TEST_PATH"/interfaces/eth0/*", test_refresh_path_matches_wildcard_callback);
+    apteryx_unrefresh (TEST_PATH"/interfaces/eth0/", test_refresh_path_matches_directory_callback);
+    apteryx_unrefresh (TEST_PATH"/interfaces/eth0/name", test_refresh_path_matches_exact_callback);
+}
+
 
 static char*
 test_provide_callback_up (const char *path)
@@ -9836,6 +9887,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh no change", test_refresh_no_change },
     { "refresh tree no change", test_refresh_tree_no_change },
     { "refresh no slash", test_refresh_no_slash },
+    { "refresh path matches", test_refresh_path_matches },
     { "refresh collision", test_refresh_collision },
     { "refresh concurrent", test_refresh_concurrent },
     { "refresh various wildcards", test_refresh_wildcards },
