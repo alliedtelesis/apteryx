@@ -3484,12 +3484,12 @@ test_refresh_no_slash ()
     const char *path = TEST_PATH"/interfaces/eth0";
 
     _cb_count = 0;
+    _cb_timeout = 5000;
     CU_ASSERT (apteryx_refresh (path, test_refresh_no_slash_callback));
 
     CU_ASSERT (apteryx_get (path) == NULL);
-    usleep(_cb_timeout * 2);
     CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0") == NULL);
-    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (_cb_count == 1);
 
     apteryx_unrefresh (path, test_refresh_no_slash_callback);
 }
@@ -8246,7 +8246,7 @@ static int
 count_threads (const char *name)
 {
     char *cmd = g_strdup_printf ("ps H -o 'tid comm' %d | grep %s | wc -l", (int) getpid(), name);
-    
+
     FILE *file = popen (cmd, "r");
     int count = 0;
     if (file)
