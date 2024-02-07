@@ -671,7 +671,7 @@ bool apteryx_unvalidate (const char *path, apteryx_validate_callback cb);
  * The callback may be called again within the
  * timeout duration if a request for a parent path
  * matches the refresher path. e.g.
- * REFRESH /interfaces/*
+ * REFRESH /interfaces/\*
  * GET /interfaces/eth0/state -> called
  * GET /interfaces/eth0/state -> not called
  * GET /interfaces/eth0 -> called
