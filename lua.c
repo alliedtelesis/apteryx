@@ -1182,6 +1182,13 @@ lua_apteryx_run (lua_State *L)
     return 1;
 }
 
+static int
+luaclose_libapteryx (lua_State *L)
+{
+    apteryx_shutdown ();
+    return 0;
+}
+
 int
 luaopen_libapteryx (lua_State *L)
 {
@@ -1229,6 +1236,9 @@ luaopen_libapteryx (lua_State *L)
     /* Return the Apteryx object on the stack */
     luaL_newmetatable (L, "apteryx");
     luaL_setfuncs (L, _apteryx_fns, 0);
+    lua_pushcfunction (L, luaclose_libapteryx);
+    lua_setfield (L, -2, "__gc");
+    luaL_setmetatable (L, "apteryx");
     return 1;
 }
 
