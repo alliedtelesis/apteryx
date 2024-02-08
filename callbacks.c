@@ -315,6 +315,27 @@ cb_gather (struct callback_node *node, GList *callbacks_so_far, const char *path
     {
         callbacks_so_far = g_list_concat (g_list_copy (node->directory), callbacks_so_far);
 
+        /* End of path wildcard - collect everything from here down */
+        if (g_strcmp0 (path, "/*") == 0)
+        {
+            GList *values = g_hash_table_get_values (node->hashtree_node.children);
+            for (GList *iter = values; iter; iter = g_list_next (iter))
+            {
+                struct callback_node *cb = (struct callback_node *) iter->data;
+                if (g_strcmp0 (cb->hashtree_node.key, "*") != 0)
+                {
+                    char *_path;
+                    if (cb->hashtree_node.children)
+                        _path = g_strdup_printf ("/%s/*", cb->hashtree_node.key);
+                    else
+                        _path = g_strdup_printf ("/%s", cb->hashtree_node.key);
+                    callbacks_so_far = cb_gather (node, callbacks_so_far, _path);
+                    free (_path);
+                }
+            }
+            g_list_free (values);
+        }
+
         struct hashtree_node *next_stage =
             hashtree_path_to_node (&node->hashtree_node, "/*");
         if (next_stage)
@@ -346,8 +367,23 @@ cb_gather (struct callback_node *node, GList *callbacks_so_far, const char *path
         callbacks_so_far = cb_gather ((struct callback_node *) next_stage,
                                       callbacks_so_far, path + strlen (tmp) + 1);
     }
+    else if (g_strcmp0 (tmp, "*") == 0)
+    {
+        /* Mid path wildcard */
+        GList *values = g_hash_table_get_values (node->hashtree_node.children);
+        for (GList *iter = values; iter; iter = g_list_next (iter))
+        {
+            char *key = ((struct hashtree_node *)iter->data)->key;
+            char *npath = g_strdup_printf ("/%s%s", key, path + strlen (tmp) + 1);
+            callbacks_so_far = cb_gather (node, callbacks_so_far, npath);
+            free (npath);
+        }
+        g_list_free (values);
+        free (tmp);
+        tmp = NULL;
+    }
 
-    if (strlen (tmp) > 0)
+    if (tmp && strlen (tmp) > 0)
     {
         char *with_leading_slash = NULL;
         if (asprintf (&with_leading_slash, "/%s", tmp) < 0)
