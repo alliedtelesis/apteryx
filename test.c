@@ -2726,7 +2726,6 @@ test_refresh_tree_callback (const char *path)
     return _cb_timeout;
 }
 
-
 void
 test_refresh_wildcards ()
 {
@@ -5650,26 +5649,25 @@ test_query_not_refreshed_different_roots()
     apteryx_prune (TEST_PATH);
 }
 
-// TODO current behaviour is to refresh from the first wildcard
-// void
-// test_query_not_refreshed_mid_wildcard()
-// {
-//     const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
-//     GNode *root = NULL;
+void
+test_query_not_refreshed_mid_wildcard()
+{
+    const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
+    GNode *root = NULL;
 
-//     _cb_count = 0;
-//     _cb_timeout = 5000;
-//     apteryx_refresh (path, refresh_state_callback);
+    _cb_count = 0;
+    _cb_timeout = 5000;
+    apteryx_refresh (path, refresh_state_callback);
 
-//     root = g_node_new (strdup(TEST_PATH"/devices/*/interfaces/eth2/state"));
-//     CU_ASSERT (apteryx_query (root) == NULL);
-//     CU_ASSERT (_cb_count == 0);
-//     apteryx_free_tree (root);
+    root = g_node_new (strdup(TEST_PATH"/devices/*/interfaces/eth2/state"));
+    CU_ASSERT (apteryx_query (root) == NULL);
+    CU_ASSERT (_cb_count == 0);
+    apteryx_free_tree (root);
 
-//     apteryx_unrefresh (path, refresh_state_callback);
-//     apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
-//     apteryx_prune (TEST_PATH);
-// }
+    apteryx_unrefresh (path, refresh_state_callback);
+    apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
+    apteryx_prune (TEST_PATH);
+}
 
 
 void
@@ -10003,7 +10001,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query not refreshed one path", test_query_not_refreshed_one_path},
     { "query not refreshed two paths", test_query_not_refreshed_two_paths},
     { "query not refreshed different root", test_query_not_refreshed_different_roots},
-    // { "query not refreshed mid wildcard", test_query_not_refreshed_mid_wildcard},
+    { "query not refreshed mid wildcard", test_query_not_refreshed_mid_wildcard},
     { "query refresh timeout", test_query_refresh_timeout},
     { "query root length", test_query_long_root},
     { "query too long", test_query_too_long},

@@ -1918,34 +1918,13 @@ collect_provided_paths_query(GNode *query)
     return matches;
 }
 
-static void _refresh_paths (GNode *node, gpointer data)
+static int _refresh_paths (GNode *node, gpointer data)
 {
     char *path = NULL;
-
-    /* Handle wildcards */
-    if (g_strcmp0 (node->data, "*") == 0)
-    {
-        /* Match everything from here down and go no further */
-        // TODO handle mid path wildcards that might not match further down
-        _node_to_path (node->parent, &path);
-        refreshers_traverse (path, cb_all, false);
-        free (path);
-        return;
-    }
-
-    /* Handle direct matches */
-    if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
-    {
-        /* Match this exactly and go no further */
-        _node_to_path (node, &path);
-        call_refreshers (path, false, false);
-        free (path);
-        return;
-    }
-
-    /* Traverse children */
-    g_node_children_foreach (node, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
-    return;
+    _node_to_path (node->parent, &path);
+    call_refreshers (path, false, false);
+    free (path);
+    return false;
 }
 
 /* g_node_traverse function to check if we have any filters to work with */
@@ -2109,8 +2088,8 @@ handle_query (rpc_message msg)
     }
     free (root_path);
 
-    /* Traverse the tree calling refreshers */
-    g_node_children_foreach (query_head, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
+    /* Attempt to call refreshers for all paths in the query */
+    g_node_traverse (query_head, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, _refresh_paths, NULL);
 
     /* If we have a filter adjust the query to only have matching subtrees */
     bool has_filter = false;
