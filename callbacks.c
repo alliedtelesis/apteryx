@@ -316,7 +316,7 @@ cb_gather (struct callback_node *node, GList *callbacks_so_far, const char *path
         callbacks_so_far = g_list_concat (g_list_copy (node->directory), callbacks_so_far);
 
         /* End of path wildcard - collect everything from here down */
-        if (g_strcmp0 (path, "/*") == 0)
+        if (g_strcmp0 (path, "/*") == 0 && node->hashtree_node.children)
         {
             GList *values = g_hash_table_get_values (node->hashtree_node.children);
             for (GList *iter = values; iter; iter = g_list_next (iter))
@@ -361,28 +361,35 @@ cb_gather (struct callback_node *node, GList *callbacks_so_far, const char *path
         *strchr (tmp, '/') = '\0';
     }
 
-    struct hashtree_node *next_stage = hashtree_path_to_node (&node->hashtree_node, "/*");
-    if (next_stage)
+    /* Match wildcard path element */
+    if (g_strcmp0 (tmp, "*") == 0 && node->hashtree_node.children)
     {
-        callbacks_so_far = cb_gather ((struct callback_node *) next_stage,
-                                      callbacks_so_far, path + strlen (tmp) + 1);
-    }
-    else if (g_strcmp0 (tmp, "*") == 0)
-    {
-        /* Mid path wildcard */
+        /* Match next stage callbacks that have non wildcard path elements */
         GList *values = g_hash_table_get_values (node->hashtree_node.children);
         for (GList *iter = values; iter; iter = g_list_next (iter))
         {
             char *key = ((struct hashtree_node *)iter->data)->key;
-            char *npath = g_strdup_printf ("/%s%s", key, path + strlen (tmp) + 1);
-            callbacks_so_far = cb_gather (node, callbacks_so_far, npath);
-            free (npath);
+            if (g_strcmp0 (key, "*") != 0)
+            {
+                char *npath = g_strdup_printf ("/%s%s", key, path + strlen (tmp) + 1);
+                callbacks_so_far = cb_gather (node, callbacks_so_far, npath);
+                free (npath);
+            }
         }
         g_list_free (values);
         free (tmp);
-        tmp = NULL;
+        return callbacks_so_far;
     }
 
+    /* Match non-wildcard to all wildcard callbacks */
+    struct hashtree_node *next_stage = hashtree_path_to_node (&node->hashtree_node, "/*");
+    if (next_stage)
+    {
+        callbacks_so_far = cb_gather ((struct callback_node *) next_stage,
+                                    callbacks_so_far, path + strlen (tmp) + 1);
+    }
+
+    /* Exact match for non wildcards */
     if (tmp && strlen (tmp) > 0)
     {
         char *with_leading_slash = NULL;
@@ -400,7 +407,6 @@ cb_gather (struct callback_node *node, GList *callbacks_so_far, const char *path
     }
 
     free (tmp);
-
     return callbacks_so_far;
 }
 

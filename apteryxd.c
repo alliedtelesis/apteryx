@@ -451,24 +451,84 @@ calculate_timestamp (void)
     return micros;
 }
 
+static char *
+get_refresher_path (const char *path, cb_info_t *refresher)
+{
+    const char *rpath = refresher->path;
+    char *cpath = g_malloc0 (strlen (path) + strlen (rpath) + 1);
+    int offset = 0;
+
+    /* Resolve any wildcards in either path */
+    while (*path && *rpath)
+    {
+        if (*path == '*' && *rpath == '*')
+        {
+            while (*path)
+                path++;
+            while (*rpath)
+                rpath++;
+        }
+        else if (*path == '*')
+        {
+            while (*rpath != '/' && *rpath != '\0')
+            {
+                cpath[offset++] = *rpath;
+                rpath++;
+            }
+            path++;
+        }
+        else if (*rpath == '*')
+        {
+            while (*path != '/' && *path != '\0')
+            {
+                cpath[offset++] = *path;
+                path++;
+            }
+            rpath++;
+        }
+        else
+        {
+            cpath[offset++] = *rpath;
+            rpath++;
+            path++;
+        }
+    }
+
+    /* Append any left over requester path if the refresher is not single level */
+    if (*path && rpath[-1] != '/')
+    {
+        /* Append any requester path that we do not need to resolve */
+        while (*path && *path != '*' && g_ascii_strncasecmp (path, "/*", 2) != 0)
+        {
+            cpath[offset++] = *path;
+            path++;
+        }
+    }
+
+    /* Append any refresher path that we do not need to resolve */
+    while (*rpath && *rpath != '*')
+    {
+        cpath[offset++] = *rpath;
+        rpath++;
+    }
+
+    return cpath;
+}
+
 static bool
-call_refreshers (const char *path, bool dry_run, bool direct_request)
+call_refreshers (const char *path, bool dry_run)
 {
     GList *refreshers = NULL;
     GList *iter = NULL;
     uint64_t now;
     uint64_t timeout = 0;
     bool refresh_due = false;
-    char *rpath = NULL;
+    char *cpath = NULL;
 
     /* Retrieve a list of refreshers for this path */
     refreshers = config_get_refreshers (path);
     if (!refreshers)
         return false;
-
-    /* We only want to pass the path without any trailing /'s to the client */
-    if (*(path + strlen (path) - 1) == '/')
-        path = rpath = g_strndup (path, strlen (path) - 1);
 
     /* Get the time of the request */
     now = calculate_timestamp ();
@@ -484,25 +544,29 @@ call_refreshers (const char *path, bool dry_run, bool direct_request)
 
         pthread_mutex_lock (&refresher->lock);
 
+        /* Get a path suitable for passing to the reresher */
+        cpath = get_refresher_path (path, refresher);
+
         /* We can skip this refresher if the refresher has been called recently AND
          * the last call was for a path equal to or less specific than this one */
         if (now < (refresher->timestamp + refresher->timeout) &&
-            (strncmp (refresher->last_path, path, strlen (refresher->last_path)) == 0 &&
-             (*(path + strlen (refresher->last_path)) == '/' ||
-              *(path + strlen (refresher->last_path)) == '\0')))
+            (strncmp (refresher->last_path, cpath, strlen (refresher->last_path)) == 0 &&
+             (*(refresher->last_path + strlen (refresher->last_path) - 1) == '/' ||
+              *(cpath + strlen (refresher->last_path)) == '/' ||
+              *(cpath + strlen (refresher->last_path)) == '\0')))
         {
             DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
-                   path, now, refresher->timestamp, refresher->timeout);
+                   cpath, now, refresher->timestamp, refresher->timeout);
             goto unlock;
         }
         if (now >= (refresher->timestamp + refresher->timeout))
         {
             DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
-                path, now, refresher->timestamp, refresher->timeout);
+                cpath, now, refresher->timestamp, refresher->timeout);
         }
         else
         {
-            DEBUG ("Refreshing %s (< %s)\n", path, refresher->last_path);
+            DEBUG ("Refreshing %s (< %s)\n", cpath, refresher->last_path);
         }
 
         /* Check for local refresher */
@@ -511,14 +575,14 @@ call_refreshers (const char *path, bool dry_run, bool direct_request)
             apteryx_refresh_callback cb = (apteryx_refresh_callback) (long) refresher->ref;
             DEBUG ("REFRESH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
                     refresher->path, refresher->id, refresher->ref);
-            timeout = cb (path);
+            timeout = cb (cpath);
             if (refresher->timeout == 0 || timeout < refresher->timeout)
                 refresher->timeout = timeout;
             goto unlock;
         }
 
         DEBUG ("REFRESH CB %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
-                path, refresher->path, refresher->id, refresher->ref, refresher->uri);
+                cpath, refresher->path, refresher->id, refresher->ref, refresher->uri);
 
         /* IPC */
         if (!dry_run)
@@ -535,14 +599,7 @@ call_refreshers (const char *path, bool dry_run, bool direct_request)
             }
             rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
             rpc_msg_encode_uint64 (&msg, refresher->ref);
-            if ((refresher->type == '/' || refresher->type == '*') && !direct_request)
-            {
-                char *with_slash = g_strdup_printf("%s/", path);
-                rpc_msg_encode_string (&msg, with_slash);
-                g_free(with_slash);
-            }
-            else
-                rpc_msg_encode_string (&msg, path);
+            rpc_msg_encode_string (&msg, cpath);
             start = get_time_us ();
             res = rpc_msg_send (rpc_client, &msg);
             duration = get_time_us () - start;
@@ -564,7 +621,7 @@ call_refreshers (const char *path, bool dry_run, bool direct_request)
                 /* Record the path we refreshed (without any trailing /'s)*/
                 if (refresher->last_path)
                     free (refresher->last_path);
-                refresher->last_path = g_strdup (path);
+                refresher->last_path = g_strdup (cpath);
             }
             rpc_msg_reset (&msg);
 
@@ -581,11 +638,10 @@ call_refreshers (const char *path, bool dry_run, bool direct_request)
             refresh_due = true;
         }
     unlock:
+        free (cpath);
         pthread_mutex_unlock (&refresher->lock);
     }
     g_list_free_full (refreshers, (GDestroyNotify) cb_release);
-    if (rpath)
-        free (rpath);
     return refresh_due;
 }
 
@@ -1314,7 +1370,7 @@ get_value (const char *path)
     if ((value = proxy_get (path)) == NULL)
     {
         /* Call refreshers */
-        call_refreshers (path, false, true);
+        call_refreshers (path, false);
 
         /* Provide second */
         if ((value = provide_get (path)) == NULL)
@@ -1381,7 +1437,7 @@ search_path (const char *path)
         else
         {
             /* Call refreshers */
-            call_refreshers (path, false, false);
+            call_refreshers (path, false);
 
             /* Search database next */
             results = db_search (path);
@@ -1603,14 +1659,9 @@ refreshers_traverse (const char *top_path, char cb_lookup, bool top_level)
     GList *iter, *paths = NULL;
     gchar *needle = g_strdup_printf("%s/", top_path);
 
-    call_refreshers (needle, false, false);
-    /* At the top level we need to do a direct call for the path to catch
-     * a get tree for exactly a refreshed path.
-     */
-    if (top_level)
-    {
-        call_refreshers (top_path, false, true);
-    }
+    /* We need to check this node as well as any children */
+    call_refreshers (top_path, false);
+    call_refreshers (needle, false);
 
     if (!config_tree_has_refreshers (top_path))
     {
@@ -1922,7 +1973,7 @@ static int _refresh_paths (GNode *node, gpointer data)
 {
     char *path = NULL;
     _node_to_path (node->parent, &path);
-    call_refreshers (path, false, false);
+    call_refreshers (path, false);
     free (path);
     return false;
 }
@@ -2306,7 +2357,7 @@ handle_timestamp (rpc_message msg)
     if ((value = proxy_timestamp (path)) == 0)
     {
         /* Lookup value */
-        if (call_refreshers (path, true, false) || config_tree_has_providers (path))
+        if (call_refreshers (path, true) || config_tree_has_providers (path))
         {
             value = calculate_timestamp ();
         }
