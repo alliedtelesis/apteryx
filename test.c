@@ -2758,10 +2758,13 @@ test_refresh_wildcards ()
     /* With timeout of zero we exepct a callbacks for;
      * /test/interfaces/eth0/state
      * /test/interfaces/eth0/state/state
+     * /test/interfaces/eth0/state/state/
      * /test/interfaces/eth0/state/speed
+     * /test/interfaces/eth0/state/speed/
      * /test/interfaces/eth0/state/duplex
+     * /test/interfaces/eth0/state/duplex/
      */
-    CU_ASSERT (_cb_count == 4);
+    CU_ASSERT (_cb_count == 7);
     apteryx_prune (TEST_PATH);
 
     /* Even without any data in the tree, if we have no more wildcards
@@ -2773,7 +2776,7 @@ test_refresh_wildcards ()
     CU_ASSERT (root != NULL);
     if (root)
         apteryx_free_tree (root);
-    CU_ASSERT (_cb_count == 4);
+    CU_ASSERT (_cb_count == 7);
     apteryx_prune (TEST_PATH);
 
     /* This one is probably the simplest case and tested elsewhere */
@@ -2782,7 +2785,7 @@ test_refresh_wildcards ()
     CU_ASSERT (root != NULL);
     if (root)
         apteryx_free_tree (root);
-    CU_ASSERT (_cb_count == 4);
+    CU_ASSERT (_cb_count == 7);
     apteryx_prune (TEST_PATH);
 
     apteryx_unrefresh (path, test_refresh_tree_callback);
@@ -3493,55 +3496,209 @@ test_refresh_no_slash ()
     apteryx_unrefresh (path, test_refresh_no_slash_callback);
 }
 
+static char *_cb_path = NULL;
 static uint64_t
-test_refresh_path_matches_wildcard_callback (const char *path)
+test_refresh_path_matches_callback (const char *path)
 {
-    CU_ASSERT (strstr(path, TEST_PATH"/interfaces/eth0/") == path);
+    if (_cb_path)
+        free (_cb_path);
+    _cb_path = g_strdup (path);
     _cb_count++;
     return _cb_timeout;
 }
 
-static uint64_t
-test_refresh_path_matches_directory_callback (const char *path)
-{
-    CU_ASSERT (strstr(path, TEST_PATH"/interfaces/eth0/") == path);
-    _cb_count++;
-    return _cb_timeout;
-}
-
-static uint64_t
-test_refresh_path_matches_exact_callback (const char *path)
-{
-    CU_ASSERT (strstr(path, TEST_PATH"/interfaces/eth0/name") == path);
-    _cb_count++;
-    return _cb_timeout;
-}
+#define NUM_MATCH_SUITES    5
+#define NUM_MATCH_TESTS     13
+static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
+    {
+        TEST_PATH"/interfaces/eth0/name",   // Exact refresh
+        NULL,                               // GET /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET /interfaces/eth0/name
+        NULL,                               // SEARCH /interfaces/
+        NULL,                               // SEARCH /interfaces/eth0/
+        TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces
+        TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/*
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/*
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
+        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
+    },
+    {
+        TEST_PATH"/interfaces/*",           // Trunk wildcard refresh
+        TEST_PATH"/interfaces/eth0",        // GET /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET /interfaces/eth0/name
+        TEST_PATH"/interfaces/",            // SEARCH /interfaces/
+        TEST_PATH"/interfaces/eth0/",       // SEARCH /interfaces/eth0/
+        TEST_PATH"/interfaces/",            // GET_TREE /interfaces
+        TEST_PATH"/interfaces/eth0",        // GET_TREE /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0/name
+        TEST_PATH"/interfaces/",            // QUERY /interfaces/*
+        TEST_PATH"/interfaces/eth0",        // QUERY /interfaces/eth0/*
+        NULL,                               // QUERY /interfaces/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
+        TEST_PATH"/interfaces/eth0",        // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
+    },
+    {
+        TEST_PATH"/interfaces/*/name",      // Mid wildcard refresh
+        NULL,                               // GET /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET /interfaces/eth0/name
+        NULL,                               // SEARCH /interfaces/
+        NULL,                               // SEARCH /interfaces/eth0/
+        NULL,                               // GET_TREE /interfaces
+        TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0/name
+        NULL,                               // QUERY /interfaces/*
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/*
+        NULL,                               // QUERY /interfaces/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
+        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
+    },
+    {
+        TEST_PATH"/interfaces/eth0/*",      // End wildcard refresh
+        NULL,                               // GET /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET /interfaces/eth0/name
+        NULL,                               // SEARCH /interfaces/
+        TEST_PATH"/interfaces/eth0/",       // SEARCH /interfaces/eth0/
+        TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces
+        TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0/name
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/*
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
+        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
+    },
+    {
+        TEST_PATH"/interfaces/eth0/",       // Directory refresh
+        NULL,                               // GET /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/",       // GET /interfaces/eth0/name
+        NULL,                               // SEARCH /interfaces/
+        TEST_PATH"/interfaces/eth0/",       // SEARCH /interfaces/eth0/
+        TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces
+        TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces/eth0
+        TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces/eth0/name
+        NULL,                               // QUERY /interfaces/*
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/*/name
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/name
+        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/",       // QUERY /*/eth0/name
+    },
+};
 
 void
 test_refresh_path_matches ()
 {
-    _cb_count = 0;
-    _cb_timeout = 5000;
-    CU_ASSERT (apteryx_refresh (TEST_PATH"/interfaces/eth0/*", test_refresh_path_matches_wildcard_callback));
-    CU_ASSERT (apteryx_refresh (TEST_PATH"/interfaces/eth0/", test_refresh_path_matches_directory_callback));
-    CU_ASSERT (apteryx_refresh (TEST_PATH"/interfaces/eth0/name", test_refresh_path_matches_exact_callback));
+    GList *paths;
+    GNode *query;
 
-    CU_ASSERT (apteryx_get (TEST_PATH"/interfaces/eth0/name") == NULL);
-    CU_ASSERT(_cb_count == 3);
-    usleep(_cb_timeout);
+    for (int suite = 0; suite < NUM_MATCH_SUITES; suite++)
+    {
+        const char *path = expected_path_matches[suite][0];
+        for (int test = 1; test <= NUM_MATCH_TESTS; test++)
+        {
+            const char *expected = expected_path_matches[suite][test];
+            const char *description = NULL;
 
-    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0") == NULL);
-    CU_ASSERT(_cb_count == 6);
-    usleep(_cb_timeout);
+            _cb_count = 0;
+            _cb_timeout = 5000;
+            _cb_path = NULL;
+            CU_ASSERT (apteryx_refresh (path, test_refresh_path_matches_callback));
+            switch (test)
+            {
+                case 1:
+                    description = "GET:/test/interfaces/eth0";
+                    CU_ASSERT (apteryx_get (TEST_PATH"/interfaces/eth0") == NULL);
+                    break;
+                case 2:
+                    description = "GET:/test/interfaces/eth0/name";
+                    CU_ASSERT (apteryx_get (TEST_PATH"/interfaces/eth0/name") == NULL);
+                    break;
+                case 3:
+                    description = "SEARCH:/test/interfaces/";
+                    paths = apteryx_search (TEST_PATH"/interfaces/");
+                    if (paths)
+                        g_list_free_full (paths, free);
+                    break;
+                case 4:
+                    description = "SEARCH:/test/interfaces/eth0/";
+                    paths = apteryx_search (TEST_PATH"/interfaces/eth0/");
+                    if (paths)
+                        g_list_free_full (paths, free);
+                    break;
+                case 5:
+                    description = "GET_TREE:/test/interfaces";
+                    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces") == NULL);
+                    break;
+                case 6:
+                    description = "GET_TREE:/test/interfaces/eth0";
+                    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0") == NULL);
+                    break;
+                case 7:
+                    description = "GET_TREE:/test/interfaces/eth0/name";
+                    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0/name") == NULL);
+                    break;
+                case 8:
+                    description = "QUERY:/test/interfaces/*";
+                    query = g_node_new (TEST_PATH"/interfaces/*");
+                    CU_ASSERT (apteryx_query (query) == NULL);
+                    g_node_destroy (query);
+                    break;
+                case 9:
+                    description = "QUERY:/test/interfaces/eth0/*";
+                    query = g_node_new (TEST_PATH"/interfaces/eth0/*");
+                    CU_ASSERT (apteryx_query (query) == NULL);
+                    g_node_destroy (query);
+                    break;
+                case 10:
+                    description = "QUERY:/test/interfaces/*/name";
+                    query = g_node_new (TEST_PATH"/interfaces/*/name");
+                    CU_ASSERT (apteryx_query (query) == NULL);
+                    g_node_destroy (query);
+                    break;
+                case 11:
+                    description = "QUERY:/test/interfaces/eth0/name";
+                    query = g_node_new (TEST_PATH"/interfaces/eth0/name");
+                    CU_ASSERT (apteryx_query (query) == NULL);
+                    g_node_destroy (query);
+                    break;
+                case 12:
+                    description = "QUERY:/test/interfaces/eth0/*/name";
+                    query = g_node_new (TEST_PATH"/interfaces/eth0/*/name");
+                    CU_ASSERT (apteryx_query (query) == NULL);
+                    g_node_destroy (query);
+                    break;
+                case 13:
+                    description = "QUERY:/test/*/eth0/name";
+                    query = g_node_new (TEST_PATH"/*/eth0/name");
+                    CU_ASSERT (apteryx_query (query) == NULL);
+                    g_node_destroy (query);
+                    break;
+                default:
+                    printf ("ERROR: Skipping invalid test %d\n", test);
+                    CU_ASSERT (false);
+                    break;
+            }
+            // printf("[%d:%d] %s - %s\n", suite, test, path, description);
+            if (_cb_path != expected && g_strcmp0 (_cb_path, expected))
+                printf ("[%d]REFRESH:%s %s EXPECTED:%s PATH:%s\n", test, path, description, expected, _cb_path);
+            if (expected && _cb_count != 1)
+                printf ("[%d]REFRESH:%s %s More than 1(%d) callback!\n", test, path, description, _cb_count);
+            CU_ASSERT (_cb_path == expected || g_strcmp0 (_cb_path, expected) == 0);
+            CU_ASSERT ((expected && _cb_count == 1) || (!expected && _cb_count == 0));
 
-    CU_ASSERT (apteryx_get_tree (TEST_PATH"/interfaces/eth0/name") == NULL);
-    CU_ASSERT(_cb_count == 9);
-
-    apteryx_unrefresh (TEST_PATH"/interfaces/eth0/*", test_refresh_path_matches_wildcard_callback);
-    apteryx_unrefresh (TEST_PATH"/interfaces/eth0/", test_refresh_path_matches_directory_callback);
-    apteryx_unrefresh (TEST_PATH"/interfaces/eth0/name", test_refresh_path_matches_exact_callback);
+            free (_cb_path);
+            _cb_path = NULL;
+            apteryx_unrefresh (path, test_refresh_path_matches_callback);
+        }
+    }
 }
-
 
 static char*
 test_provide_callback_up (const char *path)
@@ -3900,7 +4057,7 @@ test_provider_wildcard_internal ()
     CU_ASSERT (g_list_length (search_result) == 0);
     g_list_free_full (search_result, free);
 
-    CU_ASSERT ((value = apteryx_get (path)) != NULL);
+    CU_ASSERT ((value = apteryx_get (path)) == NULL);
     free (value);
     CU_ASSERT ((value = apteryx_get (path2)) != NULL);
     free (value);
@@ -5521,6 +5678,25 @@ test_query_refreshed_multi_wildcard()
 }
 
 void
+test_query_mid_wildcard_refreshed_trunk()
+{
+    const char *path = TEST_PATH"/devices/*";
+    GNode *root = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 0;
+    apteryx_refresh (path, refresh_state_callback);
+
+    root = g_node_new (strdup(TEST_PATH"/devices/*/interfaces/eth1/state"));
+    CU_ASSERT (apteryx_query (root) == NULL);
+    apteryx_free_tree (root);
+    CU_ASSERT (_cb_count == 0);
+
+    apteryx_unrefresh (path, refresh_state_callback);
+    apteryx_prune (TEST_PATH);
+}
+
+void
 test_query_refreshed_multi_branches()
 {
     const char *path = TEST_PATH"/devices/*";
@@ -5534,7 +5710,7 @@ test_query_refreshed_multi_branches()
     node = APTERYX_NODE (root, g_strdup ("cars"));
     node = APTERYX_NODE (node, g_strdup ("*"));
     node = APTERYX_NODE (root, g_strdup ("devices"));
-    node = APTERYX_NODE (node, g_strdup ("*"));
+    node = APTERYX_NODE (node, g_strdup ("dut"));
     node = APTERYX_NODE (node, g_strdup ("interfaces"));
     node = APTERYX_NODE (node, g_strdup ("*"));
     node = APTERYX_NODE (node, g_strdup ("state"));
@@ -9873,12 +10049,12 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh unneeded", test_refresh_unneeded },
     { "refresh timeout", test_refresh_timeout },
     { "refresh trunk", test_refresh_trunk },
-    { "refresh tree", test_refresh_tree },
+    { "refresh tree simple", test_refresh_tree },
     { "refresh directory", test_refresh_directory },
     { "refresh during get_tree", test_refresh_during_get_tree },
     { "refresh search", test_refresh_search },
     { "refresh subpath search", test_refresh_subpath_search },
-    { "refresh traverse", test_refresh_traverse },
+    { "refresh traverse simple", test_refresh_traverse },
     { "refresh traverse deeper", test_refresh_traverse_deeper },
     { "refresh path empty", test_refresh_path_empty },
     { "refresh path other old", test_refresh_path_other_old },
@@ -9996,6 +10172,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query refreshed simple", test_query_refreshed_simple},
     { "query refreshed mid wildcard", test_query_refreshed_mid_wildcard},
     { "query refreshed multi wildcard", test_query_refreshed_multi_wildcard},
+    { "query mid wildcard refreshed trunk", test_query_mid_wildcard_refreshed_trunk},
     { "query refreshed multi branches", test_query_refreshed_multi_branches},
     { "query refreshed once", test_query_refreshed_once},
     { "query not refreshed one path", test_query_not_refreshed_one_path},
