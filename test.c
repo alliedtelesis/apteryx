@@ -5605,95 +5605,174 @@ refresh_state_callback (const char *path)
     return _cb_timeout;
 }
 
-void
-test_query_refreshed_simple()
+static void
+refreshed_query (const char *rpath, const char *qpath, bool success_no_db, bool success_db)
 {
-    const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
-    GNode *root = NULL;
+    GNode *root = g_node_new (strdup (qpath));
     GNode *rroot = NULL;
 
+    _cb_timeout = 5000;
+    apteryx_refresh (rpath, refresh_state_callback);
+
     _cb_count = 0;
-    _cb_timeout = 0;
-    apteryx_refresh (path, refresh_state_callback);
-
-    root = g_node_new (strdup(TEST_PATH"/devices/*"));
     rroot = apteryx_query (root);
-    CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/devices", APTERYX_NAME(rroot)) == 0);
-    CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
-    apteryx_free_tree (rroot);
-    apteryx_free_tree (root);
-    CU_ASSERT (_cb_count == 1);
+    if (success_no_db)
+    {
+        CU_ASSERT (g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+        apteryx_free_tree (rroot);
+        CU_ASSERT (_cb_count == 1);
+    }
+    else
+    {
+        CU_ASSERT (_cb_count == 0);
+    }
 
-    apteryx_unrefresh (path, refresh_state_callback);
-    apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
+    apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", "down");
+
+    _cb_count = 0;
+    rroot = apteryx_query (root);
+    if (success_db)
+    {
+        CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+        apteryx_free_tree (rroot);
+        CU_ASSERT ((success_no_db && _cb_count == 0) || (!success_no_db && _cb_count == 1));
+    }
+    else
+    {
+        CU_ASSERT (_cb_count == 0);
+    }
+
+    apteryx_free_tree (root);
+    apteryx_unrefresh (rpath, refresh_state_callback);
     apteryx_prune (TEST_PATH);
 }
 
 void
-test_query_refreshed_mid_wildcard()
+test_query_refreshed_exact_exact()
 {
-    const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
-    GNode *root = NULL;
-    GNode *rroot = NULL;
-
-    _cb_count = 0;
-    _cb_timeout = 0;
-    apteryx_refresh (path, refresh_state_callback);
-
-    root = g_node_new (strdup(TEST_PATH"/devices/*/interfaces/eth1/state"));
-    rroot = apteryx_query (root);
-    CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/devices", APTERYX_NAME(rroot)) == 0);
-    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
-    apteryx_free_tree (rroot);
-    apteryx_free_tree (root);
-    CU_ASSERT (_cb_count == 1);
-
-    apteryx_unrefresh (path, refresh_state_callback);
-    apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
-    apteryx_prune (TEST_PATH);
+    refreshed_query (TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     true, true);
 }
 
 void
-test_query_refreshed_multi_wildcard()
+test_query_refreshed_trunk_exact()
 {
-    const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
-    GNode *root = NULL;
-    GNode *rroot = NULL;
-
-    _cb_count = 0;
-    _cb_timeout = 0;
-    apteryx_refresh (path, refresh_state_callback);
-
-    root = g_node_new (strdup(TEST_PATH"/devices/*/interfaces/*"));
-    rroot = apteryx_query (root);
-    CU_ASSERT (rroot && g_strcmp0 (TEST_PATH"/devices", APTERYX_NAME(rroot)) == 0);
-    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
-    apteryx_free_tree (rroot);
-    apteryx_free_tree (root);
-    CU_ASSERT (_cb_count == 1);
-
-    apteryx_unrefresh (path, refresh_state_callback);
-    apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
-    apteryx_prune (TEST_PATH);
+    refreshed_query (TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/*",
+                     true, true);
 }
 
 void
-test_query_mid_wildcard_refreshed_trunk()
+test_query_refreshed_mid_exact()
 {
-    const char *path = TEST_PATH"/devices/*";
-    GNode *root = NULL;
+    refreshed_query (TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/*/interfaces/eth1/state",
+                     true, true);
+}
 
-    _cb_count = 0;
-    _cb_timeout = 0;
-    apteryx_refresh (path, refresh_state_callback);
+void
+test_query_refreshed_multi_exact()
+{
+    refreshed_query (TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/*/interfaces/*",
+                     true, true);
+}
 
-    root = g_node_new (strdup(TEST_PATH"/devices/*/interfaces/eth1/state"));
-    CU_ASSERT (apteryx_query (root) == NULL);
-    apteryx_free_tree (root);
-    CU_ASSERT (_cb_count == 0);
+void
+test_query_refreshed_exact_trunk()
+{
+    refreshed_query (TEST_PATH"/devices/*",
+                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     true, true);
+}
 
-    apteryx_unrefresh (path, refresh_state_callback);
-    apteryx_prune (TEST_PATH);
+void
+test_query_refreshed_trunk_trunk()
+{
+    refreshed_query (TEST_PATH"/devices/*",
+                     TEST_PATH"/devices/*",
+                     true, true);
+}
+
+void
+test_query_refreshed_mid_trunk()
+{
+    refreshed_query (TEST_PATH"/devices/*",
+                     TEST_PATH"/devices/*/interfaces/eth1/state",
+                     false, true);
+}
+
+void
+test_query_refreshed_multi_trunk()
+{
+    refreshed_query (TEST_PATH"/devices/*",
+                     TEST_PATH"/devices/*/interfaces/*",
+                     false, true);
+}
+
+void
+test_query_refreshed_exact_mid()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/eth1/state",
+                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     true, true);
+}
+
+void
+test_query_refreshed_trunk_mid()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/eth1/state",
+                     TEST_PATH"/devices/*",
+                     false, true);
+}
+
+void
+test_query_refreshed_mid_mid()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/eth1/state",
+                     TEST_PATH"/devices/*/interfaces/eth1/state",
+                     false, true);
+}
+
+void
+test_query_refreshed_multi_mid()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/eth1/state",
+                     TEST_PATH"/devices/*/interfaces/*",
+                     false, true);
+}
+
+void
+test_query_refreshed_exact_multi()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/*",
+                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     true, true);
+}
+
+void
+test_query_refreshed_trunk_multi()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/*",
+                     TEST_PATH"/devices/*",
+                     false, true);
+}
+
+void
+test_query_refreshed_mid_multi()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/*",
+                     TEST_PATH"/devices/*/interfaces/eth1/state",
+                     false, true);
+}
+
+void
+test_query_refreshed_multi_multi()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/*",
+                     TEST_PATH"/devices/*/interfaces/*",
+                     false, true);
 }
 
 void
@@ -10169,10 +10248,22 @@ static CU_TestInfo tests_api_tree[] = {
     { "query provided trunk request", test_query_trunk_provided},
     { "query provided wildcard",  test_query_provided_wildcard},
     { "query provided wildcards", test_query_provided_wildcards},
-    { "query refreshed simple", test_query_refreshed_simple},
-    { "query refreshed mid wildcard", test_query_refreshed_mid_wildcard},
-    { "query refreshed multi wildcard", test_query_refreshed_multi_wildcard},
-    { "query mid wildcard refreshed trunk", test_query_mid_wildcard_refreshed_trunk},
+    { "query refreshed exact exact", test_query_refreshed_exact_exact},
+    { "query refreshed trunk exact", test_query_refreshed_trunk_exact},
+    { "query refreshed mid exact", test_query_refreshed_mid_exact},
+    { "query refreshed multi exact", test_query_refreshed_multi_exact},
+    { "query refreshed exact trunk", test_query_refreshed_exact_trunk},
+    { "query refreshed trunk trunk", test_query_refreshed_trunk_trunk},
+    { "query refreshed mid trunk", test_query_refreshed_mid_trunk},
+    { "query refreshed multi trunk", test_query_refreshed_multi_trunk},
+    { "query refreshed exact mid", test_query_refreshed_exact_mid},
+    { "query refreshed trunk mid", test_query_refreshed_trunk_mid},
+    { "query refreshed mid mid", test_query_refreshed_mid_mid},
+    { "query refreshed multi mid", test_query_refreshed_multi_mid},
+    { "query refreshed exact multi", test_query_refreshed_exact_multi},
+    { "query refreshed trunk multi", test_query_refreshed_trunk_multi},
+    { "query refreshed mid multi", test_query_refreshed_mid_multi},
+    { "query refreshed multi multi", test_query_refreshed_multi_multi},
     { "query refreshed multi branches", test_query_refreshed_multi_branches},
     { "query refreshed once", test_query_refreshed_once},
     { "query not refreshed one path", test_query_not_refreshed_one_path},
