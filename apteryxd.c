@@ -1969,13 +1969,42 @@ collect_provided_paths_query(GNode *query)
     return matches;
 }
 
-static int _refresh_paths (GNode *node, gpointer data)
+static void _refresh_paths (GNode *node, gpointer data)
 {
-    char *path = NULL;
-    _node_to_path (node->parent, &path);
-    call_refreshers (path, false);
-    free (path);
-    return false;
+    /* Handle direct matches */
+    if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
+    {
+        char *path = NULL;
+        /* Match this exactly and go no further */
+        _node_to_path (node, &path);
+        call_refreshers (path, false);
+        free (path);
+    }
+
+    /* Handle wildcards */
+    if (g_strcmp0 (node->data, "*") == 0)
+    {
+        char *path = NULL;
+        _node_to_path (node->parent, &path);
+        GList *paths = db_search (path);
+        for (GList *iter = paths; iter; iter = iter->next)
+        {
+            GNode *fake = g_node_copy (node);
+            if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
+                fake->data = g_strdup_printf ("%s/*", (char *)iter->data);
+            else
+                fake->data = g_strdup((char *)iter->data);
+            _refresh_paths (fake, NULL);
+            free (fake->data);
+            g_node_destroy (fake);
+        }
+        g_list_free_full(paths, g_free);
+        free (path);
+    }
+
+    /* Traverse children */
+    g_node_children_foreach (node, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
+    return;
 }
 
 /* g_node_traverse function to check if we have any filters to work with */
@@ -2140,7 +2169,7 @@ handle_query (rpc_message msg)
     free (root_path);
 
     /* Attempt to call refreshers for all paths in the query */
-    g_node_traverse (query_head, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, _refresh_paths, NULL);
+    g_node_children_foreach (query_head, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
 
     /* If we have a filter adjust the query to only have matching subtrees */
     bool has_filter = false;
