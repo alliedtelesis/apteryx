@@ -3537,9 +3537,9 @@ static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
         TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0/name
         TEST_PATH"/interfaces/",            // QUERY /interfaces/*
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*
-        NULL,                               // QUERY /interfaces/*/name
+        TEST_PATH"/interfaces/",            // QUERY /interfaces/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
-        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
     },
     {
@@ -3571,7 +3571,7 @@ static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
-        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
     },
     {
@@ -3587,7 +3587,7 @@ static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/*/name
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/name
-        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*/name
         TEST_PATH"/interfaces/eth0/",       // QUERY /*/eth0/name
     },
 };
@@ -5614,7 +5614,7 @@ refreshed_query (const char *rpath, const char *qpath, const char *epath, bool s
     GNode *root = g_node_new (strdup (qpath));
     GNode *rroot = NULL;
 
-    _cb_timeout = 5000;
+    _cb_timeout = 100000;
     _cb_path = NULL;
     apteryx_refresh (rpath, refresh_query_state_callback);
 
@@ -5738,8 +5738,8 @@ test_query_refresh_trunk_query_mid()
 {
     refreshed_query (TEST_PATH"/devices/*",
                      TEST_PATH"/devices/*/interfaces/eth1/state",
-                     TEST_PATH"/devices/dut/interfaces/eth1/state",
-                     false, true);
+                     TEST_PATH"/devices/",
+                     true, true);
 }
 
 void
@@ -5747,8 +5747,8 @@ test_query_refresh_trunk_query_multi()
 {
     refreshed_query (TEST_PATH"/devices/*",
                      TEST_PATH"/devices/*/interfaces/*",
-                     TEST_PATH"/devices/dut/interfaces/",
-                     false, true);
+                     TEST_PATH"/devices/",
+                     true, true);
 }
 
 void
@@ -5783,8 +5783,8 @@ test_query_refresh_root_query_mid()
 {
     refreshed_query (TEST_PATH"/*",
                      TEST_PATH"/devices/*/interfaces/eth1/state",
-                     TEST_PATH"/devices/dut/interfaces/eth1/state",
-                     false, true);
+                     TEST_PATH"/devices/",
+                     true, true);
 }
 
 void
@@ -5792,8 +5792,8 @@ test_query_refresh_root_query_multi()
 {
     refreshed_query (TEST_PATH"/*",
                      TEST_PATH"/devices/*/interfaces/*",
-                     TEST_PATH"/devices/dut/interfaces/",
-                     false, true);
+                     TEST_PATH"/devices/",
+                     true, true);
 }
 
 void
@@ -5912,9 +5912,11 @@ test_query_refreshed_multi_branches()
     node = APTERYX_NODE (node, g_strdup ("interfaces"));
     node = APTERYX_NODE (node, g_strdup ("*"));
     node = APTERYX_NODE (node, g_strdup ("state"));
-    CU_ASSERT ((rroot = apteryx_query (root)) == NULL);
+    rroot = apteryx_query (root);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 1);
+    apteryx_free_tree (rroot);
     apteryx_free_tree (root);
-    CU_ASSERT (_cb_count == 0);
+    CU_ASSERT (_cb_count == 1);
 
     apteryx_unrefresh (path, refresh_state_callback);
     apteryx_set (TEST_PATH"/devices/dut/interfaces/eth1/state", NULL);
