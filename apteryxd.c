@@ -456,6 +456,7 @@ get_refresher_path (const char *path, cb_info_t *refresher)
 {
     const char *rpath = refresher->path;
     char *cpath = g_malloc0 (strlen (path) + strlen (rpath) + 1);
+    const char *wild;
     int offset = 0;
 
     /* Resolve any wildcards in either path */
@@ -498,7 +499,7 @@ get_refresher_path (const char *path, cb_info_t *refresher)
     if (*path && rpath[-1] != '/')
     {
         /* Append any requester path that we do not need to resolve */
-        while (*path && *path != '*' && g_ascii_strncasecmp (path, "/*", 2) != 0)
+        while (*path && *path != '*')
         {
             cpath[offset++] = *path;
             path++;
@@ -512,6 +513,13 @@ get_refresher_path (const char *path, cb_info_t *refresher)
         rpath++;
     }
 
+    /* Check there are not unresolved wildcards */
+    if ((*rpath && ((wild = strchr (rpath, '*')) != NULL) && wild != &rpath[strlen (rpath)] - 1) ||
+        (*path && ((wild = strchr (path, '*')) != NULL)  && wild != &path[strlen (path)] - 1))
+    {
+        free (cpath);
+        cpath = NULL;
+    }
     return cpath;
 }
 
@@ -544,8 +552,14 @@ call_refreshers (const char *path, bool dry_run)
 
         pthread_mutex_lock (&refresher->lock);
 
-        /* Get a path suitable for passing to the reresher */
+        /* Get a path suitable for passing to the refresher */
         cpath = get_refresher_path (path, refresher);
+        if (!cpath)
+        {
+            DEBUG ("Not enough state to refresh %s for %s\n", refresher->path, path);
+            goto unlock;
+        }
+        DEBUG ("PATH:%s RPATH:%s CPATH:%s\n", path, refresher->path, cpath);
 
         /* We can skip this refresher if the refresher has been called recently AND
          * the last call was for a path equal to or less specific than this one */
@@ -1975,7 +1989,6 @@ static void _refresh_paths (GNode *node, gpointer data)
     if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
     {
         char *path = NULL;
-        /* Match this exactly and go no further */
         _node_to_path (node, &path);
         call_refreshers (path, false);
         free (path);
@@ -1989,13 +2002,20 @@ static void _refresh_paths (GNode *node, gpointer data)
         GList *paths = db_search (path);
         for (GList *iter = paths; iter; iter = iter->next)
         {
-            GNode *fake = g_node_copy (node);
+            GNode *fake, *child;
+
             if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
-                fake->data = g_strdup_printf ("%s/*", (char *)iter->data);
+            {
+                fake = g_node_new ((char *)iter->data);
+                child = g_node_prepend_data (fake, (gpointer)"*");
+                g_node_prepend_data (child, (gpointer)NULL);
+            }
             else
-                fake->data = g_strdup((char *)iter->data);
+            {
+                fake = g_node_copy (node);
+                fake->data = (gpointer)iter->data;
+            }
             _refresh_paths (fake, NULL);
-            free (fake->data);
             g_node_destroy (fake);
         }
         g_list_free_full(paths, g_free);
