@@ -1985,7 +1985,7 @@ collect_provided_paths_query(GNode *query)
 
 static void _refresh_paths (GNode *node, gpointer data)
 {
-    /* Handle direct matches */
+    /* Handle end of path matches (including wildcards) */
     if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
     {
         char *path = NULL;
@@ -1999,6 +1999,13 @@ static void _refresh_paths (GNode *node, gpointer data)
     {
         char *path = NULL;
         _node_to_path (node->parent, &path);
+
+        /* Match any wildcard refreshers at this level */
+        char *lpath = g_strdup_printf ("%s/", path);
+        call_refreshers (lpath, false);
+        free (lpath);
+
+        /* Find matches for values in the DB */
         GList *paths = db_search (path);
         for (GList *iter = paths; iter; iter = iter->next)
         {
