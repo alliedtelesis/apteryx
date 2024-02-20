@@ -1242,10 +1242,8 @@ handle_set (rpc_message msg, bool ack)
         ERROR ("SET: Failed to decode message\n");
         return false;
     }
-    if (apteryx_debug && root) {
-        DEBUG ("SET:\n");
-        apteryx_print_tree (root, stdout);
-    }
+    DEBUG ("SET:\n");
+    DEBUG_TREE (root);
 
     /* Figure out if we need the lists for checking callbacks */
     _node_to_path(root, &root_path);
@@ -1834,10 +1832,8 @@ handle_traverse (rpc_message msg)
         }
     }
 
-    if (apteryx_debug && root) {
-        DEBUG ("TRAVERSE RESULT\n");
-        apteryx_print_tree (root, stdout);
-    }
+    DEBUG ("TRAVERSE RESULT\n");
+    DEBUG_TREE (root);
 
     rpc_msg_reset (msg);
     if (g_node_first_child(root))
@@ -2171,10 +2167,7 @@ handle_query (rpc_message msg)
     {
         goto done;
     }
-    if (apteryx_debug)
-    {
-        apteryx_print_tree (query_head, stdout);
-    }
+    DEBUG_TREE (query_head);
 
     /* Get root path */
     char *root_path = apteryx_node_path(query_head);
@@ -2262,11 +2255,8 @@ handle_query (rpc_message msg)
     /* We won't call providers for the filtered values - fill them in from the query */
     g_node_traverse (query_head, G_PRE_ORDER, G_TRAVERSE_LEAFS, -1, _copy_filter_to_result, root);
 
-    if (apteryx_debug && root)
-    {
-        DEBUG ("QUERY RESULT");
-        apteryx_print_tree (root, stdout);
-    }
+    DEBUG ("QUERY RESULT");
+    DEBUG_TREE (root);
 
     /* Send result */
 done:

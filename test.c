@@ -66,18 +66,6 @@ assert_apteryx_empty (void)
     return true;
 }
 
-static char *
-dump_apteryx_tree (GNode *root)
-{
-    char *buffer = NULL;
-    size_t size;
-    FILE *stream = open_memstream (&buffer, &size);
-    apteryx_print_tree(root, stream);
-    fflush (stream);
-    fclose (stream);
-    return buffer;
-}
-
 void
 test_init ()
 {
@@ -4298,7 +4286,7 @@ test_tree_docs ()
     APTERYX_LEAF (state, "duplex", "full");
     CU_ASSERT (APTERYX_NUM_NODES (root) == 6);
     CU_ASSERT (g_node_n_nodes (root, G_TRAVERSE_LEAVES) == 3);
-    char *buffer = dump_apteryx_tree (root);
+    char *buffer = apteryx_dump_tree (root);
     CU_ASSERT (g_strcmp0 (buffer, expect) == 0);
     free (buffer);
     g_node_destroy (root);
@@ -4638,7 +4626,7 @@ test_query2node_empty_root_no_slash ()
                    "      time\n";
     GNode *root = g_node_new (g_strdup ("/"));
     CU_ASSERT (apteryx_query_to_node (root, "test/system/time"));
-    char *buffer = dump_apteryx_tree (root);
+    char *buffer = apteryx_dump_tree (root);
     CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
     free (buffer);
     apteryx_free_tree (root);
@@ -4653,7 +4641,7 @@ test_query2node_empty_root_slash ()
                    "      time\n";
     GNode *root = g_node_new (g_strdup ("/"));
     CU_ASSERT (apteryx_query_to_node (root, "/test/system/time"));
-    char *buffer = dump_apteryx_tree (root);
+    char *buffer = apteryx_dump_tree (root);
     CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
     free (buffer);
     apteryx_free_tree (root);
@@ -4809,7 +4797,7 @@ test_query2node_deep_nodes ()
                    "      t\n";
     GNode *root = g_node_new (g_strdup (TEST_PATH));
     CU_ASSERT (apteryx_query_to_node (root, "h(a;b(d;e);c)t"));
-    char *buffer = dump_apteryx_tree (root);
+    char *buffer = apteryx_dump_tree (root);
     CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
     free (buffer);
     apteryx_free_tree (root);
@@ -4839,7 +4827,7 @@ test_query2node_deep_paths ()
                    "          t\n";
     GNode *root = g_node_new (g_strdup (TEST_PATH));
     CU_ASSERT (apteryx_query_to_node (root, "h(a;b/d(e/g;f/h);c/i)j/t"));
-    char *buffer = dump_apteryx_tree (root);
+    char *buffer = apteryx_dump_tree (root);
     CU_ASSERT (g_strcmp0 (buffer, expect) == 0)
     free (buffer);
     apteryx_free_tree (root);

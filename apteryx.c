@@ -216,9 +216,7 @@ dw_process (gpointer arg1)
     dw_list = g_list_remove (dw_list, dw);
 
     DEBUG ("WATCH-TREE(delayed) CB (0x%"PRIx64")\n", dw->ref);
-    if (apteryx_debug) {
-        apteryx_print_tree (dw->root, stdout);
-    }
+    DEBUG_TREE (dw->root);
     if (dw->data)
         ((void*(*)(const GNode*, void*)) dw->fn) (dw->root, dw->data);
     else
@@ -314,9 +312,7 @@ handle_watch (rpc_message msg)
         else
         {
             DEBUG ("WATCH-TREE CB (0x%"PRIx64")\n", ref);
-            if (apteryx_debug) {
-                apteryx_print_tree (root, stdout);
-            }
+            DEBUG_TREE (root);
             if (cb.data)
                 ((void*(*)(const GNode*, void*)) cb.fn) (root, cb.data);
             else
@@ -1173,6 +1169,21 @@ apteryx_print_tree (GNode *root, FILE *fp)
     _apteryx_print_tree (root, fp, 0);
 }
 
+char *
+apteryx_dump_tree (GNode *root)
+{
+    char *buffer = NULL;
+    if (root)
+    {
+        size_t size;
+        FILE *stream = open_memstream (&buffer, &size);
+        apteryx_print_tree (root, stream);
+        fflush (stream);
+        fclose (stream);
+    }
+    return buffer;
+}
+
 static gboolean
 _set_multi (GNode *node, gpointer data)
 {
@@ -1258,9 +1269,7 @@ apteryx_set_tree_full (GNode* root, uint64_t ts, bool wait_for_completion)
     ASSERT (root, return false, "SET_TREE: Invalid parameters\n");
 
     DEBUG ("SET_TREE: %d paths\n", g_node_n_nodes (root, G_TRAVERSE_LEAVES));
-    if (apteryx_debug) {
-        apteryx_print_tree (root, stdout);
-    }
+    DEBUG_TREE (root);
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
@@ -1569,10 +1578,8 @@ apteryx_get_tree (const char *path)
     rpc_client_release (rpc, rpc_client, true);
     free (url);
 
-    if (apteryx_debug) {
-        DEBUG ("GET_TREE RESULT\n");
-        apteryx_print_tree (root, stdout);
-    }
+    DEBUG ("GET_TREE RESULT\n");
+    DEBUG_TREE (root);
     return root;
 }
 
@@ -1612,9 +1619,7 @@ apteryx_query_full (GNode *root)
     ASSERT (root, return NULL, "QUERY: Invalid parameters\n");
 
     DEBUG ("QUERY\n");
-    if (apteryx_debug) {
-        apteryx_print_tree (root, stdout);
-    }
+    DEBUG_TREE (root);
 
     /* Check path */
     path = validate_path (APTERYX_NAME (root), &url);
@@ -1709,10 +1714,8 @@ apteryx_query_full (GNode *root)
     root->data = old_root_name;
     g_free(chopped_path);
 
-    if (apteryx_debug) {
-        DEBUG ("QUERY RESULT\n");
-        apteryx_print_tree (rroot, stdout);
-    }
+    DEBUG ("QUERY RESULT\n");
+    DEBUG_TREE (rroot);
 
     rpc_msg_reset (&msg);
     rpc_client_release (rpc, rpc_client, true);
