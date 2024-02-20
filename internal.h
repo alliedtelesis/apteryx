@@ -107,6 +107,15 @@ getns (void)
         rcode; \
     }
 
+extern char *apteryx_dump_tree (GNode *root);
+#define DEBUG_TREE(root) \
+    if (apteryx_debug && root) \
+    { \
+        char *___buffer = apteryx_dump_tree (root); \
+        DEBUG ("%s\n", ___buffer); \
+        free (___buffer); \
+    }
+
 /* Mode */
 typedef enum
 {

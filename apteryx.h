@@ -381,6 +381,8 @@ char *apteryx_node_path (GNode *node);
 GNode *apteryx_path_node (GNode *node, const char *path);
 /** Print a tree to fp */
 void apteryx_print_tree (GNode *root, FILE *fp);
+/** Print a tree to buffer */
+char *apteryx_dump_tree (GNode *root);
 /* Merge src tree into dst tree - assumes full tree with '/' root and takes ownership of src */
 GNode* apteryx_merge_tree (GNode *dst, GNode *src);
 
