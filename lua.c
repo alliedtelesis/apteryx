@@ -1233,6 +1233,13 @@ luaopen_libapteryx (lua_State *L)
         lua_apteryx_instance_lock(L);
     }
 
+    /* Tune the garbage collector */
+#if LUA_VERSION_NUM >= 504
+    lua_gc (L, LUA_GCINC, 150, 100, 13);
+#elif LUA_VERSION_NUM == 503
+    lua_gc (L, LUA_GCSETPAUSE, 150);
+#endif /* LUA_VERSION_NUM */
+    
     /* Return the Apteryx object on the stack */
     luaL_newmetatable (L, "apteryx");
     luaL_setfuncs (L, _apteryx_fns, 0);
