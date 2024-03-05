@@ -592,6 +592,12 @@ call_refreshers (const char *path, bool dry_run)
             timeout = cb (cpath);
             if (refresher->timeout == 0 || timeout < refresher->timeout)
                 refresher->timeout = timeout;
+            /* Record the last time we ran this refresher */
+            refresher->timestamp = now;
+            /* Record the path we refreshed (without any trailing /'s)*/
+            if (refresher->last_path)
+                free (refresher->last_path);
+            refresher->last_path = g_strdup (cpath);
             goto unlock;
         }
 
