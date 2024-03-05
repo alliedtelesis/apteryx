@@ -282,7 +282,7 @@ _statistics_fn (gpointer data, gpointer user_data)
     if (cb->count)
         avg = (int)(GET_COUNTER(cb->total)/GET_COUNTER(cb->count));
     value = g_strdup_printf ("%u,%u,%u,%u", GET_COUNTER(cb->count), GET_COUNTER(cb->min), avg, GET_COUNTER(cb->max));
-    db_add (path, (const unsigned char *)value, strlen (value) + 1, get_time_us ());
+    db_add (path, (const unsigned char *)value, strlen (value) + 1, UINT64_MAX);
     g_free (path);
     g_free (value);
 }
