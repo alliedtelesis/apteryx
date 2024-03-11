@@ -675,7 +675,7 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
     path = validate_path (path, &url);
     if (!path || path[strlen(path) - 1] == '/')
     {
-        ERROR ("SET: invalid path (%s)!\n", path);
+        ERROR ("SET: invalid path (%s)!\n", path ?: "NULL");
         free (url);
         assert (!apteryx_debug || path);
         return false;
@@ -795,7 +795,7 @@ apteryx_get (const char *path)
     path = validate_path (path, &url);
     if (!path || path[strlen(path)-1] == '/')
     {
-        ERROR ("GET: invalid path (%s)!\n", path);
+        ERROR ("GET: invalid path (%s)!\n", path ?: "NULL");
         free (url);
         assert (!apteryx_debug || path);
         return NULL;
@@ -2221,7 +2221,7 @@ apteryx_timestamp (const char *path)
     if (!path ||
         ((path[strlen(path)-1] == '/') && strlen(path) > 1))
     {
-        ERROR ("TIMESTAMP: invalid path (%s)!\n", path);
+        ERROR ("TIMESTAMP: invalid path (%s)!\n", path ?: "NULL");
         free (url);
         assert (!apteryx_debug || path);
         return 0;
@@ -2265,7 +2265,7 @@ apteryx_memuse (const char *path)
     ASSERT ((ref_count > 0), return 0, "MEMUSE: Not initialised\n");
     ASSERT (path, return 0, "MEMUSE: Invalid parameters\n");
 
-    DEBUG ("MEMUSE: %s\n", path);
+    DEBUG ("MEMUSE: %s\n", path ?: "NULL");
 
     /* Check path */
     path = validate_path (path, &url);
@@ -2273,7 +2273,7 @@ apteryx_memuse (const char *path)
     if (!path ||
         ((path[strlen(path)-1] == '/') && strlen(path) > 1))
     {
-        ERROR ("MEMUSE: invalid path (%s)!\n", path);
+        ERROR ("MEMUSE: invalid path (%s)!\n", path ?: "NULL");
         free (url);
         assert (!apteryx_debug || path);
         return 0;

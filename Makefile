@@ -33,7 +33,7 @@ PKG_CONFIG ?= pkg-config
 
 ABI_VERSION=4
 CFLAGS := $(CFLAGS) -g -O2
-EXTRA_CFLAGS += -Wall -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
+EXTRA_CFLAGS += -Wall -Werror -Wno-comment -std=c99 -D_GNU_SOURCE -fPIC
 EXTRA_CFLAGS += -I. $(shell $(PKG_CONFIG) --cflags glib-2.0)
 EXTRA_LDFLAGS := -L$(BUILDDIR) $(shell $(PKG_CONFIG) --libs glib-2.0) -lpthread
 ifneq ($(HAVE_LUA),no)
