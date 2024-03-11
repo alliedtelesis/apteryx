@@ -52,9 +52,15 @@ extern bool apteryx_debug;
 static inline uint64_t
 get_time_us (void)
 {
-    struct timeval tv;
-    gettimeofday (&tv, NULL);
-    return (tv.tv_sec * (uint64_t) 1000000 + tv.tv_usec);
+    struct timespec tms;
+    uint64_t micros = 0;
+    if (clock_gettime (CLOCK_MONOTONIC_RAW, &tms)) {
+        return 0;
+    }
+
+    micros = ((uint64_t)tms.tv_sec) * 1000000;
+    micros += tms.tv_nsec / 1000;
+    return micros;
 }
 
 /* Use the inode number of the namespace for mnt as our ns reference */

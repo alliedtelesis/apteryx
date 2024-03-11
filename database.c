@@ -46,21 +46,6 @@ struct hashtree_node *root = NULL;  /* The database root */
 pthread_rwlock_t db_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static uint64_t
-db_calculate_timestamp (void)
-{
-    struct timespec tms;
-    uint64_t micros = 0;
-    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tms)) {
-        return 0;
-    }
-
-    micros = ((uint64_t)tms.tv_sec) * 1000000;
-    micros += tms.tv_nsec/1000;
-    return micros;
-}
-
-
-static uint64_t
 db_timestamp_no_lock (const char *path)
 {
     uint64_t timestamp = 0;
@@ -225,7 +210,7 @@ _db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
         }
 
         /* Update times up this tree */
-        uint64_t set_time = db_calculate_timestamp();
+        uint64_t set_time = get_time_us();
         for (struct database_node *ts_update = db_node; ts_update; ts_update = (struct database_node *)ts_update->hashtree_node.parent)
         {
             ts_update->timestamp = set_time;
@@ -327,7 +312,7 @@ db_update_no_lock (GNode *new_data, uint64_t ts)
 bool
 db_add_no_lock (const char *path, const unsigned char *value, size_t length, uint64_t ts)
 {
-    uint64_t timestamp = db_calculate_timestamp();
+    uint64_t timestamp = get_time_us();
 
     if (ts != UINT64_MAX && ts < db_timestamp_no_lock (path))
         return false;
@@ -380,7 +365,7 @@ db_delete_no_lock (const char *path, uint64_t ts)
         struct hashtree_node *node = hashtree_path_to_node (root, path);
         if (node && node != root)
         {
-            uint64_t now = db_calculate_timestamp ();
+            uint64_t now = get_time_us ();
             struct hashtree_node *iter = node;
             struct hashtree_node *parent = hashtree_parent_get (node);
             while ((iter = hashtree_parent_get (iter)) != NULL)
@@ -686,7 +671,7 @@ db_prune (const char *path)
 
     if (node)
     {
-        uint64_t now = db_calculate_timestamp ();
+        uint64_t now = get_time_us ();
         struct hashtree_node *iter = &node->hashtree_node;
         while ((iter = hashtree_parent_get (iter)) != NULL)
         {

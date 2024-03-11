@@ -140,14 +140,14 @@ rpc_socket_recv (rpc_socket sock, rpc_id id, void **data, size_t *len, uint64_t 
     struct msg_s *m = NULL;
 
     struct timespec waitUntil;
-    struct timeval now;
+    struct timespec now;
     int ret = 0;
 
     if (waitUS)
     {
-        gettimeofday (&now, NULL);
+        clock_gettime (CLOCK_MONOTONIC, &now);
         waitUntil.tv_sec = now.tv_sec + (waitUS / (1000UL * 1000UL));
-        waitUntil.tv_nsec = (now.tv_usec + (waitUS % (1000UL * 1000UL))) * 1000UL;
+        waitUntil.tv_nsec = now.tv_nsec + (waitUS % (1000UL * 1000UL)) * 1000UL;
         waitUntil.tv_sec += waitUntil.tv_nsec / (1000UL * 1000UL * 1000UL);
         waitUntil.tv_nsec %= (1000UL * 1000UL * 1000UL);
     }
@@ -197,6 +197,8 @@ rpc_socket_recv (rpc_socket sock, rpc_id id, void **data, size_t *len, uint64_t 
 rpc_socket
 rpc_socket_create (int fd, rpc_callback cb, rpc_server parent, int pid, uint64_t ns)
 {
+    pthread_condattr_t attr;
+
     rpc_socket sock = g_malloc0 (sizeof(*sock));
     sock->refcount = 1;
     sock->sock = fd;
@@ -211,7 +213,9 @@ rpc_socket_create (int fd, rpc_callback cb, rpc_server parent, int pid, uint64_t
     pthread_mutex_init (&sock->in_lock, NULL);
     pthread_mutex_init (&sock->out_lock, NULL);
     pthread_mutex_init (&sock->lock, NULL);
-    pthread_cond_init (&sock->in_cond, NULL);
+    pthread_condattr_init (&attr);
+    pthread_condattr_setclock (&attr, CLOCK_MONOTONIC);
+    pthread_cond_init (&sock->in_cond, &attr);
     return sock;
 }
 
