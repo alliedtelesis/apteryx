@@ -31,7 +31,7 @@
 #include <CUnit/Basic.h>
 #endif
 
-#include "hashtree.h"
+// #include "hashtree.h"
 
 struct database_node
 {

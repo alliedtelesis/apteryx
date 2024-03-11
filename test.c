@@ -3511,7 +3511,7 @@ static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/*
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
-        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
     },
     {
@@ -3524,11 +3524,11 @@ static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
         TEST_PATH"/interfaces/eth0",        // GET_TREE /interfaces/eth0
         TEST_PATH"/interfaces/eth0/name",   // GET_TREE /interfaces/eth0/name
         TEST_PATH"/interfaces/",            // QUERY /interfaces/*
-        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*
+        TEST_PATH"/interfaces/eth0",        // QUERY /interfaces/eth0/*
         TEST_PATH"/interfaces/",            // QUERY /interfaces/*/name
-        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
-        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*/name
-        TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
+        TEST_PATH"/interfaces/eth0",        // QUERY /interfaces/eth0/name
+        TEST_PATH"/interfaces/eth0",        // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0",        // QUERY /*/eth0/name
     },
     {
         TEST_PATH"/interfaces/*/name",      // Mid wildcard refresh
@@ -3543,7 +3543,7 @@ static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/*
         NULL,                               // QUERY /interfaces/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/name
-        NULL,                               // QUERY /interfaces/eth0/*/name
+        TEST_PATH"/interfaces/eth0/name",   // QUERY /interfaces/eth0/*/name
         TEST_PATH"/interfaces/eth0/name",   // QUERY /*/eth0/name
     },
     {
@@ -3571,7 +3571,7 @@ static char* expected_path_matches[NUM_MATCH_SUITES][NUM_MATCH_TESTS + 1] = {
         TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces
         TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces/eth0
         TEST_PATH"/interfaces/eth0/",       // GET_TREE /interfaces/eth0/name
-        NULL,                               // QUERY /interfaces/*
+        TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/*
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/*
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/*/name
         TEST_PATH"/interfaces/eth0/",       // QUERY /interfaces/eth0/name
@@ -5699,7 +5699,7 @@ test_query_refresh_trunk_query_exact()
 {
     refreshed_query (TEST_PATH"/devices/*",
                      TEST_PATH"/devices/dut/interfaces/eth1/state",
-                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/dut",
                      true, true);
 }
 
@@ -5744,7 +5744,7 @@ test_query_refresh_root_query_exact()
 {
     refreshed_query (TEST_PATH"/*",
                      TEST_PATH"/devices/dut/interfaces/eth1/state",
-                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices",
                      true, true);
 }
 
@@ -5753,7 +5753,7 @@ test_query_refresh_root_query_trunk()
 {
     refreshed_query (TEST_PATH"/*",
                      TEST_PATH"/devices/*",
-                     TEST_PATH"/devices/",
+                     TEST_PATH"/devices",
                      true, true);
 }
 
@@ -5771,7 +5771,7 @@ test_query_refresh_root_query_mid()
 {
     refreshed_query (TEST_PATH"/*",
                      TEST_PATH"/devices/*/interfaces/eth1/state",
-                     TEST_PATH"/devices/",
+                     TEST_PATH"/devices",
                      true, true);
 }
 
@@ -5780,7 +5780,7 @@ test_query_refresh_root_query_multi()
 {
     refreshed_query (TEST_PATH"/*",
                      TEST_PATH"/devices/*/interfaces/*",
-                     TEST_PATH"/devices/",
+                     TEST_PATH"/devices",
                      true, true);
 }
 
@@ -5834,7 +5834,7 @@ test_query_refresh_multi_query_exact()
 {
     refreshed_query (TEST_PATH"/devices/*/interfaces/*",
                      TEST_PATH"/devices/dut/interfaces/eth1/state",
-                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/dut/interfaces/eth1",
                      true, true);
 }
 
@@ -5843,7 +5843,7 @@ test_query_refresh_multi_query_trunk()
 {
     refreshed_query (TEST_PATH"/devices/*/interfaces/*",
                      TEST_PATH"/devices/*",
-                     TEST_PATH"/devices/dut/interfaces/",
+                     TEST_PATH"/devices/dut/interfaces/eth1",
                      false, true);
 }
 
@@ -5852,7 +5852,7 @@ test_query_refresh_multi_query_root()
 {
     refreshed_query (TEST_PATH"/devices/*/interfaces/*",
                      TEST_PATH"/*",
-                     TEST_PATH"/devices/dut/interfaces/",
+                     TEST_PATH"/devices/dut/interfaces/eth1",
                      false, true);
 }
 
@@ -5861,7 +5861,7 @@ test_query_refresh_multi_query_mid()
 {
     refreshed_query (TEST_PATH"/devices/*/interfaces/*",
                      TEST_PATH"/devices/*/interfaces/eth1/state",
-                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/dut/interfaces/eth1",
                      false, true);
 }
 
@@ -5869,6 +5869,51 @@ void
 test_query_refresh_multi_query_multi()
 {
     refreshed_query (TEST_PATH"/devices/*/interfaces/*",
+                     TEST_PATH"/devices/*/interfaces/*",
+                     TEST_PATH"/devices/dut/interfaces/eth1",
+                     false, true);
+}
+
+void
+test_query_refresh_directory_query_exact()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/",
+                     TEST_PATH"/devices/dut/interfaces/eth1/state",
+                     TEST_PATH"/devices/dut/interfaces/",
+                     true, true);
+}
+
+void
+test_query_refresh_directory_query_trunk()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/",
+                     TEST_PATH"/devices/*",
+                     TEST_PATH"/devices/dut/interfaces/",
+                     false, true);
+}
+
+void
+test_query_refresh_directory_query_root()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/",
+                     TEST_PATH"/*",
+                     TEST_PATH"/devices/dut/interfaces/",
+                     false, true);
+}
+
+void
+test_query_refresh_directory_query_mid()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/",
+                     TEST_PATH"/devices/*/interfaces/eth1/state",
+                     TEST_PATH"/devices/dut/interfaces/",
+                     false, true);
+}
+
+void
+test_query_refresh_directory_query_multi()
+{
+    refreshed_query (TEST_PATH"/devices/*/interfaces/",
                      TEST_PATH"/devices/*/interfaces/*",
                      TEST_PATH"/devices/dut/interfaces/",
                      false, true);
@@ -10380,6 +10425,11 @@ static CU_TestInfo tests_api_tree[] = {
     { "query refresh multi query root", test_query_refresh_multi_query_root},
     { "query refresh multi query mid", test_query_refresh_multi_query_mid},
     { "query refresh multi query multi", test_query_refresh_multi_query_multi},
+    { "query refresh directory query exact", test_query_refresh_directory_query_exact},
+    { "query refresh directory query trunk", test_query_refresh_directory_query_trunk},
+    { "query refresh directory query root", test_query_refresh_directory_query_root},
+    { "query refresh directory query mid", test_query_refresh_directory_query_mid},
+    { "query refresh directory query multi", test_query_refresh_directory_query_multi},
     { "query refreshed multi branches", test_query_refreshed_multi_branches},
     { "query refreshed once", test_query_refreshed_once},
     { "query not refreshed one path", test_query_not_refreshed_one_path},

@@ -1985,57 +1985,6 @@ collect_provided_paths_query(GNode *query)
     return matches;
 }
 
-static void _refresh_paths (GNode *node, gpointer data)
-{
-    /* Handle end of path matches (including wildcards) */
-    if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
-    {
-        char *path = NULL;
-        _node_to_path (node, &path);
-        call_refreshers (path, false);
-        free (path);
-    }
-
-    /* Handle wildcards */
-    if (g_strcmp0 (node->data, "*") == 0)
-    {
-        char *path = NULL;
-        _node_to_path (node->parent, &path);
-
-        /* Match any wildcard refreshers at this level */
-        char *lpath = g_strdup_printf ("%s/", path);
-        call_refreshers (lpath, false);
-        free (lpath);
-
-        /* Find matches for values in the DB */
-        GList *paths = db_search (path);
-        for (GList *iter = paths; iter; iter = iter->next)
-        {
-            GNode *fake, *child;
-
-            if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
-            {
-                fake = g_node_new ((char *)iter->data);
-                child = g_node_prepend_data (fake, (gpointer)"*");
-                g_node_prepend_data (child, (gpointer)NULL);
-            }
-            else
-            {
-                fake = g_node_copy (node);
-                fake->data = (gpointer)iter->data;
-            }
-            _refresh_paths (fake, NULL);
-            g_node_destroy (fake);
-        }
-        g_list_free_full(paths, g_free);
-        free (path);
-    }
-
-    /* Traverse children */
-    g_node_children_foreach (node, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
-    return;
-}
-
 /* g_node_traverse function to check if we have any filters to work with */
 static gboolean _tree_has_filter (GNode *node, gpointer data)
 {
@@ -2154,6 +2103,267 @@ done:
     return true;
 }
 
+extern struct callback_node *refresh_list;
+bool
+call_refresher (cb_info_t *refresher, const char *path, bool dry_run)
+{
+    rpc_client rpc_client;
+    rpc_message_t msg = {};
+    uint64_t start, duration;
+    uint64_t now = calculate_timestamp ();
+    uint64_t timeout = 0;
+    bool refresh_due = false;
+    char *cpath = NULL;
+    int res;
+
+    pthread_mutex_lock (&refresher->lock);
+
+    /* Get a path suitable for passing to the refresher */
+    cpath = g_strdup (path); //get_refresher_path (path, refresher);
+    if (cpath[strlen (cpath) - 1] == '*')
+        cpath[strlen (cpath) - 1] = '\0';
+    if (refresher->type == '/' && cpath[strlen (cpath) - 1] != '/')
+    {
+        char *tmp = g_strdup_printf ("%s/", cpath);
+        free (cpath);
+        cpath = tmp;
+    }
+    if (!cpath || strchr (cpath, '*'))
+    {
+        DEBUG ("Not enough state to refresh %s for %s\n", refresher->path, path);
+        goto unlock;
+    }
+    DEBUG ("PATH:%s RPATH:%s CPATH:%s\n", path, refresher->path, cpath);
+
+    /* We can skip this refresher if the refresher has been called recently AND
+        * the last call was for a path equal to or less specific than this one */
+    if (now < (refresher->timestamp + refresher->timeout) &&
+        (strncmp (refresher->last_path, cpath, strlen (refresher->last_path)) == 0 &&
+            (*(refresher->last_path + strlen (refresher->last_path) - 1) == '/' ||
+            *(cpath + strlen (refresher->last_path)) == '/' ||
+            *(cpath + strlen (refresher->last_path)) == '\0')))
+    {
+        DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
+                cpath, now, refresher->timestamp, refresher->timeout);
+        goto unlock;
+    }
+    if (now >= (refresher->timestamp + refresher->timeout))
+    {
+        DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
+            cpath, now, refresher->timestamp, refresher->timeout);
+    }
+    else
+    {
+        DEBUG ("Refreshing %s (< %s)\n", cpath, refresher->last_path);
+    }
+
+    /* Check for local refresher */
+    if (refresher->id == getpid ())
+    {
+        apteryx_refresh_callback cb = (apteryx_refresh_callback) (long) refresher->ref;
+        DEBUG ("REFRESH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                refresher->path, refresher->id, refresher->ref);
+        timeout = cb (cpath);
+        if (refresher->timeout == 0 || timeout < refresher->timeout)
+            refresher->timeout = timeout;
+        /* Record the last time we ran this refresher */
+        refresher->timestamp = now;
+        /* Record the path we refreshed (without any trailing /'s)*/
+        if (refresher->last_path)
+            free (refresher->last_path);
+        refresher->last_path = g_strdup (cpath);
+        goto unlock;
+    }
+
+    DEBUG ("REFRESH CB %s (%s 0x%"PRIx64",0x%"PRIx64",%s)\n",
+            cpath, refresher->path, refresher->id, refresher->ref, refresher->uri);
+
+    /* IPC */
+    if (!dry_run)
+    {
+        rpc_client = rpc_client_connect (rpc, refresher->uri);
+        if (!rpc_client)
+        {
+            /* Throw away the no good validator */
+            ERROR ("Invalid REFRESH CB %s (0x%"PRIx64",0x%"PRIx64")\n",
+                refresher->path, refresher->id, refresher->ref);
+            cb_disable (refresher);
+            INC_COUNTER (counters.refreshed_no_handler);
+            goto unlock;
+        }
+        rpc_msg_encode_uint8 (&msg, MODE_REFRESH);
+        rpc_msg_encode_uint64 (&msg, refresher->ref);
+        rpc_msg_encode_string (&msg, cpath);
+        start = get_time_us ();
+        res = rpc_msg_send (rpc_client, &msg);
+        duration = get_time_us () - start;
+        if (!res)
+        {
+            INC_COUNTER (counters.refreshed_timeout);
+            ERROR ("Failed to notify refresher for path \"%s\"\n", (char *) path);
+            rpc_client_release (rpc, rpc_client, false);
+        }
+        else
+        {
+            rpc_client_release (rpc, rpc_client, true);
+            timeout = rpc_msg_decode_uint64 (&msg);
+            DEBUG ("REFRESH again in %"PRIu64"us\n", timeout);
+            if (refresher->timeout == 0 || timeout < refresher->timeout)
+                refresher->timeout = timeout;
+            /* Record the last time we ran this refresher */
+            refresher->timestamp = now;
+            /* Record the path we refreshed (without any trailing /'s)*/
+            if (refresher->last_path)
+                free (refresher->last_path);
+            refresher->last_path = g_strdup (cpath);
+        }
+        rpc_msg_reset (&msg);
+
+        INC_COUNTER (counters.refreshed);
+        if (!GET_COUNTER (refresher->min) || duration < GET_COUNTER (refresher->min))
+            SET_COUNTER (refresher->min, duration);
+        if (duration > GET_COUNTER (refresher->max))
+            SET_COUNTER (refresher->max, duration);
+        ADD_COUNTER (refresher->total, duration);
+        INC_COUNTER (refresher->count);
+    }
+    else
+    {
+        refresh_due = true;
+    }
+unlock:
+    free (cpath);
+    pthread_mutex_unlock (&refresher->lock);
+    return refresh_due;
+}
+
+static GList*
+get_wildcard_keys (struct callback_node *cb, GNode *node, GString *path)
+{
+    GList *keys = NULL;
+
+    /* Search the database first */
+    GList *paths = db_search (path->str);
+    for (GList *iter = paths; iter; iter = iter->next)
+    {
+        keys = g_list_prepend (keys, (gpointer)g_strdup ((char *) iter->data + strlen (path->str) + 1));
+    }
+    g_list_free_full (paths, free);
+
+    /* Add any refresher nodes */
+    GHashTableIter hiter;
+    gpointer key, value;
+    g_hash_table_iter_init (&hiter, cb->hashtree_node.children);
+    while (g_hash_table_iter_next (&hiter, &key, &value))
+    {
+        struct callback_node *branch = (struct callback_node *) value;
+        if (g_strcmp0 ((char*)branch->hashtree_node.key, "*") != 0 &&
+            g_list_find_custom (keys, (char*)branch->hashtree_node.key, (GCompareFunc) strcmp) == NULL)
+        {
+            keys = g_list_prepend (keys, (gpointer)g_strdup ((char*)branch->hashtree_node.key));
+        }
+    }
+
+    // TODO other callback type nodes
+
+    return keys;
+}
+
+/* Traverse all nodes in the query checking for refreshers as we go */
+static void
+refresh_tree (GNode *node, struct callback_node *_cb, GString *_path)
+{
+    struct callback_node *cb = _cb ?: refresh_list;
+    GString *path = _path ?: g_string_new (NULL);
+
+    /* Append this node to the path so far */
+    if (node->data && strlen (node->data) > 0)
+        g_string_append_printf (path, "/%s", (char*)node->data);
+
+    DEBUG ("NODE:%s CB:%s e:%d d:%d f:%d [%s]\n", (char*)node->data, cb->hashtree_node.key,
+        g_list_length (cb->exact), g_list_length (cb->directory), g_list_length (cb->following), path->str);
+
+    /* Call any exact refreshers */
+    for (GList *iter = g_list_first (cb->exact); iter; iter = g_list_next (iter))
+    {
+        call_refresher (iter->data, path->str, false);
+    }
+    /* Call any directory refreshers */
+    for (GList *iter = g_list_first (cb->directory); iter; iter = g_list_next (iter))
+    {
+        call_refresher (iter->data, path->str, false);
+    }
+    /* Call any wildcard refreshers */
+    for (GList *iter = g_list_first (cb->following); iter; iter = g_list_next (iter))
+    {
+        call_refresher (iter->data, path->str, false);
+    }
+
+    /* If there are any no more refreshers then we are done */
+    if (!cb->hashtree_node.children)
+        goto exit;
+
+    /* Check each node against deeper refreshers */
+    for (GNode *iter = g_node_first_child (node); iter; iter = g_node_next_sibling (iter))
+    {
+        GNode *child = iter;
+
+        /* Wildcard query */
+        if (g_strcmp0 ((char*)child->data, "*") == 0)
+        {
+            GList *keys = get_wildcard_keys (cb, child, path);
+            for (GList *key = keys; key; key = key->next)
+            {
+                /* Create fake queries for every DB node */
+                GNode *cnode = g_node_copy (child);
+                if (!child->children || !child->children->data)
+                    g_node_prepend_data (cnode, "*");
+                cnode->data = key->data;
+                GNode *parent = child->parent;
+                GNode *root = cnode;
+                while (parent)
+                {
+                    GNode *pnode = g_node_new (parent->data);
+                    pnode->children = root;
+                    root->parent = pnode;
+                    parent = parent->parent;
+                    root = pnode;
+                }
+                struct callback_node *branch = (struct callback_node *) g_hash_table_lookup (cb->hashtree_node.children, (char*)cnode->data);
+                if (!branch)
+                    branch = (struct callback_node *) g_hash_table_lookup (cb->hashtree_node.children, "*");
+                if (branch)
+                    refresh_tree (cnode, branch, path);
+                g_node_destroy (root);
+            }
+            g_list_free_full (keys, free);
+
+            /* Wildcard refresher and wildcard query */
+            struct callback_node *branch = (struct callback_node *) g_hash_table_lookup (cb->hashtree_node.children, "*");
+            if (branch && branch->following)
+            {
+                g_string_append_printf (path, "/");
+                for (GList *biter = g_list_first (branch->following); biter; biter = g_list_next (biter))
+                {
+                    call_refresher (biter->data, path->str, false);
+                }
+                g_string_truncate (path, path->len - 1);
+            }
+        }
+        else if (child->data)
+        {
+            struct callback_node *branch = (struct callback_node *) g_hash_table_lookup (cb->hashtree_node.children, (char*)child->data);
+            if (!branch)
+                branch = (struct callback_node *) g_hash_table_lookup (cb->hashtree_node.children, "*");
+            if (branch)
+                refresh_tree (child, branch, path);
+        }
+    }
+
+exit:
+    if (!_path && path)
+        g_string_free (path, true);
+}
 
 static bool
 handle_query (rpc_message msg)
@@ -2195,7 +2405,7 @@ handle_query (rpc_message msg)
     free (root_path);
 
     /* Attempt to call refreshers for all paths in the query */
-    g_node_children_foreach (query_head, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
+    refresh_tree (query_head, NULL, NULL);
 
     /* If we have a filter adjust the query to only have matching subtrees */
     bool has_filter = false;

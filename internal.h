@@ -37,6 +37,7 @@
 #include <syslog.h>
 #include <glib.h>
 #include "rpc_transport.h"
+#include "hashtree.h"
 
 /* Default UNIX socket path */
 #define APTERYX_SERVER      "unix:///tmp/apteryx"
@@ -141,7 +142,13 @@ typedef enum
 } APTERYX_MODE;
 
 /* Callback */
-struct callback_node;
+struct callback_node
+{
+    struct hashtree_node hashtree_node;
+    GList *exact;
+    GList *directory;
+    GList *following;
+};
 typedef struct _cb_info_t
 {
     bool active;

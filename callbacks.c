@@ -22,15 +22,15 @@
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
 #endif
-#include "hashtree.h"
+// #include "hashtree.h"
 
-struct callback_node
-{
-    struct hashtree_node hashtree_node;
-    GList *exact;
-    GList *directory;
-    GList *following;
-};
+// struct callback_node
+// {
+//     struct hashtree_node hashtree_node;
+//     GList *exact;
+//     GList *directory;
+//     GList *following;
+// };
 
 static pthread_mutex_t tree_lock = PTHREAD_MUTEX_INITIALIZER;
 

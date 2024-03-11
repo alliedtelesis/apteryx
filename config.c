@@ -27,7 +27,7 @@ extern rpc_instance rpc;
 /* Callback structures */
 static struct callback_node *watch_list;
 static struct callback_node *validation_list;
-static struct callback_node *refresh_list;
+struct callback_node *refresh_list;
 static struct callback_node *provide_list;
 static struct callback_node *index_list;
 static struct callback_node *proxy_list;
