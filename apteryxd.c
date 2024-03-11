@@ -437,20 +437,6 @@ notify_watchers (GList *paths, GList *values, bool ack)
     g_list_free_full (common_watchers, (GDestroyNotify) cb_release);
 }
 
-static uint64_t
-calculate_timestamp (void)
-{
-    struct timespec tms;
-    uint64_t micros = 0;
-    if (clock_gettime(CLOCK_MONOTONIC_RAW, &tms)) {
-        return 0;
-    }
-
-    micros = ((uint64_t)tms.tv_sec) * 1000000;
-    micros += tms.tv_nsec/1000;
-    return micros;
-}
-
 static char *
 get_refresher_path (const char *path, cb_info_t *refresher)
 {
@@ -539,7 +525,7 @@ call_refreshers (const char *path, bool dry_run)
         return false;
 
     /* Get the time of the request */
-    now = calculate_timestamp ();
+    now = get_time_us ();
 
     /* Call each refresher */
     for (iter = refreshers; iter; iter = g_list_next (iter))
@@ -2411,7 +2397,7 @@ handle_timestamp (rpc_message msg)
         /* Lookup value */
         if (call_refreshers (path, true) || config_tree_has_providers (path))
         {
-            value = calculate_timestamp ();
+            value = get_time_us ();
         }
         else
         {
