@@ -66,6 +66,22 @@ assert_apteryx_empty (void)
     return true;
 }
 
+static inline void
+dump_sigset_t (sigset_t *set)
+{
+    int i = SIGRTMAX;
+    do {
+        int x = 0;
+        i -= 4;
+        if (sigismember(set, i+1)) x |= 1;
+        if (sigismember(set, i+2)) x |= 2;
+        if (sigismember(set, i+3)) x |= 4;
+        if (sigismember(set, i+4)) x |= 8;
+        printf ("%x", x);
+    } while (i >= 4); 
+    printf ("\n");
+}
+
 void
 test_init ()
 {
@@ -2170,6 +2186,29 @@ test_watch_ack_thread ()
 }
 
 static bool
+test_watch_sigmask_callback (const char *path, const char *value)
+{
+    sigset_t empty;
+    sigset_t set;
+    sigemptyset (&empty);
+    pthread_sigmask (SIG_SETMASK, NULL, &set);
+    if (memcmp ((void *)&set, (void *)&empty, sizeof (sigset_t)) != 0)
+        dump_sigset_t (&set);
+    CU_ASSERT (memcmp ((void *)&set, (void *)&empty, sizeof (sigset_t)) == 0);
+    return true;
+}
+
+void
+test_watch_sigmask ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    CU_ASSERT (apteryx_watch (path, test_watch_sigmask_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "down"));
+    CU_ASSERT (apteryx_unwatch (path, test_watch_sigmask_callback));
+    apteryx_set_string (path, NULL, NULL);
+}
+
+static bool
 test_perf_watch_callback (const char *path, const char *value)
 {
     pthread_mutex_unlock (&watch_lock);
@@ -3207,6 +3246,28 @@ test_refresh_multiple_branches ()
 
     CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
     CU_ASSERT (assert_apteryx_empty ());
+}
+
+static uint64_t
+test_refresh_sigmask_callback (const char *path)
+{
+    sigset_t empty;
+    sigset_t set;
+    sigemptyset (&empty);
+    pthread_sigmask (SIG_SETMASK, NULL, &set);
+    if (memcmp ((void *)&set, (void *)&empty, sizeof (sigset_t)) != 0)
+        dump_sigset_t (&set);
+    CU_ASSERT (memcmp ((void *)&set, (void *)&empty, sizeof (sigset_t)) == 0);
+    return _cb_timeout;
+}
+
+void
+test_refresh_sigmask ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0/state";
+    CU_ASSERT (apteryx_refresh (path, test_refresh_sigmask_callback));
+    CU_ASSERT (apteryx_get (path) == NULL);
+    CU_ASSERT (apteryx_unrefresh (path, test_refresh_sigmask_callback));
 }
 
 /* If a refresher is called while traversing the database we can end up
@@ -10212,6 +10273,7 @@ static CU_TestInfo tests_api_watch[] = {
     { "watch rpc restart", test_watch_rpc_restart },
     { "watch myself blocked", test_watch_myself_blocked },
     { "watch and watch_with_ack in same thread", test_watch_ack_thread },
+    { "watch called with correct sigmask", test_watch_sigmask},
     CU_TEST_INFO_NULL,
 };
 
@@ -10257,6 +10319,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh more specific second", test_refresh_more_specific_second },
     { "refresh node substring", test_refresh_node_substring },
     { "refresh multiple branches", test_refresh_multiple_branches },
+    { "refresh called with correct sigmask", test_refresh_sigmask },
     CU_TEST_INFO_NULL,
 };
 

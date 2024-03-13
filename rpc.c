@@ -99,9 +99,14 @@ work_destroy (gpointer data)
 }
 
 static void
-worker_func (gpointer a, gpointer b)
+worker_func (struct rpc_work_s *work, sigset_t *sigmask)
 {
-    struct rpc_work_s *work = (struct rpc_work_s *)a;
+    sigset_t oldmask;
+
+    /* Process callbacks using the worker sigmask */
+    if (sigmask)
+        pthread_sigmask (SIG_SETMASK, sigmask, &oldmask);
+
     if (work && work->cb)
     {
         if (work->cb (work->data) == G_SOURCE_REMOVE)
@@ -114,10 +119,6 @@ worker_func (gpointer a, gpointer b)
         rpc_id id = work->id;
         rpc_message msg = &work->msg;
 
-        /* Set the signal mask for the worker thread */
-        sigset_t *mask = (sigset_t *)b;
-        pthread_sigmask (SIG_SETMASK, mask, NULL);
-
         /* TEST: force a delay here to change callback timing */
         if (rpc_test_random_watch_delay)
             usleep (rand() & RPC_TEST_DELAY_MASK);
@@ -128,7 +129,7 @@ worker_func (gpointer a, gpointer b)
         {
             DEBUG ("RPC[%i]: handler failed\n", sock->sock);
             work_destroy (work);
-            return;
+            goto exit;
         }
 
         /* Send result */
@@ -144,6 +145,10 @@ worker_func (gpointer a, gpointer b)
         }
         work_destroy (work);
     }
+exit:
+    /* Restore the process sigmask */
+    if (sigmask)
+        pthread_sigmask (SIG_SETMASK, sigmask, &oldmask);
 }
 
 static gboolean
@@ -170,7 +175,7 @@ slow_callback_fn (gpointer arg1)
         }
     }
     else
-        worker_func (arg1, NULL);
+        worker_func (arg1, &rpc->worker_sigmask);
     g_atomic_int_dec_and_test (&rpc->slow_count);
     return G_SOURCE_REMOVE;
 }
@@ -178,6 +183,10 @@ slow_callback_fn (gpointer arg1)
 static gpointer
 slow_thread_fn (gpointer data)
 {
+    /* Block all signals */
+    sigset_t set;
+    sigfillset (&set);
+    pthread_sigmask (SIG_BLOCK, &set, NULL);
     rpc_instance rpc = (rpc_instance) data;
     g_main_loop_run (rpc->slow_loop);
     g_main_loop_unref (rpc->slow_loop);
@@ -552,7 +561,7 @@ rpc_server_process (rpc_instance rpc, bool poll)
     /* Check for work and process it if required */
     if (poll)
     {
-        gpointer *work = g_async_queue_try_pop (rpc->queue);
+        struct rpc_work_s *work = (struct rpc_work_s *) g_async_queue_try_pop (rpc->queue);
         if (work)
         {
             /* Process a single work job */
