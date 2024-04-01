@@ -354,20 +354,15 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
         submit_slow_work (rpc, work, 0);
         pthread_mutex_unlock (&rpc->lock);
     }
-    else if (rpc->workers)
-        g_thread_pool_push (rpc->workers, work, NULL);
     else
-        goto error;
-
-    return;
-
-error:
-    if (work)
     {
-        g_free (work);
+        if (!rpc->workers)
+        {
+            rpc->workers = g_thread_pool_new ((GFunc)worker_func, (gpointer)&rpc->worker_sigmask,
+                                              8, FALSE, NULL);
+        }
+        g_thread_pool_push (rpc->workers, work, NULL);
     }
-    rpc_socket_deref (sock);
-    return;
 }
 
 rpc_instance
@@ -396,8 +391,6 @@ rpc_init (int timeout, bool reuse_sock, rpc_msg_handler handler)
     rpc->handler = handler;
     rpc->server = server;
     rpc->clients = g_hash_table_new (g_str_hash, g_str_equal);
-    rpc->workers = g_thread_pool_new ((GFunc)worker_func, (gpointer)&rpc->worker_sigmask,
-                                      8, FALSE, NULL);
 
     DEBUG ("RPC: New Instance (%p)\n", rpc);
     return rpc;
@@ -458,23 +451,26 @@ rpc_shutdown (rpc_instance rpc)
     DEBUG ("RPC: Shutdown Instance (%p)\n", rpc);
 
     /* Need to wait until all threads are cleaned up */
-    for (i=0; i<10; i++)
+    if (rpc->workers)
     {
-        g_thread_pool_stop_unused_threads ();
-        if (g_thread_pool_unprocessed (rpc->workers) == 0 &&
-            g_thread_pool_get_num_threads (rpc->workers) == 0 &&
-            g_thread_pool_get_num_unused_threads () == 0)
+        for (i=0; i<10; i++)
         {
-            break;
+            g_thread_pool_stop_unused_threads ();
+            if (g_thread_pool_unprocessed (rpc->workers) == 0 &&
+                g_thread_pool_get_num_threads (rpc->workers) == 0 &&
+                g_thread_pool_get_num_unused_threads () == 0)
+            {
+                break;
+            }
+            else if (i >= 9)
+            {
+                ERROR ("RPC: Worker threads not shutting down\n");
+            }
+            g_usleep (RPC_TIMEOUT_US / 10);
         }
-        else if (i >= 9)
-        {
-            ERROR ("RPC: Worker threads not shutting down\n");
-        }
-        g_usleep (RPC_TIMEOUT_US / 10);
+        g_thread_pool_free (rpc->workers, FALSE, TRUE);
+        rpc->workers = NULL;
     }
-    g_thread_pool_free (rpc->workers, FALSE, TRUE);
-    rpc->workers = NULL;
     if (rpc->slow_loop)
     {
         for (i=0; i<10; i++)
