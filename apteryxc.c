@@ -96,6 +96,7 @@ struct stat_t
     uint64_t pid;
     uint64_t callback;
     uint64_t ns;
+    uint64_t flags;
     uint64_t hash;
     uint64_t count;
     uint64_t min;
@@ -125,7 +126,7 @@ _parse_stats (GNode *node, gpointer data)
         struct stat_t *stat = g_malloc0 (sizeof (struct stat_t));
         stat->guid = g_strdup (APTERYX_NAME (node));
         if (sscanf (APTERYX_NAME (node), APTERYX_GUID_FORMAT,
-                    &stat->ns, &stat->pid, &stat->callback, &stat->hash) != 4 ||
+                    &stat->ns, &stat->pid, &stat->callback, &stat->flags, &stat->hash) != 5 ||
             sscanf (APTERYX_VALUE (node), "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "",
                     &stat->count, &stat->min, &stat->avg, &stat->max) != 4 ||
             stat->count == 0)

@@ -54,7 +54,7 @@ typedef struct _cb_t
     bool value;
     void *fn;
     void *data;
-    uint32_t flags;
+    uint64_t flags;
     guint timeout_ms;
 } cb_t;
 static uint64_t next_ref = 0;
@@ -2003,7 +2003,7 @@ apteryx_find_tree (GNode *root)
 }
 
 bool
-add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags, uint64_t timeout_ms)
+add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint64_t flags, uint64_t timeout_ms)
 {
     size_t pid = getpid ();
     char _path[PATH_MAX];
@@ -2044,7 +2044,7 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
     pthread_mutex_unlock (&lock);
 
     if (sprintf (_path, "%s/"APTERYX_GUID_FORMAT,
-            type, getns (), (uint64_t)pid, cb->ref, (uint64_t)g_str_hash (path)) <= 0)
+            type, getns (), (uint64_t)pid, cb->ref, cb->flags, (uint64_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, path))
         return false;
@@ -2057,6 +2057,7 @@ delete_callback (const char *type, const char *path, void *fn, void *data)
 {
     char _path[PATH_MAX];
     uint64_t ref;
+    uint64_t flags;
     GList *iter;
     cb_t *cb;
 
@@ -2079,11 +2080,12 @@ delete_callback (const char *type, const char *path, void *fn, void *data)
     pthread_mutex_unlock (&lock);
     ASSERT (cb, return false, "CB: not found (%s)\n", path);
     ref = cb->ref;
+    flags = cb->flags;
     free ((void *) cb->path);
     free (cb);
 
     if (sprintf (_path, "%s/"APTERYX_GUID_FORMAT,
-            type, getns (), (uint64_t)getpid (), ref, (uint64_t)g_str_hash (path)) <= 0)
+            type, getns (), (uint64_t)getpid (), ref, flags, (uint64_t)g_str_hash (path)) <= 0)
         return false;
     if (!apteryx_set (_path, NULL))
         return false;
@@ -2115,25 +2117,13 @@ apteryx_unwatch (const char *path, apteryx_watch_callback cb)
 }
 
 bool
-apteryx_watch_tree (const char *path, apteryx_watch_tree_callback cb)
+apteryx_watch_tree_full (const char *path, apteryx_watch_tree_callback cb, int flags, guint quiet_ms)
 {
-    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 1, 0);
+    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, (WATCH_F_TREE_CB | flags), quiet_ms);
 }
 
 bool
 apteryx_unwatch_tree (const char *path, apteryx_watch_tree_callback cb)
-{
-    return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, NULL);
-}
-
-bool
-apteryx_watch_tree_full (const char *path, apteryx_watch_tree_callback cb, guint quiet_ms)
-{
-    return add_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, true, NULL, 1, quiet_ms);
-}
-
-bool
-apteryx_unwatch_tree_full (const char *path, apteryx_watch_tree_callback cb)
 {
     return delete_callback (APTERYX_WATCHERS_PATH, path, (void *)cb, NULL);
 }

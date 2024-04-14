@@ -576,6 +576,13 @@ bool apteryx_index (const char *path, apteryx_index_callback cb);
 bool apteryx_unindex (const char *path, apteryx_index_callback cb);
 
 /**
+ * Flags to configure the watch behaviour
+ */
+#define WATCH_F_DEFAULT         0           /* Default behaviour */
+#define WATCH_F_TREE_CB         (1 << 0)    /* Internal use only */
+#define WATCH_F_MASK_MYSELF     (1 << 1)    /* No watch callbacks if it is me (ns:pid) that does the set */
+
+/**
  * Callback function to be called when a
  * watched value changes.
  * @param path path to the watched value
@@ -608,33 +615,24 @@ bool apteryx_unwatch (const char *path, apteryx_watch_callback cb);
 typedef bool (*apteryx_watch_tree_callback) (GNode *root);
 
 /**
- * Watch for changes in the path
- * Supports *(wildcard) at the end of path for all children under this path
- * Supports /(level) at the end of path for children only under this current path (one level down)
- * Whenever a change occurs in a watched path, cb is called with the changed
- * tree of changes that occurred in one transaction (e.g. an apteryx_set_tree)
- * @param path path to the value to be watched
- * @param cb function to call when the value changes
- * @return true on successful registration
- */
-bool apteryx_watch_tree (const char *path, apteryx_watch_tree_callback cb);
-/** UnWatch for changes in the path */
-bool apteryx_unwatch_tree (const char *path, apteryx_watch_tree_callback cb);
-
-/**
- * Watch for changes in the path but only notify after a period of quiet
+ * Watch for changes in the path and pass teh callback a tree of changes
  * Supports *(wildcard) at the end of path for all children under this path
  * Supports /(level) at the end of path for children only under this current path (one level down)
  * Whenever a change occurs in a monitor path, cb is called with the 
  * longest common path to all recent changes
  * @param path path to the value to be monitored
  * @param cb function to call when the value changes
- * @param quiet_ms only notify after this period of quiet time in milliseconds (0=no timeout)
+ * @param flags to change the watch behaviour
+ * @param quiet_ms aggregate sets and notify only after this period of quiet time in milliseconds (0=no timeout)
  * @return true on successful registration
  */
-bool apteryx_watch_tree_full (const char *path, apteryx_watch_tree_callback cb, guint quiet_ms);
+bool apteryx_watch_tree_full (const char *path, apteryx_watch_tree_callback cb, int flags, guint quiet_ms);
+#define apteryx_watch_tree(p,c) apteryx_watch_tree_full(p, c, 0, 0)
+#define apteryx_watch_tree_wait(p,c,ms) apteryx_watch_tree_full(p, c, 0, ms)
+#define apteryx_watch_tree_masked(p,c) apteryx_watch_tree_full(p, c, WATCH_F_MASK_MYSELF, 0)
+#define apteryx_watch_tree_wait_masked(p,c,ms) apteryx_watch_tree_full(p, c, WATCH_F_MASK_MYSELF, ms)
 /** UnWatch for changes in the path */
-bool apteryx_unwatch_tree_full (const char *path, apteryx_watch_tree_callback cb);
+bool apteryx_unwatch_tree (const char *path, apteryx_watch_tree_callback cb);
 
 /**
  * Callback function to be called to validate a new value

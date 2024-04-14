@@ -7315,7 +7315,7 @@ test_watch_tree_after_quiet ()
 
     _cb_count = 0;
     CU_ASSERT (apteryx_set_string (path, NULL, "up"));
-    CU_ASSERT (apteryx_watch_tree_full (path, test_watch_tree_callback, (TEST_SLEEP_TIMEOUT/2/1000)));
+    CU_ASSERT (apteryx_watch_tree_wait (path, test_watch_tree_callback, (TEST_SLEEP_TIMEOUT/2/1000)));
     CU_ASSERT (apteryx_set_string (path, NULL, "1"));
     CU_ASSERT (apteryx_set_string (path, NULL, "2"));
     CU_ASSERT (apteryx_set_string (path, NULL, "3"));
@@ -7328,7 +7328,7 @@ test_watch_tree_after_quiet ()
     CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
     CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "5") == 0);
-    CU_ASSERT (apteryx_unwatch_tree_full (path, test_watch_tree_callback));
+    CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
     apteryx_set_string (path, NULL, NULL);
     _watch_tree_cleanup ();
 }
@@ -7340,7 +7340,7 @@ test_watch_tree_after_quiet_merged ()
     GNode *node, *child;
 
     _cb_count = 0;
-    CU_ASSERT (apteryx_watch_tree_full (TEST_PATH"/entity/zones/*", test_watch_tree_callback, (TEST_SLEEP_TIMEOUT/2/1000)));
+    CU_ASSERT (apteryx_watch_tree_wait (TEST_PATH"/entity/zones/*", test_watch_tree_callback, (TEST_SLEEP_TIMEOUT/2/1000)));
     CU_ASSERT (apteryx_set_string (path, "zone1", "1"));
     CU_ASSERT (apteryx_set_string (path, "zone2", "2"));
     CU_ASSERT (apteryx_set_string (path, "zone3", "3"));
@@ -7364,8 +7364,100 @@ test_watch_tree_after_quiet_merged ()
     CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "4") == 0);
     CU_ASSERT ((child = apteryx_find_child (node, "zone5")) != NULL);
     CU_ASSERT (child && strcmp (APTERYX_VALUE (child), "6") == 0);
-    CU_ASSERT (apteryx_unwatch_tree_full (TEST_PATH"/entity/zones/*", test_watch_tree_callback));
+    CU_ASSERT (apteryx_unwatch_tree (TEST_PATH"/entity/zones/*", test_watch_tree_callback));
     apteryx_prune (path);
+    _watch_tree_cleanup ();
+}
+
+void
+test_watch_tree_masked_set_local ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    CU_ASSERT (apteryx_watch_tree_masked (path, test_watch_tree_callback));
+    CU_ASSERT (apteryx_set_string (path, NULL, "1"));
+    CU_ASSERT (watch_tree_root == NULL);
+    CU_ASSERT (_cb_count == 0);
+    CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_tree_cleanup ();
+}
+
+void
+test_watch_tree_masked_set_other ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    GNode *node;
+    int status;
+    int pid;
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    apteryx_shutdown ();
+    if ((pid = fork ()) == 0)
+    {
+        /* Child */
+        apteryx_init (apteryx_debug);
+        usleep (RPC_TIMEOUT_US / 2);
+        CU_ASSERT (apteryx_set_string (path, NULL, "1"));
+        apteryx_shutdown ();
+        exit (0);
+    }
+    apteryx_init (apteryx_debug);
+    CU_ASSERT (apteryx_watch_tree_masked (path, test_watch_tree_callback));
+    usleep (RPC_TIMEOUT_US);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_NON_LEAVES) == 6);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "1") == 0);
+    waitpid (pid, &status, 0);
+    CU_ASSERT (WEXITSTATUS (status) == 0);
+    CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_tree_cleanup ();
+}
+
+void
+test_watch_tree_masked_after_quiet ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+    GNode *node;
+    int status;
+    int pid;
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    apteryx_shutdown ();
+    if ((pid = fork ()) == 0)
+    {
+        /* Child */
+        apteryx_init (apteryx_debug);
+        usleep (RPC_TIMEOUT_US / 2);
+        CU_ASSERT (apteryx_set_string (path, NULL, "1"));
+        CU_ASSERT (apteryx_set_string (path, NULL, "2"));
+        CU_ASSERT (apteryx_set_string (path, NULL, "3"));
+        CU_ASSERT (apteryx_set_string (path, NULL, "4"));
+        CU_ASSERT (apteryx_set_string (path, NULL, "5"));
+        apteryx_shutdown ();
+        exit (0);
+    }
+    apteryx_init (apteryx_debug);
+    CU_ASSERT (apteryx_watch_tree_wait_masked (path, test_watch_tree_callback, (TEST_SLEEP_TIMEOUT/2/1000)));
+    usleep (RPC_TIMEOUT_US);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_NON_LEAVES) == 6);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "5") == 0);
+    waitpid (pid, &status, 0);
+    CU_ASSERT (WEXITSTATUS (status) == 0);
+    CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
+    apteryx_set_string (path, NULL, NULL);
     _watch_tree_cleanup ();
 }
 
@@ -10486,6 +10578,9 @@ static CU_TestInfo tests_api_tree[] = {
     { "watch tree one level miss", test_watch_tree_one_level_miss },
     { "watch tree after quiet", test_watch_tree_after_quiet },
     { "watch tree after quiet merged", test_watch_tree_after_quiet_merged },
+    { "watch tree masked set local", test_watch_tree_masked_set_local },
+    { "watch tree masked set other", test_watch_tree_masked_set_other },
+    { "watch tree masked after quiet", test_watch_tree_masked_after_quiet },
     CU_TEST_INFO_NULL,
 };
 

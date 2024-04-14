@@ -43,8 +43,8 @@
 #define APTERYX_CLIENT_ID   "%"PRIX64".%"PRIu64
 #define APTERYX_CLIENT      APTERYX_SERVER"."APTERYX_CLIENT_ID
 
-/* Callback GUID format <namespace>-<nspid>-<client-reference>-<path-hash> */
-#define APTERYX_GUID_FORMAT     "%"PRIX64"-%"PRIu64"-%"PRIX64"-%"PRIX64""
+/* Callback GUID format <namespace>-<nspid>-<client-reference>-<flags>-<path-hash> */
+#define APTERYX_GUID_FORMAT     "%"PRIX64"-%"PRIu64"-%"PRIX64"-%"PRIX64"-%"PRIX64""
 
 /* Debug */
 extern bool apteryx_debug;
@@ -158,6 +158,7 @@ typedef struct _cb_info_t
     uint64_t ns;
     uint64_t id;
     uint64_t ref;
+    uint64_t flags;
 
     struct callback_node *node;
     int refcnt;
@@ -256,6 +257,9 @@ typedef struct rpc_message_t
     /* Data */
     size_t offset;
     size_t length;
+    /* Sender */
+    uint64_t ns;
+    uint64_t pid;
 } rpc_message_t;
 typedef struct rpc_message_t *rpc_message;
 typedef bool (*rpc_msg_handler) (rpc_message msg);
@@ -318,7 +322,7 @@ bool config_tree_has_validators (const char *path);
 /* Callbacks to clients */
 struct callback_node *cb_init (void);
 cb_info_t *cb_create (struct callback_node *list, const char *guid, const char *path,
-                      uint64_t id, uint64_t callback, uint64_t ns);
+                      uint64_t id, uint64_t callback, uint64_t ns, uint64_t flags);
 void cb_disable (cb_info_t *cb);
 void cb_take (cb_info_t *cb);
 void cb_release (cb_info_t *cb);
@@ -336,7 +340,7 @@ void cb_foreach (struct callback_node *list, GFunc func, gpointer user_data);
 void cb_shutdown (struct callback_node *root);
 
 /* Callbacks to users */
-bool add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint32_t flags, uint64_t timeout_ms);
+bool add_callback (const char *type, const char *path, void *fn, bool value, void *data, uint64_t flags, uint64_t timeout_ms);
 bool delete_callback (const char *type, const char *path, void *fn, void *data);
 
 /* Tests */
