@@ -80,10 +80,10 @@ static cb_info_t *
 update_callback (struct callback_node *list, const char *guid, const char *value)
 {
     cb_info_t *cb;
-    uint64_t ns, pid, callback, hash;
+    uint64_t ns, pid, callback, flags, hash;
 
     /* Parse callback info from the encoded guid */
-    if (sscanf (guid, APTERYX_GUID_FORMAT, &ns, &pid, &callback, &hash) != 4)
+    if (sscanf (guid, APTERYX_GUID_FORMAT, &ns, &pid, &callback, &flags, &hash) != 5)
     {
         ERROR ("Invalid GUID (%s)\n", guid ? : "NULL");
         return NULL;
@@ -116,7 +116,7 @@ update_callback (struct callback_node *list, const char *guid, const char *value
             cb_disable (cb);
             cb_release (cb);
         }
-        cb = cb_create (list, guid, value, pid, callback, ns);
+        cb = cb_create (list, guid, value, pid, callback, ns, flags);
 
         /* This will either replace the entry removed above, or add a new one. */
         pthread_rwlock_wrlock (&guid_lock);
@@ -417,55 +417,55 @@ config_init (void)
 
     /* Debug set */
     cb = cb_create (watch_list, "debug", APTERYX_DEBUG_PATH,
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_debug_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_debug_set, 0, 0);
     cb_release (cb);
 
     /* Counters */
     cb = cb_create (index_list, "counters", APTERYX_COUNTERS "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_index, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_index, 0, 0);
     cb_release (cb);
     cb = cb_create (provide_list, "counters", APTERYX_COUNTERS "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_counters_get, 0, 0);
     cb_release (cb);
 
     /* Statistics */
     cb = cb_create (refresh_list, "statistics", APTERYX_STATISTICS "/*",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_statistics_refresh, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_statistics_refresh, 0, 0);
     cb_release (cb);
 
     /* Sockets */
     cb = cb_create (watch_list, "sockets", APTERYX_SOCKETS_PATH "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_sockets_set, 0, 0);
     cb_release (cb);
 
     /* Indexers */
     cb = cb_create (watch_list, "indexers", APTERYX_INDEXERS_PATH "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_indexers_set, 0, 0);
     cb_release (cb);
 
     /* Watchers */
     cb = cb_create (watch_list, "watchers", APTERYX_WATCHERS_PATH "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_watchers_set, 0, 0);
     cb_release (cb);
 
     /* Refeshers */
     cb = cb_create (watch_list, "refreshers", APTERYX_REFRESHERS_PATH "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_refreshers_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_refreshers_set, 0, 0);
     cb_release (cb);
 
     /* Providers */
     cb = cb_create (watch_list, "providers", APTERYX_PROVIDERS_PATH "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_providers_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_providers_set, 0, 0);
     cb_release (cb);
 
     /* Validators */
     cb = cb_create (watch_list, "validators", APTERYX_VALIDATORS_PATH "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_validators_set, 0, 0);
     cb_release (cb);
 
     /* Proxies */
     cb = cb_create (watch_list, "proxies", APTERYX_PROXIES_PATH "/",
-                    (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set, 0);
+                    (uint64_t) getpid (), (uint64_t) (size_t) handle_proxies_set, 0, 0);
     cb_release (cb);
     if (!cb)
     {

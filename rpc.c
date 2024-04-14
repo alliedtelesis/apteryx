@@ -317,6 +317,8 @@ request_cb (rpc_socket sock, rpc_id id, void *buffer, size_t len)
     rpc_msg_push (&work->msg, len);
     memcpy (work->msg.buffer + work->msg.offset, buffer, len);
     work->msg.length = len;
+    work->msg.ns = sock->ns;
+    work->msg.pid = sock->pid;
 
     /* Sneak a peak to see if we can respond now */
     if (*(unsigned char*)buffer == MODE_WATCH)

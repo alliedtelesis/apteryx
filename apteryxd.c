@@ -362,7 +362,7 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
 }
 
 static void
-notify_watchers (GList *paths, GList *values, bool ack)
+notify_watchers (GList *paths, GList *values, bool ack, uint64_t ns, uint64_t pid)
 {
     GList *common_watchers = NULL;
     GList *used_watchers = NULL;
@@ -382,7 +382,9 @@ notify_watchers (GList *paths, GList *values, bool ack)
             for (iter = common_watchers; iter; iter = g_list_next (iter))
             {
                 cb_info_t *watcher = iter->data;
-
+                /* Skip watchers that don't want to be notified for their own sets */
+                if ((watcher->flags & WATCH_F_MASK_MYSELF) && watcher->ns == ns && watcher->id == pid)
+                    continue;
                 if (watcher->id != getpid ())
                 {
                     send_watch_notification (watcher, paths, values, ack);
@@ -422,6 +424,9 @@ notify_watchers (GList *paths, GList *values, bool ack)
                         cb (path, value);
                     continue;
                 }
+                /* Skip watchers that don't want to be notified for their own sets */
+                if ((watcher->flags & WATCH_F_MASK_MYSELF) && watcher->ns == ns && watcher->id == pid)
+                    continue;
                 GList *watch_paths = g_list_append(NULL, (void *) path);
                 GList *watch_values = g_list_append(NULL, (void *) value);
                 send_watch_notification (watcher, watch_paths, watch_values, ack);
@@ -1273,7 +1278,7 @@ handle_set (rpc_message msg, bool ack)
                 GList *wpaths = g_list_append (NULL, (gpointer) path);
                 GList *wvalues = g_list_append (NULL, (gpointer) value);
                 GList *next;
-                notify_watchers (wpaths, wvalues, ack);
+                notify_watchers (wpaths, wvalues, ack, msg->ns, msg->pid);
                 g_list_free (wpaths);
                 g_list_free (wvalues);
 
@@ -1342,7 +1347,7 @@ exit:
         /* Notify watchers, if any are present */
         if (config_tree_has_watchers (root_path))
         {
-            notify_watchers (lists.paths, lists.values, ack);
+            notify_watchers (lists.paths, lists.values, ack, msg->ns, msg->pid);
         }
     }
 
@@ -2356,7 +2361,7 @@ handle_prune (rpc_message msg)
     if (validation_result >= 0)
     {
         /* Call watchers for each pruned path */
-        notify_watchers (paths, NULL, false);
+        notify_watchers (paths, NULL, false, msg->ns, msg->pid);
     }
 
     /* Release validation lock - this is a sensitive value */
