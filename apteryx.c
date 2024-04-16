@@ -1109,7 +1109,11 @@ apteryx_path_node (GNode *node, const char *path)
     char *node_name;
     size_t node_name_len;
 
-    ASSERT (node != NULL && path != NULL, return false, "PATH_NODE: Invalid parameters\n");
+    ASSERT (path != NULL, return NULL, "PATH_NODE: Invalid parameters\n");
+
+    /* Common practice to try to find a path in an empty tree */
+    if (node == NULL)
+        return NULL;
 
     /* Check path */
     path = validate_path (path, NULL);
