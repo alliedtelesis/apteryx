@@ -78,7 +78,7 @@ dump_sigset_t (sigset_t *set)
         if (sigismember(set, i+3)) x |= 4;
         if (sigismember(set, i+4)) x |= 8;
         printf ("%x", x);
-    } while (i >= 4); 
+    } while (i >= 4);
     printf ("\n");
 }
 
@@ -8035,6 +8035,121 @@ test_perf_set_tree_50000 ()
 exit:
     apteryx_free_tree (root);
     CU_ASSERT (apteryx_prune (path));
+
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+
+void
+test_perf_set_tree_50000_watched ()
+{
+    const char *path = TEST_PATH"/interfaces/eth0";
+    char value[32];
+    GNode *root, *node;
+    uint64_t start, time;
+    int count = 50000;
+    int i;
+    bool res;
+
+    apteryx_watch (path, test_watch_callback);
+
+    root = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    node = APTERYX_NODE (root, strdup ("interfaces"));
+    node = APTERYX_NODE (node, strdup ("eth0"));
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        APTERYX_LEAF (node, strdup (value), strdup (value));
+    }
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("%"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+exit:
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_prune (path));
+    apteryx_unwatch (path, test_watch_callback);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_perf_set_tree_150000_watched ()
+{
+    const char *path = TEST_PATH"/entities/large";
+    char value[32];
+    GNode *root, *node;
+    uint64_t start, time;
+    int count = 2000;
+    int i;
+    bool res;
+
+    root = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    node = APTERYX_NODE (root, strdup ("entities"));
+    node = APTERYX_NODE (node, strdup ("large"));
+    GNode *subnets = APTERYX_NODE (node, strdup ("subnets"));
+    GNode *full = APTERYX_NODE (node, strdup ("subnets-full"));
+    for (i=0; i<count; i++)
+    {
+        sprintf (value, "value%d", i);
+        APTERYX_LEAF (subnets, strdup (value), strdup (value));
+        APTERYX_LEAF_INT (full, "one", 1);
+        APTERYX_LEAF_INT (full, "two", 2);
+        APTERYX_LEAF_INT (full, "three", 3);
+        APTERYX_LEAF_INT (full, "four", 4);
+    }
+
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("\nSet with no watch:       %10"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_prune (path)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("\nPrune with no watch:     %10"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+    apteryx_watch (TEST_PATH"/entities/large/*", test_watch_callback);
+
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("\nSet with single watch:   %10"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_prune (path)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("\nPrune with single watch: %10"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+
+    apteryx_unwatch (TEST_PATH"/entities/large/*", test_watch_callback);
+
+    apteryx_watch_tree (TEST_PATH"/entities/large/*", test_watch_tree_callback);
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_set_tree (root)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("\nSet with watch tree:     %10"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+
+    start = get_time_us ();
+    CU_ASSERT ((res = apteryx_prune (path)));
+    if (!res)
+        goto exit;
+    time = (get_time_us () - start);
+    printf ("\nPrune with watch tree:   %10"PRIu64"us(%"PRIu64"us) ... ", time, time/count);
+
+    apteryx_unwatch_tree (TEST_PATH"/entities/large/*", test_watch_tree_callback);
+exit:
+    CU_ASSERT (apteryx_prune (path));
+
+    apteryx_free_tree (root);
+
     CU_ASSERT (assert_apteryx_empty ());
 }
 
@@ -10616,6 +10731,8 @@ static CU_TestInfo tests_performance[] = {
     { "performance: set tree 50", test_perf_set_tree },
     { "performance: set tree 5000", test_perf_set_tree_5000 },
     { "performance: set tree 50000", test_perf_set_tree_50000 },
+    { "performance: set tree 50000 watched", test_perf_set_tree_50000_watched },
+    { "performance: set tree 150000 watched", test_perf_set_tree_150000_watched },
     { "performance: set tree real", test_perf_set_tree_real },
     { "performance: get", test_perf_get },
     { "performance: get(tcp)", test_perf_tcp_get },
