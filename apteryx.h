@@ -229,6 +229,8 @@ uint64_t apteryx_timestamp (const char *path);
 /**
  * Get the memory usage in bytes of a given path
  * @param path path to get the memory usage for
+ *             '.'  = total memory in use (mi.uordblks + mi.hblkhd)
+ *             '..' = total memory allocated (mi.arena + mi.hblkhd)
  * @return 0 if the path doesn't exist, memory usage in bytes otherwise
  */
 uint64_t apteryx_memuse (const char *path);

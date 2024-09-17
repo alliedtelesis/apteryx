@@ -26,6 +26,7 @@
 #include <sys/poll.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
+#include <malloc.h>
 #include "apteryx.h"
 #include "internal.h"
 
@@ -2436,7 +2437,20 @@ handle_memuse (rpc_message msg)
     INC_COUNTER (counters.memuse);
 
     /* Lookup value */
-    value = db_memuse (path);
+    if (path[0] == '.' && path[1] == '\0')
+    {
+        /* Total memory in use */
+        struct mallinfo2 mi = mallinfo2 ();
+        value = (unsigned int) (mi.uordblks) + (unsigned int) (mi.hblkhd);
+    }
+    else if (path[0] == '.' && path[1] == '.' && path[2] == '\0')
+    {
+        /* Total memory allocated */
+        struct mallinfo2 mi = mallinfo2 ();
+        value = (unsigned int) (mi.arena) + (unsigned int) (mi.hblkhd);
+    }
+    else
+        value = db_memuse (path);
 
     /* Send result */
     DEBUG ("     = %"PRIu64"\n", value);
