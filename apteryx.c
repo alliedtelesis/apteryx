@@ -258,13 +258,69 @@ dw_add (uint64_t ref, void *fn, GNode *root, void *data, guint timeout_ms)
     }
 }
 
+static int
+handle_watch_path (GNode *leaf, gpointer data)
+{
+    cb_t *cb = data;
+    char *path = apteryx_node_path (leaf->parent);
+    const char *value = leaf->data;
+    DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, cb->ref);
+
+    if (value && value[0] == '\0')
+        value = NULL;
+    if (cb->data)
+        ((void*(*)(const char*, const char*, void*)) cb->fn) (path, value, cb->data);
+    else
+        ((void*(*)(const char*, const char*)) cb->fn) (path, value);
+    g_free (path);
+    return false;
+}
+
+static int
+replace_null_with_empty_string (GNode *leaf, gpointer _unused)
+{
+    if (leaf->data == NULL)
+        leaf->data = g_strdup("");
+    return false;
+}
+
+static GNode *
+break_up_trunk(GNode *query)
+{
+    if (strcmp(query->data, "") == 0)
+        return query;
+
+    gchar *broken_key = g_strdup(query->data);
+    GNode *old_root = query;
+    GNode *new_root = APTERYX_NODE (NULL, g_strdup(""));
+    query = new_root;
+    char *next = broken_key;
+    gchar *next_key;
+
+    do
+    {
+        next_key = g_strdup(next + 1);
+        if (strchr(next_key, '/'))
+            *strchr(next_key, '/') = '\0';
+        new_root = g_node_append_data(new_root, next_key);
+        next = strchr(next + 1, '/');
+    } while (next);
+
+    g_node_prepend(new_root->parent, old_root);
+    g_free(old_root->data);
+    old_root->data = next_key;
+    g_node_destroy(new_root);
+    g_free(broken_key);
+
+    return query;
+}
+
 static bool
 handle_watch (rpc_message msg)
 {
     cb_t cb;
     uint64_t ref;
-    const char *path;
-    const char *value;
+    GNode *root = NULL;
 
     ref = rpc_msg_decode_uint64 (msg);
     if (!find_callback (ref, &cb) || cb.fn == NULL)
@@ -275,39 +331,23 @@ handle_watch (rpc_message msg)
         return true;
     }
 
+    root = break_up_trunk(rpc_msg_decode_tree (msg));
+    /* Replace NULL end nodes with "" */
+    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, replace_null_with_empty_string, NULL);
+
     if (cb.flags == 0)
     {
-        path = rpc_msg_decode_string (msg);
-        value = rpc_msg_decode_string (msg);
-        while (path && value)
-        {
-            DEBUG ("WATCH CB \"%s\" = \"%s\" (0x%"PRIx64")\n", path, value, ref);
-            if (value[0] == '\0')
-                value = NULL;
-            if (cb.data)
-                ((void*(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
-            else
-                ((void*(*)(const char*, const char*)) cb.fn) (path, value);
-            path = rpc_msg_decode_string (msg);
-            value = rpc_msg_decode_string (msg);
-        }
+        g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, handle_watch_path, &cb);
+        apteryx_free_tree (root);
     }
     else
     {
-        GNode *root = g_node_new (strdup ("/"));
-        path = rpc_msg_decode_string (msg);
-        while (path)
-        {
-            value = rpc_msg_decode_string (msg);
-            apteryx_path_to_node (root, path, value);
-            path = rpc_msg_decode_string (msg);
-        }
-
         /* Delay the callback if requested to */
         if (cb.timeout_ms)
         {
             /* Delay the watch but pretend we have already done it */
             dw_add (ref, cb.fn, root, cb.data, cb.timeout_ms);
+            /* The memory for root is maintained on the delayed work */
         }
         else
         {
@@ -691,12 +731,12 @@ apteryx_set_full (const char *path, const char *value, uint64_t ts, bool ack)
     }
     rpc_msg_encode_uint8 (&msg, ack ? MODE_SET_WITH_ACK : MODE_SET);
     rpc_msg_encode_uint64 (&msg, ts);
-    rpc_msg_encode_uint8 (&msg, rpc_value);
-    rpc_msg_encode_string (&msg, path);
-    if (value)
-        rpc_msg_encode_string (&msg, value);
-    else
-        rpc_msg_encode_string (&msg, "");
+    /* The set RPC is always done as a tree, so turn this path / value into a tree. */
+    GNode *root = APTERYX_NODE (NULL, g_strdup (""));
+    apteryx_path_to_node (root, path, value ?: "");
+    rpc_msg_encode_tree (&msg, root);
+    apteryx_free_tree (root);
+
     if (!rpc_msg_send (rpc_client, &msg))
     {
         ERROR ("SET: No response Path(%s)\n", path);
@@ -1128,7 +1168,7 @@ apteryx_path_node (GNode *node, const char *path)
     if (node_name != NULL)
     {
         /* Passed node may not be a root node, skip past path slash */
-        if (node_name[0] != '/')
+        if (node_name[0] != '/' && node_name[0] != '\0')
         {
             path++;
         }

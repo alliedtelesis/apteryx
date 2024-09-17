@@ -9892,7 +9892,7 @@ test_lua_watch_tree (void)
             "function test_watch (t)                                        "
             "    tree = t                                                   "
             "end                                                          \n"
-            "apteryx.watch_tree('"TEST_PATH"/t', test_watch)              \n"
+            "apteryx.watch_tree('"TEST_PATH"/t/*', test_watch)              \n"
             "apteryx.process()                                            \n"
             "t={a='a', b={a='ba', b='bb'}, c = 'c'}                       \n"
             "apteryx.set_tree('"TEST_PATH"/t', t);                        \n"
@@ -9901,7 +9901,7 @@ test_lua_watch_tree (void)
             "t2 = tree['test'].t                                          \n"
             "assert (#t2 == #t and #t2.b == #t.b)                         \n"
             "assert (t2.a == t.a and t2.b.a == t.b.a and t2.c == t.c)     \n"
-            "apteryx.unwatch('"TEST_PATH"/t', test_watch)                 \n"
+            "apteryx.unwatch('"TEST_PATH"/t/*', test_watch)                 \n"
             "apteryx.prune('"TEST_PATH"/t')                               \n"
             "apteryx.process(false)                                       \n"
     ));
