@@ -17,6 +17,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
+
+#include "apteryx.h"
 #include "internal.h"
 
 /* An RPC instance.
@@ -51,8 +53,6 @@ struct rpc_instance_s {
     /* Clients */
     GHashTable *clients;
 };
-
-#include "apteryx.h"
 
 /* Garbage collection timer */
 #define RPC_GC_TIMEOUT_US (10 * RPC_TIMEOUT_US)

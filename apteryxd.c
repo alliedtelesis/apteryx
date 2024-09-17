@@ -254,64 +254,11 @@ validate_set (const char *path, const char *value)
     return result < 0 ? result : 1;
 }
 
-/* For a list of paths find the common starting
- * path including the trailing back-slash */
-static gchar *
-find_common_path (GList *paths)
-{
-    gchar *cpath = NULL;
-    GList *iter;
-
-    for (iter = g_list_first (paths); iter; iter = g_list_next (iter))
-    {
-        gchar *path = (gchar *) iter->data;
-        if (!path)
-            continue;
-        if (cpath == NULL)
-            cpath = g_strconcat (path, "/", NULL);
-        else
-        {
-            int last_slash = 0;
-            int i = 0;
-            while (1)
-            {
-                if (cpath[i] == '\0')
-                    break;
-                if (cpath[i] != path[i])
-                {
-                    g_free (cpath);
-                    cpath = g_strndup (path, last_slash + 1);
-                    break;
-                }
-                if (cpath[i] == '/')
-                    last_slash = i;
-                i++;
-            }
-        }
-    }
-    if (cpath && cpath[0] == '/' && cpath[1] == '\0')
-    {
-        g_free (cpath);
-        cpath = NULL;
-    }
-    return cpath;
-}
-
-static gint
-compare_watcher (cb_info_t *a, cb_info_t *b)
-{
-    if (a->id == b->id && a->ref == b->ref)
-        return 0;
-    return -1;
-}
-
 static void
-send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ack)
+send_watch_notification (cb_info_t *watcher, GNode *root, int ack)
 {
     rpc_client rpc_client;
     rpc_message_t msg = {};
-    GList *ipath;
-    GList *ivalue;
     uint64_t start, duration;
     bool res;
 
@@ -328,16 +275,8 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
     }
     rpc_msg_encode_uint8 (&msg, ack ? MODE_WATCH_WITH_ACK : MODE_WATCH);
     rpc_msg_encode_uint64 (&msg, watcher->ref);
-    for (ipath = g_list_first (paths), ivalue = g_list_first (values);
-         ipath;
-         ipath = g_list_next (ipath), ivalue = g_list_next (ivalue))
-    {
-        rpc_msg_encode_string (&msg, (char *) ipath->data);
-        if (ivalue && ivalue->data)
-            rpc_msg_encode_string (&msg, (char *) ivalue->data);
-        else
-            rpc_msg_encode_string (&msg, "");
-    }
+    rpc_msg_encode_tree (&msg, root);
+
     start = get_time_us ();
     res = rpc_msg_send (rpc_client, &msg);
     duration = get_time_us () - start;
@@ -362,85 +301,48 @@ send_watch_notification (cb_info_t *watcher, GList *paths, GList *values, int ac
     INC_COUNTER (watcher->count);
 }
 
-static void
-notify_watchers (GList *paths, GList *values, bool ack, uint64_t ns, uint64_t pid)
+static int
+local_callback (GNode *node, gpointer _cb)
 {
-    GList *common_watchers = NULL;
-    GList *used_watchers = NULL;
-    gchar *cpath = NULL;
-    GList *ipath;
-    GList *ivalue;
+    apteryx_watch_callback cb = _cb;
 
-    /* Try to send all values at once if they have a common path */
-    if (g_list_length (paths) > 1)
-        cpath = find_common_path (paths);
-    if (cpath)
+    char *path = apteryx_node_path(node->parent);
+    if (!node->data || ((char*)node->data)[0] == '\0')
+        cb (path, NULL);
+    else
+        cb (path, node->data);
+    g_free(path);
+    return true;
+}
+
+static void
+notify_watchers (GNode *root, bool ack, uint64_t ns, uint64_t pid)
+{
+    if (!root)
+        return;
+
+    GList *watchers = config_get_watchers_tree(root);
+    for (GList *iter = watchers; iter; iter = g_list_next (iter))
     {
-        common_watchers = config_get_watchers (cpath);
-        if (common_watchers)
-        {
-            GList *iter = NULL;
-            for (iter = common_watchers; iter; iter = g_list_next (iter))
-            {
-                cb_info_t *watcher = iter->data;
-                /* Skip watchers that don't want to be notified for their own sets */
-                if ((watcher->flags & WATCH_F_MASK_MYSELF) && watcher->ns == ns && watcher->id == pid)
-                    continue;
-                if (watcher->id != getpid ())
-                {
-                    send_watch_notification (watcher, paths, values, ack);
-                    /* Remember so we dont use this one again */
-                    used_watchers = g_list_append (used_watchers, watcher);
-                }
-            }
-        }
-        g_free (cpath);
-    }
+        struct cb_tree_info *watcher = iter->data;
+        cb_info_t *watcher_info = watcher->cb;
 
-    /* Find all watchers that did not match the common path */
-    ipath = g_list_first (paths);
-    ivalue = values ? g_list_first (values) : NULL;
-    while (ipath)
-    {
-        gchar *path = (gchar *) ipath->data;
-        gchar *value = ivalue ? (gchar *) ivalue->data : NULL;
-        GList *watchers;
-
-        if (path && (watchers = config_get_watchers (path)))
+        if (watcher_info->id == getpid ())
         {
-            GList *iter;
-            for (iter = watchers; iter; iter = g_list_next (iter))
-            {
-                cb_info_t *watcher = iter->data;
-                if (g_list_find_custom (used_watchers, iter->data, (GCompareFunc) compare_watcher))
-                    continue;
-                if (watcher->id == getpid ())
-                {
-                    apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher->ref;
-                    DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
-                            watcher->path, watcher->id, watcher->ref);
-                    if (value && (value[0] == '\0'))
-                        cb (path, NULL);
-                    else
-                        cb (path, value);
-                    continue;
-                }
-                /* Skip watchers that don't want to be notified for their own sets */
-                if ((watcher->flags & WATCH_F_MASK_MYSELF) && watcher->ns == ns && watcher->id == pid)
-                    continue;
-                GList *watch_paths = g_list_append(NULL, (void *) path);
-                GList *watch_values = g_list_append(NULL, (void *) value);
-                send_watch_notification (watcher, watch_paths, watch_values, ack);
-                g_list_free (watch_paths);
-                g_list_free (watch_values);
-            }
-            g_list_free_full (watchers, (GDestroyNotify) cb_release);
+            apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher_info->ref;
+            DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
+                    watcher_info->path, watcher_info->id, watcher_info->ref);
+            g_node_traverse (watcher->data, G_PRE_ORDER, G_TRAVERSE_LEAVES, -1, local_callback, cb);
+            continue;
         }
-        ipath = g_list_next (ipath);
-        ivalue = ivalue ? g_list_next (ivalue) : NULL;
+        /* Skip watchers that don't want to be notified for their own sets */
+        if ((watcher_info->flags & WATCH_F_MASK_MYSELF) && watcher_info->ns == ns && watcher_info->id == pid)
+        {
+            continue;
+        }
+        send_watch_notification (watcher_info, watcher->data, ack);
     }
-    g_list_free (used_watchers);
-    g_list_free_full (common_watchers, (GDestroyNotify) cb_release);
+    g_list_free_full (watchers, (GDestroyNotify) cb_tree_release);
 }
 
 static char *
@@ -1246,14 +1148,13 @@ handle_set (rpc_message msg, bool ack)
     /* Figure out if we need the lists for checking callbacks */
     _node_to_path(root, &root_path);
     if (config_tree_has_proxies(root_path) ||
-        config_tree_has_validators(root_path) ||
-        config_tree_has_watchers(root_path))
-        {
-            /* If we have to search for any proxies / validators / watchers then build a list
-             * of paths + values.
-             */
-            g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
-        }
+        config_tree_has_validators(root_path))
+    {
+        /* If we have to search for any proxies / validators then build a list
+            * of paths + values.
+            */
+        g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
+    }
 
     INC_COUNTER (counters.set);
 
@@ -1263,7 +1164,7 @@ handle_set (rpc_message msg, bool ack)
         /* Proxy first */
         ipath = g_list_first (lists.paths);
         ivalue = g_list_first (lists.values);
-        while (ipath && ivalue)
+        for (ipath = g_list_first (lists.paths), ivalue = lists.values; ipath; ipath=ipath->next, ivalue = ivalue->next)
         {
             path = (const char *) ipath->data;
             value = (const char *) ivalue->data;
@@ -1271,40 +1172,26 @@ handle_set (rpc_message msg, bool ack)
                 value = NULL;
 
             proxy_result = proxy_set (path, value, ts);
-            if (proxy_result == 0)
+            if (proxy_result == 0 && root)
             {
                 /* Result success */
                 DEBUG ("SET: %s = %s proxied\n", path, value);
                 /* Call any watchers */
-                GList *wpaths = g_list_append (NULL, (gpointer) path);
-                GList *wvalues = g_list_append (NULL, (gpointer) value);
-                GList *next;
-                notify_watchers (wpaths, wvalues, ack, msg->ns, msg->pid);
-                g_list_free (wpaths);
-                g_list_free (wvalues);
+                GNode *proxy_tree = APTERYX_NODE(NULL, g_strdup(""));
+                apteryx_path_to_node(proxy_tree, path, value);
+                notify_watchers (proxy_tree, ack, msg->ns, msg->pid);
+                apteryx_free_tree(proxy_tree);
 
                 /* This value needs to be removed from the tree */
                 root = remove_node(root, path);
-
-                /* Safely remove from both lists as we dont need to do any more processing */
-                g_free(ipath->data);
-                g_free(ivalue->data);
-                next = g_list_next (ipath);
-                lists.paths = g_list_delete_link (lists.paths, ipath);
-                ipath = next;
-                next = g_list_next (ivalue);
-                lists.values = g_list_delete_link (lists.values, ivalue);
-                ivalue = next;
                 continue;
-              }
-              else if (proxy_result < 0)
-              {
-                  result = proxy_result;
-                  goto exit;
-              }
-              ipath = g_list_next (ipath);
-              ivalue = g_list_next (ivalue);
-          }
+            }
+            else if (proxy_result < 0)
+            {
+                result = proxy_result;
+                goto exit;
+            }
+        }
     }
 
     /* Validate, if there are any present */
@@ -1331,24 +1218,30 @@ handle_set (rpc_message msg, bool ack)
         }
     }
 
-    /* Set in the database */
-    pthread_rwlock_wrlock (&db_lock);
-    db_result = db_update_no_lock (root, ts);
-    if (!db_result)
+    if (root)
     {
-        DEBUG ("SET: tree rejected by DB (%" PRIu64 ")\n", ts);
-        result = -EBUSY;
+        /* Set in the database */
+        pthread_rwlock_wrlock (&db_lock);
+        db_result = db_update_no_lock (root, ts);
+        if (!db_result)
+        {
+            DEBUG ("SET: tree rejected by DB (%" PRIu64 ")\n", ts);
+            result = -EBUSY;
+        }
+        pthread_rwlock_unlock (&db_lock);
     }
-    pthread_rwlock_unlock (&db_lock);
+
 
 exit:
+    g_list_free_full (lists.paths, g_free);
+    g_list_free_full (lists.values, g_free);
     /* Return result and notify watchers */
     if (validation_result >= 0 && result == 0)
     {
         /* Notify watchers, if any are present */
         if (config_tree_has_watchers (root_path))
         {
-            notify_watchers (lists.paths, lists.values, ack, msg->ns, msg->pid);
+            notify_watchers (root, ack, msg->ns, msg->pid);
         }
     }
 
@@ -1363,8 +1256,6 @@ exit:
     /* Send result */
     rpc_msg_reset (msg);
     rpc_msg_encode_uint64 (msg, result);
-    g_list_free_full (lists.paths, g_free);
-    g_list_free_full (lists.values, g_free);
     g_free (root_path);
     apteryx_free_tree (root);
     return true;
@@ -1826,7 +1717,7 @@ handle_traverse (rpc_message msg)
             path = (char *) ipath->data;
             value = (char *) ivalue->data;
             /* Overwrite any database values with those from provide */
-            apteryx_path_to_node (root, path, value);
+            apteryx_path_to_node (root, path, g_strdup(value ?: ""));
         }
     }
 
@@ -1843,27 +1734,6 @@ handle_traverse (rpc_message msg)
     apteryx_free_tree (root);
 
     return true;
-}
-
-static void
-_search_paths (GList **paths, const char *path)
-{
-    GList *children, *iter;
-    char *value = NULL;
-    size_t vsize = 0;
-
-    children = db_search (path);
-    for (iter = children; iter; iter = g_list_next (iter))
-    {
-        const char *_path = (const char *) iter->data;
-        if (db_get (_path, (unsigned char**) &value, &vsize))
-        {
-            *paths = g_list_prepend (*paths, g_strdup (_path));
-            g_free (value);
-        }
-        _search_paths (paths, _path);
-    }
-    g_list_free_full (children, g_free);
 }
 
 static GNode *
@@ -2277,16 +2147,23 @@ done:
     return true;
 }
 
+static int
+set_to_null (GNode *node, gpointer _unused)
+{
+    if (node->data)
+        g_free (node->data);
+    node->data = NULL;
+    return false;
+}
+
 static bool
 handle_prune (rpc_message msg)
 {
     int32_t result = 0;
     const char *path;
-    GList *paths = NULL, *iter;
+    GList *paths = NULL;
     int32_t validation_result = 0;
     int validation_lock = 0;
-    char *value = NULL;
-    size_t vsize = 0;
 
     /* Parse the parameters */
     path = rpc_msg_decode_string (msg);
@@ -2313,26 +2190,34 @@ handle_prune (rpc_message msg)
     result = 0;
 
     /* Collect the list of deleted paths for notification */
-    if (db_get (path, (unsigned char**)&value, &vsize))
-    {
-        paths = g_list_prepend (paths, g_strdup (path));
-        g_free (value);
-    }
-    _search_paths (&paths, path);
+    GNode *root = db_get_all(path);
+
+    /* We are setting all these to NULL */
+    g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, set_to_null, NULL);
 
     /* Call validators for each pruned path to ensure the path can be set to NULL. */
-    for (iter = paths; iter; iter = g_list_next (iter))
+    if (config_tree_has_validators(path))
     {
-        const char *path = (const char *)iter->data;
-        validation_result = validate_set (path, NULL);
-        if (validation_result != 0)
-            validation_lock++;
-        if (validation_result < 0)
+        /* If we have to search for any proxies / validators / watchers then build a list
+         * of paths + values.
+         */
+        key_value_lists lists = { NULL, NULL };
+        g_node_traverse (root, G_PRE_ORDER, G_TRAVERSE_NON_LEAFS, -1, _gather_values, &lists);
+        for (GList *iter = lists.paths; iter; iter = g_list_next (iter))
         {
-            DEBUG ("PRUNE: %s refused by validate\n", path);
-            result = validation_result;
-            break;
+            const char *v_path = (const char *)iter->data;
+            validation_result = validate_set (v_path, NULL);
+            if (validation_result != 0)
+                validation_lock++;
+            if (validation_result < 0)
+            {
+                DEBUG ("PRUNE: %s refused by validate\n", v_path);
+                result = validation_result;
+                break;
+            }
         }
+        g_list_free_full (lists.paths, g_free);
+        g_list_free_full (lists.values, g_free);
     }
 
     /* Only do the prune if it is valid to do so. */
@@ -2362,7 +2247,7 @@ handle_prune (rpc_message msg)
     if (validation_result >= 0)
     {
         /* Call watchers for each pruned path */
-        notify_watchers (paths, NULL, false, msg->ns, msg->pid);
+        notify_watchers (root, false, msg->ns, msg->pid);
     }
 
     /* Release validation lock - this is a sensitive value */
@@ -2376,6 +2261,7 @@ handle_prune (rpc_message msg)
     rpc_msg_reset (msg);
     rpc_msg_encode_uint64 (msg, (uint64_t) result);
     g_list_free_full (paths, g_free);
+    apteryx_free_tree (root);
     return true;
 }
 

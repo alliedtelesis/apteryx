@@ -318,6 +318,10 @@ GList *config_get_proxies (const char *path);
 GList *config_get_watchers (const char *path);
 GList *config_get_validators (const char *path);
 
+/* Returns a list of cb_tree_t*/
+GList *config_get_watchers_tree (GNode *root);
+GList *config_get_validators_tree (GNode *root);
+
 bool config_tree_has_refreshers (const char *path);
 bool config_tree_has_providers (const char *path);
 bool config_tree_has_indexers (const char *path);
@@ -332,13 +336,18 @@ cb_info_t *cb_create (struct callback_node *list, const char *guid, const char *
 void cb_disable (cb_info_t *cb);
 void cb_take (cb_info_t *cb);
 void cb_release (cb_info_t *cb);
+void cb_tree_release (struct cb_tree_info *cb);
 #define CB_MATCH_PART       (1<<0)
 #define CB_MATCH_EXACT      (1<<1)
 #define CB_MATCH_WILD       (1<<2)
 #define CB_MATCH_CHILD      (1<<3)
 #define CB_MATCH_WILD_PATH  (1<<4)
 #define CB_PATH_MATCH_PART  (1<<5)
+/* Returns a list of cb_info_t to call for this path. */
 GList *cb_match (struct callback_node *list, const char *path);
+
+/* Returns a list of cb_tree structures to call cb-> with included */
+GList *cb_match_tree (struct callback_node *list, GNode *root);
 bool cb_exists (struct callback_node *list, const char *path);
 /* Returns a list of paths which have callbacks further down. */
 GList *cb_search (struct callback_node *node, const char *path);

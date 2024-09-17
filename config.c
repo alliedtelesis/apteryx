@@ -277,7 +277,7 @@ _statistics_fn (gpointer data, gpointer user_data)
     cb_info_t *cb = (cb_info_t *)data;
     char *path, *value;
     int avg = 0;
-    
+
     path = g_strdup_printf (APTERYX_STATISTICS "/%s/%s", (char *) user_data, cb->guid);
     if (cb->count)
         avg = (int)(GET_COUNTER(cb->total)/GET_COUNTER(cb->count));
@@ -360,9 +360,23 @@ config_get_watchers (const char *path)
 }
 
 GList *
+config_get_watchers_tree (GNode *root)
+{
+    GList *results = cb_match_tree (watch_list, root);
+    return results;
+}
+
+GList *
 config_get_validators (const char *path)
 {
     return cb_match (validation_list, path);
+}
+
+GList *
+config_get_validators_tree (GNode *root)
+{
+    GList *results = cb_match_tree (validation_list, root);
+    return results;
 }
 
 bool

@@ -192,7 +192,7 @@ _lua_apteryx_tree2dict (lua_State *L, GNode *this)
     /* is this a leaf? */
     if (APTERYX_HAS_VALUE (this))
     {
-        lua_pushstring (L, APTERYX_VALUE (this));
+        lua_pushstring (L, APTERYX_VALUE (this) ?: "");
     }
     else
     {
@@ -687,7 +687,6 @@ lua_do_watch_tree (GNode *tree, lua_callback_info *cb_info)
     if (!callback_valid (cb_info))
     {
         ERROR ("Watch: cb_info released already\n");
-        apteryx_free_tree (tree);
         return false;
     }
 
@@ -707,7 +706,6 @@ lua_do_watch_tree (GNode *tree, lua_callback_info *cb_info)
         }
 
         lua_apteryx_tree2dict (L, tree);
-        apteryx_free_tree (tree);
         res = lua_pcall (L, 1, 0, 0);
         if (res != 0)
         {
@@ -1239,7 +1237,6 @@ luaopen_libapteryx (lua_State *L)
 #elif LUA_VERSION_NUM == 503
     lua_gc (L, LUA_GCSETPAUSE, 150);
 #endif /* LUA_VERSION_NUM */
-    
     /* Return the Apteryx object on the stack */
     luaL_newmetatable (L, "apteryx");
     luaL_setfuncs (L, _apteryx_fns, 0);
