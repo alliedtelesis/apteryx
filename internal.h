@@ -172,6 +172,12 @@ typedef struct _cb_info_t
     pthread_mutex_t lock;
 } cb_info_t;
 
+struct cb_tree_info
+{
+    cb_info_t *cb;
+    GNode *data;
+};
+
 #define X_FIELDS \
     X(uint32_t, set) \
     X(uint32_t, set_invalid) \

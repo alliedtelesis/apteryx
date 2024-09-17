@@ -23,6 +23,7 @@
 #include <CUnit/Basic.h>
 #endif
 #include "hashtree.h"
+#include "apteryx.h"
 
 struct callback_node
 {
@@ -181,6 +182,12 @@ cb_disable (cb_info_t *cb)
 }
 
 void
+cb_tree_disable (struct cb_tree_info *cb)
+{
+    cb_disable(cb->cb);
+}
+
+void
 cb_release_no_lock (cb_info_t *cb)
 {
     if (!cb)
@@ -203,6 +210,18 @@ cb_release (cb_info_t *cb)
     pthread_mutex_unlock (&tree_lock);
 }
 
+void
+cb_tree_release (struct cb_tree_info *cb)
+{
+    pthread_mutex_lock (&tree_lock);
+    cb_release_no_lock (cb->cb);
+    pthread_mutex_unlock (&tree_lock);
+    if (cb->data)
+    {
+        apteryx_free_tree(cb->data);
+    }
+    g_free (cb);
+}
 
 static GList *
 cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const char *path)
@@ -458,6 +477,151 @@ cb_match (struct callback_node *list, const char *path)
     g_list_foreach (matches, (GFunc) cb_ref, NULL);
     pthread_mutex_unlock (&tree_lock);
     return matches;
+}
+
+static gpointer
+node_copy (gconstpointer data, gpointer _unused)
+{
+    return data ? g_strdup ((char*)data) : NULL;
+}
+
+static GNode *
+deep_copy (GNode *node, bool non_leaves)
+{
+    /* First copy down*/
+    GNode *root;
+
+    if (non_leaves)
+    {
+        root = g_node_copy_deep (node, node_copy, NULL);
+    }
+    else
+    {
+        root = g_node_new ((char*) g_strdup (node->data));
+        for (GNode *child = node->children; child; child = child->next)
+        {
+            if (APTERYX_HAS_VALUE(child))
+                g_node_prepend (root, g_node_copy_deep (child, node_copy, NULL));
+        }
+    }
+
+    /* Then the single path back to the root */
+    while (node->parent)
+    {
+        GNode *next_ancestor = g_node_new (g_strdup ((char*)node->parent->data));
+        g_node_prepend (next_ancestor, root);
+        root = next_ancestor;
+        node = node->parent;
+    }
+    return root;
+}
+
+static struct cb_tree_info *
+alloc_cb_tree (cb_info_t *cb, GNode *data, bool non_leaves)
+{
+    struct cb_tree_info *c = g_malloc0 (sizeof(*c));
+    cb_take(cb);
+    c->cb = cb;
+    c->data = deep_copy(data, non_leaves);
+    return c;
+}
+
+GList *
+cb_match_tree (struct callback_node *callbacks, GNode *root)
+{
+    GList *callbacks_to_call = NULL;
+    struct callback_node *next_level;
+
+    if (callbacks == NULL)
+    {
+        return NULL;
+    }
+
+    /* We need to break a compound root up to match nicely. */
+    if (root->data && strchr ((char*)root->data, '/'))
+    {
+        void *old_root_data = root->data;
+        GNode *new_root = APTERYX_NODE(NULL, g_strdup (""));
+
+        GNode *last_bit = apteryx_path_to_node (new_root, root->data, NULL);
+
+        last_bit->children = root->children;
+        root->data = last_bit->data;
+        root->parent = last_bit->parent;
+
+        callbacks_to_call = cb_match_tree (callbacks, new_root);
+
+        last_bit->children = NULL;
+        root->data = old_root_data;
+        root->parent = NULL;
+
+        apteryx_free_tree (new_root);
+        return callbacks_to_call;
+    }
+
+    /* Find a wildcard match for matching a whole tree */
+    struct callback_node *wildcard_match = (struct callback_node*) hashtree_path_to_node (&callbacks->hashtree_node, "*");
+    for (GList *iter = wildcard_match ? wildcard_match->following : NULL;
+         iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = alloc_cb_tree (iter->data, root, true);
+        callbacks_to_call = g_list_prepend (callbacks_to_call, c);
+    }
+
+    /* Get the next step down the tree */
+    for (GNode *child = root->children; child; child = child->next)
+    {
+        if (G_NODE_IS_LEAF(child))
+        {
+            for (GList *iter = callbacks->exact; iter; iter = iter->next)
+            {
+                struct cb_tree_info *c = alloc_cb_tree (iter->data, root, true);
+                callbacks_to_call = g_list_prepend (callbacks_to_call, c);
+            }
+        }
+        else
+        {
+            /* Follow down a key match */
+            next_level = (struct callback_node*) hashtree_path_to_node (&callbacks->hashtree_node, child->data);
+            if (next_level)
+                callbacks_to_call = g_list_concat (cb_match_tree (next_level, child), callbacks_to_call);
+
+            /* Follow down a wildcard match */
+            next_level = (struct callback_node*) hashtree_path_to_node (&callbacks->hashtree_node, "*");
+            if (next_level)
+            {
+                callbacks_to_call = g_list_concat (cb_match_tree (next_level, child), callbacks_to_call);
+            }
+        }
+    }
+
+    /* Check to see if there are any directory level values in this tree
+     */
+    if (callbacks->directory)
+    {
+        /* Add all directory matches for this tree */
+        bool has_leaf_child = false;
+        for (GNode *key = root->children; key && !has_leaf_child; key = key->next)
+        {
+            for (GNode *value = key->children; value && !has_leaf_child; value = value->next)
+            {
+                if (G_NODE_IS_LEAF(value))
+                {
+                    has_leaf_child = true;
+                }
+            }
+        }
+        if (has_leaf_child)
+        {
+            for (GList *iter = callbacks->directory; iter; iter = iter->next)
+            {
+                struct cb_tree_info *c = alloc_cb_tree (iter->data, root, false);
+                callbacks_to_call = g_list_prepend (callbacks_to_call, c);
+            }
+        }
+    }
+
+    return callbacks_to_call;
 }
 
 /* Finds if a given path has any callbacks from this tree under it */
@@ -849,6 +1013,237 @@ test_cb_exist_locking ()
     cb_shutdown (test_list);
 }
 
+void
+test_cb_match_tree ()
+{
+    GList *matches = NULL;
+    cb_info_t *cb = NULL;
+    GNode *root;
+    struct callback_node *watches_list = NULL;
+
+    /* Wildcard in path */
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/*/app", 1, 0, 0, 0);
+    cb_release (cb);
+
+    /* Simple match on single value*/
+    root = APTERYX_NODE(NULL, g_strdup(""));
+    apteryx_path_to_node (root, "/firewall/rules/10/app", "google");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 1);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
+    }
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    /* Add another 2 nodes, should have three callbacks */
+    apteryx_path_to_node (root, "/firewall/rules/20/app", "facebook");
+    apteryx_path_to_node (root, "/firewall/rules/30/app", "football");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 3);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
+    }
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    /* Add another 2 nodes that should not match, should have three callbacks */
+    apteryx_path_to_node (root, "/firewall/rules/20/zone", "united-states");
+    apteryx_path_to_node (root, "/firewall/settings/protect", "1");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 3);
+
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+    cb_shutdown (watches_list);
+    watches_list = NULL;
+
+    apteryx_free_tree (root);
+    root = APTERYX_NODE(NULL, g_strdup ("/firewall"));
+    apteryx_path_to_node (root, "/firewall/rule", "10");
+
+    /* Should miss */
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (matches == NULL);
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/*/app", 1, 0, 0, 0);
+    cb_release (cb);
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (matches == NULL);
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+    cb_shutdown (watches_list);
+
+    /* directory */
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/10/", 2, 0, 0, 0);
+    cb_release (cb);
+    apteryx_free_tree (root);
+
+     /* Simple match on single value*/
+    root = APTERYX_NODE(NULL, g_strdup (""));
+    apteryx_path_to_node (root, "/firewall/rules/10/app", "google");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (matches != NULL);
+
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
+    }
+
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    apteryx_path_to_node (root, "/firewall/rules/10/zone", "united-states");
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 1);
+
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
+    }
+
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    /* Data on other node should not be picked up */
+    apteryx_path_to_node (root, "/firewall/rules/20/zone", "new-zealand");
+    apteryx_path_to_node (root, "/firewall/rules/20/app", "zoom");
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 1);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
+    }
+
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    /* Data lower in the tree should not be picked up */
+    apteryx_path_to_node (root, "/firewall/rules/10/counters/rx", "10");
+    apteryx_path_to_node (root, "/firewall/rules/10/counters/tx", "11");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 1);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
+    }
+
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+    cb_shutdown (watches_list);
+    apteryx_free_tree (root);
+
+    /* wildcard / watch */
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/*", 3, 0, 0, 0);
+    cb_release (cb);
+
+    /* Simple match on single value*/
+    root = APTERYX_NODE(NULL, g_strdup(""));
+    apteryx_path_to_node (root, "/firewall/rules/10/app", "google");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 1);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
+    }
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+    apteryx_free_tree (root);
+
+    /* Put up 2 sub trees*/
+    cb = cb_create (watches_list, "tester", "/entities/*", 3, 0, 0, 0);
+    cb_release (cb);
+    cb = cb_create (watches_list, "tester2", "/entities/*/children/*/subnets/", 3, 0, 0, 0);
+    cb_release (cb);
+    root = APTERYX_NODE(NULL, g_strdup ("/entities/united-states"));
+    apteryx_path_to_node (root, "/entities/united-states/name", "united-states");
+    apteryx_path_to_node (root, "/entities/united-states/children/geoip/name", "geoip");
+    apteryx_path_to_node (root, "/entities/united-states/children/geoip/subnets/10.0.0.0_8", "10.0.0.0/8");
+    apteryx_path_to_node (root, "/entities/united-states/children/geoip/subnets/20.0.0.0_8", "20.0.0.0/8");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 2);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 4 ||
+                  g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
+    }
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+    apteryx_free_tree (root);
+
+    root = APTERYX_NODE(NULL, g_strdup("/entities/united-states"));
+    apteryx_path_to_node (root, "/entities/united-states/name", NULL);
+    apteryx_path_to_node (root, "/entities/united-states/children/geoip/name", NULL);
+    apteryx_path_to_node (root, "/entities/united-states/children/geoip/subnets/10.0.0.0_8", NULL);
+    apteryx_path_to_node (root, "/entities/united-states/children/geoip/subnets/20.0.0.0_8", NULL);
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 1);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 4);
+    }
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    apteryx_free_tree (root);
+    cb_shutdown (watches_list);
+}
+
+void
+test_cb_match_tree_compound_root ()
+{
+    GList *matches = NULL;
+    cb_info_t *cb = NULL;
+    GNode *root;
+    struct callback_node *watches_list = NULL;
+
+    /* Wildcard in path */
+    watches_list = cb_init ();
+    cb = cb_create (watches_list, "tester", "/firewall/rules/*/app", 1, 0, 0, 0);
+    cb_release (cb);
+
+    /* Simple match on single value*/
+    root = APTERYX_NODE(NULL, g_strdup ("/firewall/rules/10"));
+    apteryx_path_to_node (root, "/firewall/rules/10/app", "google");
+
+    matches = cb_match_tree (watches_list, root);
+    CU_ASSERT (g_list_length (matches) == 1);
+    for (GList *iter = matches; iter; iter = iter->next)
+    {
+        struct cb_tree_info *c = iter->data;
+        CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
+    }
+    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+    apteryx_free_tree (root);
+    cb_shutdown (watches_list);
+}
+
 CU_TestInfo tests_callbacks[] = {
     { "init", test_cb_init },
     { "match", test_cb_match },
@@ -858,6 +1253,8 @@ CU_TestInfo tests_callbacks[] = {
     { "match performance first", test_cb_match_perf_first },
     { "match performance last", test_cb_match_perf_last },
     { "cb_exist locking", test_cb_exist_locking },
+    { "match tree", test_cb_match_tree },
+    { "match tree compound root", test_cb_match_tree_compound_root },
     CU_TEST_INFO_NULL,
 };
 #endif
