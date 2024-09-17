@@ -2262,15 +2262,22 @@ apteryx_memuse (const char *path)
     DEBUG ("MEMUSE: %s\n", path ?: "NULL");
 
     /* Check path */
-    path = validate_path (path, &url);
-    /* if path is empty, or path ends in '/' but is not the root db path (ie "/") */
-    if (!path ||
-        ((path[strlen(path)-1] == '/') && strlen(path) > 1))
+    if (path[0] == '.')
     {
-        ERROR ("MEMUSE: invalid path (%s)!\n", path ?: "NULL");
-        free (url);
-        assert (!apteryx_debug || path);
-        return 0;
+        url = strdup(default_url);
+    }
+    else
+    {
+        path = validate_path (path, &url);
+        /* if path is empty, or path ends in '/' but is not the root db path (ie "/") */
+        if (!path ||
+            ((path[strlen(path)-1] == '/') && strlen(path) > 1))
+        {
+            ERROR ("MEMUSE: invalid path (%s)!\n", path ?: "NULL");
+            free (url);
+            assert (!apteryx_debug || path);
+            return 0;
+        }
     }
 
     /* IPC */

@@ -463,8 +463,7 @@ main (int argc, char **argv)
     {
         if (!path || param)
         {
-            usage ();
-            return 0;
+            path = "/";
         }
         apteryx_init (apteryx_debug);
         if (path[strlen(path) - 1] != '/')
@@ -479,6 +478,13 @@ main (int argc, char **argv)
                 printf ("%10"PRIu64" %s\n", size, (char *) _iter->data);
         }
         g_list_free_full (paths, free);
+        if (g_strcmp0 (path, "/") == 0)
+        {
+            uint64_t total = apteryx_memuse ("..");
+            uint64_t used = apteryx_memuse (".");
+            uint64_t db = apteryx_memuse ("/");
+            printf ("%"PRIu64"/%"PRIu64" total bytes used/arena (%"PRIu64" in database)\n", used, total, db);
+        }
         apteryx_shutdown ();
         g_free (path);
         break;
