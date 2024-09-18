@@ -8072,6 +8072,7 @@ exit:
     CU_ASSERT (apteryx_prune (path));
     apteryx_unwatch (path, test_watch_callback);
     CU_ASSERT (assert_apteryx_empty ());
+    _watch_cleanup();
 }
 
 void
@@ -8151,6 +8152,7 @@ exit:
     apteryx_free_tree (root);
 
     CU_ASSERT (assert_apteryx_empty ());
+    _watch_cleanup();
 }
 
 void
@@ -8187,6 +8189,7 @@ exit:
     apteryx_free_tree (root);
     CU_ASSERT (apteryx_prune (path));
     CU_ASSERT (assert_apteryx_empty ());
+    _watch_cleanup();
 }
 
 void
