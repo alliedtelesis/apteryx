@@ -687,6 +687,7 @@ lua_do_watch_tree (GNode *tree, lua_callback_info *cb_info)
     if (!callback_valid (cb_info))
     {
         ERROR ("Watch: cb_info released already\n");
+        apteryx_free_tree(tree);
         return false;
     }
 
@@ -702,6 +703,7 @@ lua_do_watch_tree (GNode *tree, lua_callback_info *cb_info)
         {
             printf("%s: unable to push callback", __FUNCTION__);
             lua_apteryx_instance_unlock (L);
+            apteryx_free_tree(tree);
             return false;
         }
 
@@ -719,6 +721,8 @@ lua_do_watch_tree (GNode *tree, lua_callback_info *cb_info)
         }
         lua_apteryx_instance_unlock (L);
     }
+
+    apteryx_free_tree(tree);
 
     return true;
 }
