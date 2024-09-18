@@ -1717,7 +1717,7 @@ handle_traverse (rpc_message msg)
             path = (char *) ipath->data;
             value = (char *) ivalue->data;
             /* Overwrite any database values with those from provide */
-            apteryx_path_to_node (root, path, g_strdup(value ?: ""));
+            apteryx_path_to_node (root, path, value ?: "");
         }
     }
 
