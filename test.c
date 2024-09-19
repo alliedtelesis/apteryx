@@ -1480,6 +1480,51 @@ test_watch ()
     _watch_cleanup ();
 }
 
+void
+test_watch_root_styles ()
+{
+    _path = _value = NULL;
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    GNode *root = APTERYX_NODE (NULL, g_strdup(TEST_PATH));
+    apteryx_path_to_node (root, path, "up");
+    apteryx_set_tree (root);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_watch (path, test_watch_callback));
+
+    root = APTERYX_NODE (NULL, g_strdup(TEST_PATH));
+    apteryx_path_to_node (root, path, "down");
+    CU_ASSERT (apteryx_set_tree (root));
+    apteryx_free_tree (root);
+
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "down") == 0);
+
+    root = APTERYX_NODE (NULL, g_strdup("/"));
+    apteryx_path_to_node (root, path, "up");
+    apteryx_set_tree (root);
+    apteryx_free_tree (root);
+
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "up") == 0);
+
+    root = APTERYX_NODE (NULL, g_strdup(TEST_PATH));
+    apteryx_path_to_node (root, path, "across");
+    apteryx_set_tree (root);
+    apteryx_free_tree (root);
+
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_path && strcmp (_path, path) == 0);
+    CU_ASSERT (_value && strcmp (_value, "across") == 0);
+
+    CU_ASSERT (apteryx_unwatch (path, test_watch_callback));
+    apteryx_set_string (path, NULL, NULL);
+    _watch_cleanup ();
+}
+
 static int
 test_watch_thread_client (void *data)
 {
@@ -7134,6 +7179,7 @@ test_watch_tree ()
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (watch_tree_root != NULL);
     CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (strcmp(APTERYX_NAME(watch_tree_root), ""));
     CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_NON_LEAVES) == 6);
     CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
     CU_ASSERT ((node = apteryx_path_node (watch_tree_root, path)) != NULL);
@@ -10454,6 +10500,7 @@ static CU_TestInfo tests_api_index[] = {
 
 static CU_TestInfo tests_api_watch[] = {
     { "watch", test_watch },
+    { "watch root styles", test_watch_root_styles },
     { "watch set from different thread", test_watch_thread },
     { "watch set from different process", test_watch_fork },
     { "watch no match", test_watch_no_match },
