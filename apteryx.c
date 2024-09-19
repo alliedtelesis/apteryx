@@ -331,7 +331,16 @@ handle_watch (rpc_message msg)
         return true;
     }
 
-    root = break_up_trunk(rpc_msg_decode_tree (msg));
+    root = rpc_msg_decode_tree (msg);
+    if (!root)
+    {
+        DEBUG ("WATCH[%"PRIu64"]: unable to parse tree\n", ref);
+        /* Not much we can do but pretend we completed the callback */
+        rpc_msg_reset (msg);
+        return true;
+    }
+
+    root = break_up_trunk(root);
     /* Replace NULL end nodes with "" */
     g_node_traverse (root, G_IN_ORDER, G_TRAVERSE_LEAVES, -1, replace_null_with_empty_string, NULL);
 
