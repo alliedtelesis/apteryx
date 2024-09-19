@@ -288,11 +288,15 @@ static GNode *
 break_up_trunk(GNode *query)
 {
     if (strcmp(query->data, "") == 0)
+    {
+        g_free(query->data);
+        query->data = g_strdup("/");
         return query;
+    }
 
     gchar *broken_key = g_strdup(query->data);
     GNode *old_root = query;
-    GNode *new_root = APTERYX_NODE (NULL, g_strdup(""));
+    GNode *new_root = APTERYX_NODE (NULL, g_strdup("/"));
     query = new_root;
     char *next = broken_key;
     gchar *next_key;
