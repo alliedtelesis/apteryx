@@ -532,7 +532,7 @@ cb_match_tree (struct callback_node *callbacks, GNode *root)
     GList *callbacks_to_call = NULL;
     struct callback_node *next_level;
 
-    if (callbacks == NULL)
+    if (callbacks == NULL || root == NULL)
     {
         return NULL;
     }
@@ -544,6 +544,8 @@ cb_match_tree (struct callback_node *callbacks, GNode *root)
         GNode *new_root = APTERYX_NODE(NULL, g_strdup (""));
 
         GNode *last_bit = apteryx_path_to_node (new_root, root->data, NULL);
+
+        assert (last_bit);
 
         last_bit->children = root->children;
         root->data = last_bit->data;
