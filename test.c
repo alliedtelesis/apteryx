@@ -7168,6 +7168,43 @@ _watch_tree_cleanup ()
 }
 
 void
+test_set_tree_long_end_nodes ()
+{
+    GNode *root = APTERYX_NODE (NULL, g_strdup (TEST_PATH));
+    APTERYX_LEAF (root, g_strdup ("multiple/keys/in/path"), g_strdup ("please"));
+    APTERYX_LEAF (root, g_strdup ("multiple/keys/other/path"), g_strdup ("crash?"));
+    apteryx_watch_tree (TEST_PATH"/*", test_watch_tree_callback);
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 2);
+    apteryx_free_tree (root);
+    apteryx_prune (TEST_PATH);
+    usleep (TEST_SLEEP_TIMEOUT);
+
+    apteryx_unwatch_tree (TEST_PATH"/*", test_watch_tree_callback);
+    apteryx_prune (TEST_PATH);
+    _watch_tree_cleanup ();
+}
+
+void
+test_set_tree_long_intermediate_node ()
+{
+    GNode *root = APTERYX_NODE(NULL, g_strdup (TEST_PATH));
+    GNode *node = APTERYX_NODE (root, g_strdup ("multiple/keys"));
+    APTERYX_LEAF (node, g_strdup ("in/path"), g_strdup ("different"));
+    APTERYX_LEAF (node, g_strdup ("other/path"), g_strdup ("test"));
+    APTERYX_LEAF (node, g_strdup ("more/values"), g_strdup ("check"));
+    apteryx_watch_tree (TEST_PATH"/*", test_watch_tree_callback);
+    CU_ASSERT (apteryx_set_tree (root));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 3);
+
+    apteryx_unwatch_tree (TEST_PATH"/*", test_watch_tree_callback);
+    apteryx_prune (TEST_PATH);
+    _watch_tree_cleanup ();
+}
+
+void
 test_watch_tree ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
@@ -10630,6 +10667,8 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree sort children", test_tree_sort_children },
     { "set tree", test_set_tree },
     { "set tree empty", test_set_tree_empty },
+    { "set tree long end nodes", test_set_tree_long_end_nodes },
+    { "set tree long intermediate node", test_set_tree_long_intermediate_node },
     { "get tree", test_get_tree },
     { "get tree single node", test_get_tree_single_node },
     { "get tree value on_branch", test_get_tree_value_on_branch },
@@ -10726,7 +10765,6 @@ static CU_TestInfo tests_api_tree[] = {
     { "query filter requires provided value", test_query_filter_on_provided },
     { "query filter response contains provided value", test_query_filter_selects_provided },
     { "query filter doesn't call provied value if not required", test_query_filter_avoids_provided },
-
     { "cas tree", test_cas_tree},
     { "cas tree detailed", test_cas_tree_detailed},
     { "tree atomic", test_tree_atomic},
