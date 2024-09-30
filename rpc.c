@@ -935,39 +935,98 @@ rpc_msg_decode_string (rpc_message msg)
     return value;
 }
 
+static void rpc_msg_encode_tree_full (rpc_message msg, GNode *root, bool break_key);
+
 static void
 rpc_msg_add_children (rpc_message msg, GNode *root)
 {
     GNode *child = NULL;
 
     /* If there are any children, write them here. */
-    if (g_node_first_child(root))
+    if (g_node_first_child (root))
     {
         rpc_msg_encode_uint8 (msg, rpc_start_children);
-        for (child = g_node_first_child(root); child; child = g_node_next_sibling(child))
+        for (child = g_node_first_child (root); child; child = g_node_next_sibling (child))
         {
-            rpc_msg_encode_tree (msg, child);
+            rpc_msg_encode_tree_full (msg, child, true);
         }
         rpc_msg_encode_uint8 (msg, rpc_end_children);
+    }
+}
+
+static void
+rpc_msg_encode_tree_full (rpc_message msg, GNode *root, bool break_key)
+{
+    const char *key = APTERYX_NAME (root);
+    const char *value = APTERYX_HAS_VALUE (root) ? APTERYX_VALUE (root) : NULL;
+
+    if (break_key && strchr (key, '/'))
+    {
+        char *broken_key = g_strdup (key);
+        char *end;
+        char *chunk = broken_key;
+        int extra_nodes = 0;
+
+        while ((end = strchr (chunk, '/')) != NULL)
+        {
+            /* Truncate at the first slash */
+            *end = '\0';
+
+            /* This is an intermediate node, so we don't ever want to
+             * print the value attached to the end, just the first bit of
+             * the key.
+             */
+            rpc_msg_encode_uint8 (msg, rpc_value);
+            rpc_msg_encode_string (msg, chunk);
+            rpc_msg_encode_string (msg, "");
+
+            /* We are going to need to close exactly this many children nodes
+             * at the end of the loop, so keep count.
+             */
+            extra_nodes++;
+            rpc_msg_encode_uint8 (msg, rpc_start_children);
+
+            /* Skip past the null terminator */
+            chunk = end + 1;
+        }
+
+        /* Write the end of the key and the value (if any.) */
+        rpc_msg_encode_uint8 (msg, rpc_value);
+        rpc_msg_encode_string (msg, chunk);
+        rpc_msg_encode_string (msg, value ?: "");
+        g_free (broken_key);
+
+        /* If this node has no value, add its children. */
+        if (!APTERYX_HAS_VALUE (root))
+        {
+            rpc_msg_add_children (msg, root);
+        }
+
+        /* Close all the children opened when breaking up the key */
+        while (extra_nodes--)
+        {
+            rpc_msg_encode_uint8 (msg, rpc_end_children);
+        }
+    }
+    else
+    {
+        rpc_msg_encode_uint8 (msg, rpc_value);
+        /* Write this key (and value). */
+        rpc_msg_encode_string (msg, key);
+        rpc_msg_encode_string (msg, value ?: "");
+
+        /* If this node has no value, add its children. */
+        if (!APTERYX_HAS_VALUE (root))
+        {
+            rpc_msg_add_children (msg, root);
+        }
     }
 }
 
 void
 rpc_msg_encode_tree (rpc_message msg, GNode *root)
 {
-    const char *key = APTERYX_NAME (root);
-    const char *value = APTERYX_HAS_VALUE (root) ? APTERYX_VALUE (root) : NULL;
-
-    rpc_msg_encode_uint8 (msg, rpc_value);
-    /* Write this key (and value). */
-    rpc_msg_encode_string (msg, key);
-    rpc_msg_encode_string (msg, value ?: "");
-
-    /* If this node has no value, add its children. */
-    if (!APTERYX_HAS_VALUE (root))
-    {
-        rpc_msg_add_children (msg, root);
-    }
+    rpc_msg_encode_tree_full (msg, root, false);
 }
 
 static GNode *
