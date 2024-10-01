@@ -7616,6 +7616,27 @@ test_find_two_star ()
 }
 
 void
+test_find_end_star ()
+{
+    GList *paths;
+
+    apteryx_set (TEST_PATH"/routing/ipv4/rib/10.0.0.0_8", "10.0.0.0/8");
+    apteryx_set (TEST_PATH"/routing/ipv4/rib/11.0.0.0%2F8", "11.0.0.0/8");
+
+    paths = apteryx_find (TEST_PATH"/routing/ipv4/rib/*", "10.0.0.0/8");
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_strcmp0 ((char *)paths->data, TEST_PATH"/routing/ipv4/rib/10.0.0.0_8") == 0);
+    g_list_free_full (paths, free);
+
+    paths = apteryx_find (TEST_PATH"/routing/ipv4/rib/*", "11.0.0.0/8");
+    CU_ASSERT (g_list_length (paths) == 1);
+    CU_ASSERT (g_strcmp0 ((char *)paths->data, TEST_PATH"/routing/ipv4/rib/11.0.0.0%2F8") == 0);
+    g_list_free_full (paths, free);
+
+    apteryx_prune (TEST_PATH);
+}
+
+void
 test_find_tree_one_star()
 {
     GNode* root = NULL;
@@ -10788,6 +10809,7 @@ static CU_TestInfo tests_api_tree[] = {
 static CU_TestInfo tests_find[] = {
     { "find simple", test_find_one_star },
     { "find multi *", test_find_two_star },
+    { "find end *", test_find_end_star },
     { "find simple tree", test_find_tree_one_star },
     { "find empty tree", test_find_empty },
     { "find multi * tree", test_find_tree_two_star },
