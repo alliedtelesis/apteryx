@@ -2287,12 +2287,13 @@ handle_timestamp (rpc_message msg)
     if ((value = proxy_timestamp (path)) == 0)
     {
         /* Lookup value */
-        if (call_refreshers (path, true) || config_tree_has_providers (path))
+        if (config_tree_has_providers (path))
         {
             value = get_time_us ();
         }
         else
         {
+            call_refreshers (path, false);
             value = db_timestamp (path);
         }
     }
