@@ -8833,20 +8833,24 @@ test_timestamp_refreshed ()
     uint64_t ts, ts1;
     char *value;
 
-    _cb_timeout = 1000000;
+    _cb_timeout = 5000;
     apteryx_refresh(path, test_refresh_callback);
 
+    /* Getting the timestamp should call the refresher */
     ts = apteryx_timestamp (path);
     CU_ASSERT (ts != 0);
 
+    /* Refresher should not be called again and hence
+       the timestamp should not change */
     value = apteryx_get(path);
     ts1 = apteryx_timestamp (path);
+    CU_ASSERT(ts1 == ts);
 
-    CU_ASSERT(ts1 != 0);
-    CU_ASSERT(ts != ts1);
-
+    /* Getting the timestamp should call the refresher
+       as we have waited _cb_timeout */
+    usleep (_cb_timeout);
     ts = apteryx_timestamp (path);
-    CU_ASSERT(ts == ts1);
+    CU_ASSERT(ts != ts1);
 
     free (value);
     apteryx_unrefresh(path, test_refresh_callback);
