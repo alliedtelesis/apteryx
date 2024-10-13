@@ -526,8 +526,8 @@ alloc_cb_tree (cb_info_t *cb, GNode *data, bool non_leaves)
     return c;
 }
 
-GList *
-cb_match_tree (struct callback_node *callbacks, GNode *root)
+static GList *
+_cb_match_tree_no_lock (struct callback_node *callbacks, GNode *root)
 {
     GList *callbacks_to_call = NULL;
     struct callback_node *next_level;
@@ -551,7 +551,7 @@ cb_match_tree (struct callback_node *callbacks, GNode *root)
         root->data = last_bit->data;
         root->parent = last_bit->parent;
 
-        callbacks_to_call = cb_match_tree (callbacks, new_root);
+        callbacks_to_call = _cb_match_tree_no_lock (callbacks, new_root);
 
         last_bit->children = NULL;
         root->data = old_root_data;
@@ -586,13 +586,13 @@ cb_match_tree (struct callback_node *callbacks, GNode *root)
             /* Follow down a key match */
             next_level = (struct callback_node*) hashtree_path_to_node (&callbacks->hashtree_node, child->data);
             if (next_level)
-                callbacks_to_call = g_list_concat (cb_match_tree (next_level, child), callbacks_to_call);
+                callbacks_to_call = g_list_concat (_cb_match_tree_no_lock (next_level, child), callbacks_to_call);
 
             /* Follow down a wildcard match */
             next_level = (struct callback_node*) hashtree_path_to_node (&callbacks->hashtree_node, "*");
             if (next_level)
             {
-                callbacks_to_call = g_list_concat (cb_match_tree (next_level, child), callbacks_to_call);
+                callbacks_to_call = g_list_concat (_cb_match_tree_no_lock (next_level, child), callbacks_to_call);
             }
         }
     }
@@ -624,6 +624,18 @@ cb_match_tree (struct callback_node *callbacks, GNode *root)
     }
 
     return callbacks_to_call;
+}
+
+GList *
+cb_match_tree (struct callback_node *callbacks, GNode *root)
+{
+    GList *matches = NULL;
+
+    pthread_mutex_lock (&tree_lock);
+    matches = _cb_match_tree_no_lock (callbacks, root);
+    pthread_mutex_unlock (&tree_lock);
+
+    return matches;
 }
 
 /* Finds if a given path has any callbacks from this tree under it */
