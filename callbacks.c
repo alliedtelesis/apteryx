@@ -1246,6 +1246,32 @@ test_cb_match_tree_compound_root ()
     cb_shutdown (watches_list);
 }
 
+
+void
+test_cb_match_tree_locking ()
+{
+    pthread_t thrasher;
+    struct callback_node *test_list = cb_init ();
+
+    test_running = true;
+    pthread_create (&thrasher, NULL, _cb_exist_locking_thrasher, test_list);
+    usleep (1000);
+    /* Simple match on single value*/
+    GNode *root = APTERYX_NODE(NULL, g_strdup ("/test/callback/path/down/here/someplace"));
+    apteryx_path_to_node (root, "/test/callback/path/down/here/someplace", "test value");
+
+    for (int i = 0; i < TEST_CB_MAX_ITERATIONS * 100; i++)
+    {
+        GList *matches = cb_match_tree (test_list, root);
+        g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
+        g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+    }
+    test_running = false;
+    pthread_join (thrasher, NULL);
+    cb_shutdown (test_list);
+    apteryx_free_tree (root);
+}
+
 CU_TestInfo tests_callbacks[] = {
     { "init", test_cb_init },
     { "match", test_cb_match },
@@ -1257,6 +1283,7 @@ CU_TestInfo tests_callbacks[] = {
     { "cb_exist locking", test_cb_exist_locking },
     { "match tree", test_cb_match_tree },
     { "match tree compound root", test_cb_match_tree_compound_root },
+    { "match tree locking", test_cb_match_tree_locking },
     CU_TEST_INFO_NULL,
 };
 #endif
