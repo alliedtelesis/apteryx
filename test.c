@@ -7303,6 +7303,7 @@ test_set_tree_long_intermediate_node ()
     APTERYX_LEAF (node, g_strdup ("more/values"), g_strdup ("check"));
     apteryx_watch_tree (TEST_PATH"/*", test_watch_tree_callback);
     CU_ASSERT (apteryx_set_tree (root));
+    apteryx_free_tree (root);
     usleep (TEST_SLEEP_TIMEOUT);
     CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 3);
 
