@@ -1837,6 +1837,9 @@ apteryx_query_full (GNode *root)
     root->data = old_root_name;
     g_free(chopped_path);
 
+    /* Query can build a tree with duplicate branches - clean them up */
+    apteryx_uniqify_tree (rroot, g_free);
+
     DEBUG ("QUERY RESULT\n");
     DEBUG_TREE (rroot);
 
