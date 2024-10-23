@@ -428,6 +428,13 @@ bool apteryx_query_to_node (GNode *parent, const char *query);
 GList *apteryx_find_tree (GNode *root);
 
 /**
+ * Sort and merge duplicate nodes in a tree
+ * @param root pointer to the N-ary tree of nodes to sort
+ * @param destroyer function to call to free data from tree
+ */
+void apteryx_uniqify_tree (GNode *root, GDestroyNotify destroyer);
+
+/**
  * Find a list of paths that match this wildcard path + value
  * @param path Path to match (with one or more * wildcard)
  * @param value Value to match path against

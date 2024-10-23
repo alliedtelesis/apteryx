@@ -1088,6 +1088,72 @@ apteryx_sort_children (GNode *parent, int (*cmp) (const char *a, const char *b))
         parent->children = merge_sort (parent->children, cmp);
 }
 
+void apteryx_uniqify_tree (GNode *root, GDestroyNotify destroyer)
+{
+    if (!root)
+    {
+        return;
+    }
+
+    if (APTERYX_HAS_VALUE (root))
+    {
+        /* Throw away all but the first value (most recently added) */
+        for (GNode *value = root->children->next; value; value = root->children->next)
+        {
+            /* Free memory and node */
+            if (destroyer)
+            {
+                destroyer (value->data);
+            }
+            g_node_destroy (value);
+        }
+        return;
+    }
+
+    /* First sort children so we know duplicates are adjacent. */
+    apteryx_sort_children (root, g_strcmp0);
+
+    GNode *next;
+    for (GNode *iter = root->children; iter; iter = next)
+    {
+        /* We may remove and destroy iter before the end of the loop,
+         * so save the next pointer first.
+         */
+        next = iter->next;
+
+        /* If this is the last node, or the next node has different name we
+         * don't need to do any more work on this node.
+         */
+        if (!next || g_strcmp0 (APTERYX_NAME (iter), APTERYX_NAME (next)))
+        {
+            continue;
+        }
+
+        /* Found a collision, merge the lower trees and remove the duplicate */
+        /* Steal all the children from iter and give them to next node in
+         * the list.
+         */
+        for (GNode *merged = iter->children; merged; merged = iter->children)
+        {
+            g_node_unlink (merged);
+            g_node_append (next, merged);
+        }
+
+        /* Free memory and node */
+        if (destroyer)
+        {
+            destroyer (iter->data);
+        }
+        g_node_destroy (iter);
+    }
+
+    /* Decend to the next level and uniq them too. */
+    for (GNode *iter = root->children; iter; iter = iter->next)
+    {
+        apteryx_uniqify_tree (iter, destroyer);
+    }
+}
+
 static char *
 _node_to_path (GNode *node, char **buf)
 {

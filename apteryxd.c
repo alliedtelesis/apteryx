@@ -1137,6 +1137,9 @@ handle_set (rpc_message msg, bool ack)
     ts = rpc_msg_decode_uint64 (msg);
     root = rpc_msg_decode_tree (msg);
 
+    /* Remove any duplicate nodes */
+    apteryx_uniqify_tree (root, g_free);
+
     if (!root)
     {
         ERROR ("SET: Failed to decode message\n");
