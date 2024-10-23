@@ -7313,6 +7313,58 @@ test_set_tree_long_intermediate_node ()
 }
 
 void
+test_set_tree_order ()
+{
+    GNode *root = APTERYX_NODE(NULL, g_strdup (TEST_PATH));
+
+    CU_ASSERT (apteryx_watch_tree (TEST_PATH"/feature/settings/*", test_watch_tree_callback));
+    apteryx_path_to_node (root, TEST_PATH"/feature/settings/value", "10");
+    apteryx_set_tree (root);
+    CU_ASSERT (apteryx_get_int (TEST_PATH"/feature/settings", "value") == 10);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (_cb_count == 1);
+    _cb_count = 0;
+
+    apteryx_path_to_node (root, TEST_PATH"/feature/settings/value", "20");
+    apteryx_set_tree (root);
+    CU_ASSERT (apteryx_get_int (TEST_PATH"/feature/settings", "value") == 20);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (_cb_count == 1);
+    _cb_count = 0;
+
+    APTERYX_LEAF_INT (root, "feature/settings/value", 30);
+    apteryx_set_tree (root);
+    CU_ASSERT (apteryx_get_int (TEST_PATH"/feature/settings", "value") == 30);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (_cb_count == 1);
+    _cb_count = 0;
+
+    GNode *node = APTERYX_NODE(root, g_strdup("feature/settings"));
+    APTERYX_LEAF(node, g_strdup("value"), g_strdup("100"));
+    apteryx_set_tree (root);
+    CU_ASSERT (apteryx_get_int (TEST_PATH"/feature/settings", "value") == 100);
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (watch_tree_root != NULL);
+    CU_ASSERT (g_node_n_nodes (watch_tree_root, G_TRAVERSE_LEAVES) == 1);
+    CU_ASSERT (_cb_count == 1);
+    _cb_count = 0;
+
+    apteryx_free_tree (root);
+    apteryx_prune (TEST_PATH);
+
+
+    apteryx_unwatch_tree (TEST_PATH"/*", test_watch_tree_callback);
+    apteryx_prune (TEST_PATH);
+    _watch_tree_cleanup ();
+}
+
+void
 test_watch_tree ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
@@ -10787,6 +10839,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "set tree empty", test_set_tree_empty },
     { "set tree long end nodes", test_set_tree_long_end_nodes },
     { "set tree long intermediate node", test_set_tree_long_intermediate_node },
+    { "set tree order", test_set_tree_order },
     { "get tree", test_get_tree },
     { "get tree single node", test_get_tree_single_node },
     { "get tree value on_branch", test_get_tree_value_on_branch },
