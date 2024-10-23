@@ -946,7 +946,7 @@ rpc_msg_add_children (rpc_message msg, GNode *root)
     if (g_node_first_child (root))
     {
         rpc_msg_encode_uint8 (msg, rpc_start_children);
-        for (child = g_node_first_child (root); child; child = g_node_next_sibling (child))
+        for (child = g_node_last_child (root); child; child = g_node_prev_sibling (child))
         {
             rpc_msg_encode_tree_full (msg, child, true);
         }
