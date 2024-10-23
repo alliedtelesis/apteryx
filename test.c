@@ -4373,6 +4373,118 @@ test_tree_sort_children ()
 }
 
 void
+test_uniqify_nodes_static ()
+{
+    GNode *root = APTERYX_NODE (NULL, TEST_PATH"/branch");
+    GNode *n = APTERYX_NODE (root, "duplicate");
+    APTERYX_LEAF (n, "value_a", "10");
+    n = APTERYX_NODE (root, "duplicate");
+    APTERYX_LEAF (n, "value_b", "20");
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 7);
+    apteryx_uniqify_tree (root, NULL);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 6);
+    g_node_destroy (root);
+}
+
+void
+test_uniqify_nodes_requires_sorting ()
+{
+    GNode *root = APTERYX_NODE (NULL, TEST_PATH"/branch");
+    GNode *n = APTERYX_NODE (root, "duplicate");
+    APTERYX_LEAF (n, "value_a", "10");
+    n = APTERYX_NODE (root, "non-duplicate");
+    APTERYX_LEAF (n, "value_b", "20");
+    n = APTERYX_NODE (root, "duplicate");
+    APTERYX_LEAF (n, "value_c", "30");
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 10);
+    apteryx_uniqify_tree (root, NULL);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 9);
+    g_node_destroy (root);
+}
+
+void
+test_uniqify_nodes_multiple_level_collision ()
+{
+    GNode *root = APTERYX_NODE (NULL, TEST_PATH"/branch");
+    GNode *n = APTERYX_NODE (root, "duplicate");
+    n = APTERYX_NODE (n, "second-duplicate");
+    APTERYX_LEAF (n, "value_a", "10");
+    n = APTERYX_NODE (root, "non-duplicate");
+    APTERYX_LEAF (n, "value_b", "20");
+    n = APTERYX_NODE (root, "duplicate");
+    n = APTERYX_NODE (n, "second-duplicate");
+    APTERYX_LEAF (n, "value_c", "30");
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 12);
+    apteryx_uniqify_tree (root, NULL);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 10);
+    g_node_destroy (root);
+}
+
+void
+test_uniqify_nodes_multiple_level_value_collision ()
+{
+    GNode *root = APTERYX_NODE (NULL, TEST_PATH"/branch");
+    GNode *n = APTERYX_NODE (root, "duplicate");
+    n = APTERYX_NODE (n, "second-duplicate");
+    APTERYX_LEAF (n, "value", "10");
+    n = APTERYX_NODE (root, "duplicate");
+    n = APTERYX_NODE (n, "second-duplicate");
+    APTERYX_LEAF (n, "value", "30");
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 9);
+    apteryx_uniqify_tree (root, NULL);
+
+    apteryx_print_tree(root, stdout);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 5);
+    n = apteryx_path_node(root, TEST_PATH"/branch/duplicate/second-duplicate/value");
+    CU_ASSERT(n && strcmp(APTERYX_VALUE(n), "30") == 0);
+
+    g_node_destroy (root);
+}
+
+
+void
+test_uniqify_nodes_dynamic_memory ()
+{
+    GNode *root = APTERYX_NODE (NULL, g_strdup(TEST_PATH"/branch"));
+    GNode *n = APTERYX_NODE (root, g_strdup("duplicate"));
+    APTERYX_LEAF (n, g_strdup("value-a"), g_strdup("10"));
+    n = APTERYX_NODE (root, g_strdup("non-duplicate"));
+    APTERYX_LEAF (n, g_strdup("value-b"), g_strdup("20"));
+    n = APTERYX_NODE (root, g_strdup("duplicate"));
+    APTERYX_LEAF (n, g_strdup("value-c"), g_strdup("30"));
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 10);
+    apteryx_uniqify_tree (root, g_free);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 9);
+    apteryx_free_tree (root);
+}
+
+void
+test_uniqify_apteryx_path_to_node ()
+{
+    GNode *root = APTERYX_NODE (NULL, g_strdup(TEST_PATH));
+    apteryx_path_to_node (root, TEST_PATH"/branch/duplicate/value", "10");
+    apteryx_path_to_node (root, TEST_PATH"/branch/duplicate/value", "20");
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 5);
+    /* Add a duplicate value */
+    GNode *node = apteryx_path_node (root, TEST_PATH"/branch/duplicate");
+    APTERYX_LEAF(node, g_strdup("value"), g_strdup("30"));
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 7);
+    apteryx_uniqify_tree (root, g_free);
+    CU_ASSERT (root && g_node_n_nodes (root, G_TRAVERSE_ALL) == 5);
+
+    node = apteryx_path_node(root, TEST_PATH"/branch/duplicate/value");
+    CU_ASSERT(node && strcmp(APTERYX_VALUE(node), "30") == 0);
+
+    apteryx_path_to_node (root, TEST_PATH"/branch/duplicate/value", "40");
+
+    /* apteryx_path_to_node should overwrite the duplicate value */
+    node = apteryx_path_node(root, TEST_PATH"/branch/duplicate/value");
+    CU_ASSERT(node && strcmp(APTERYX_VALUE(node), "40") == 0);
+
+    apteryx_free_tree (root);
+}
+
+void
 test_tree_docs ()
 {
     char *expect = ""
@@ -10669,6 +10781,11 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree find children", test_tree_find_children },
     { "tree find node", test_tree_path_node },
     { "tree sort children", test_tree_sort_children },
+    { "test uniqify requires sorting", test_uniqify_nodes_requires_sorting },
+    { "test uniqify with multi-level collision", test_uniqify_nodes_multiple_level_collision },
+    { "test uniqify with value collision after sorting", test_uniqify_nodes_multiple_level_value_collision },
+    { "test uniqify destroyer", test_uniqify_nodes_dynamic_memory },
+    { "test uniqify with apteryx_path_to_node", test_uniqify_apteryx_path_to_node },
     { "set tree", test_set_tree },
     { "set tree empty", test_set_tree_empty },
     { "set tree long end nodes", test_set_tree_long_end_nodes },
