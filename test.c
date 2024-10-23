@@ -6843,12 +6843,7 @@ test_query_animals_with_a_ball_and_a_leather_toy()
     rroot = apteryx_query_full(root);
     /* 2 pets have a leather toy and a ball */
     CU_ASSERT (rroot && g_node_n_children (rroot) == 2);
-    /* This returns the subtrees that match each side of the query (both "toys/ * /type"=ball and
-     * "toys/ * /material/ * /leather"=leather) which I'm not super happy about, but fixing will
-     * require iterating through child nodes to find a match, which I want to avoid at just about
-     * any cost.
-     */
-    // CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 8);
+    CU_ASSERT (rroot && g_node_n_nodes (rroot, G_TRAVERSE_LEAVES) == 8);
     if (rroot)
     {
         apteryx_free_tree(rroot);
@@ -8290,10 +8285,11 @@ test_perf_set_tree_150000_watched ()
     {
         sprintf (value, "value%d", i);
         APTERYX_LEAF (subnets, strdup (value), strdup (value));
-        APTERYX_LEAF_INT (full, "one", 1);
-        APTERYX_LEAF_INT (full, "two", 2);
-        APTERYX_LEAF_INT (full, "three", 3);
-        APTERYX_LEAF_INT (full, "four", 4);
+        node = APTERYX_NODE (full, g_strdup(value));
+        APTERYX_LEAF_INT (node, "one", 1);
+        APTERYX_LEAF_INT (node, "two", 2);
+        APTERYX_LEAF_INT (node, "three", 3);
+        APTERYX_LEAF_INT (node, "four", 4);
     }
 
     start = get_time_us ();
