@@ -5060,6 +5060,14 @@ test_query_empty ()
 }
 
 void
+test_query_null_path()
+{
+    GNode *root = APTERYX_NODE (NULL, (char *) NULL);
+    CU_ASSERT (apteryx_query (root) == NULL);
+    g_node_destroy (root);
+}
+
+void
 test_query_basic ()
 {
     GNode *root = NULL;
@@ -10887,6 +10895,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "query2node deep nodes", test_query2node_deep_nodes },
     { "query2node deep paths", test_query2node_deep_paths },
     { "query empty", test_query_empty },
+    { "query null path", test_query_null_path },
     { "query basic", test_query_basic},
     { "query subtree root", test_query_subtree_root},
     { "query one level", test_query_one_level},
