@@ -1,6 +1,7 @@
 
 #include <assert.h>
 #include "hashtree.h"
+#include "string-cache.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,7 +67,7 @@ hashtree_node_add (struct hashtree_node *root, size_t size, const char *path)
         {
             next_node = g_malloc0 (size);
             next_node->parent = parent;
-            next_node->key = g_strdup (key);
+            next_node->key = (char *) string_cache_get (key);
             if (parent->children == NULL)
             {
                 parent->children = g_hash_table_new (g_str_hash, g_str_equal);
@@ -107,7 +108,7 @@ hashtree_node_delete (struct hashtree_node *root, struct hashtree_node *node)
         g_hash_table_destroy (node->children);
     }
 
-    g_free (node->key);
+    string_cache_release (node->key);
     g_free (node);
 }
 

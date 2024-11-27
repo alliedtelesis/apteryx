@@ -69,11 +69,11 @@ $(BUILDDIR)/%.o: %.c | $(BUILDDIR)
 	@echo "Compiling "$<""
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
-$(BUILDDIR)/apteryxd: apteryxd.c hashtree.c database.c $(BUILDDIR)/rpc_transport.o $(BUILDDIR)/rpc_socket.o $(BUILDDIR)/config.o $(BUILDDIR)/callbacks.o $(BUILDDIR)/libapteryx.so
+$(BUILDDIR)/apteryxd: apteryxd.c hashtree.c database.c string-cache.c $(BUILDDIR)/rpc_transport.o $(BUILDDIR)/rpc_socket.o $(BUILDDIR)/config.o $(BUILDDIR)/callbacks.o $(BUILDDIR)/libapteryx.so
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -o $@ $^ $(EXTRA_LDFLAGS)
 
-$(BUILDDIR)/apteryx: apteryxc.c hashtree.c database.c callbacks.c $(BUILDDIR)/libapteryx.so $(EXTRA_CSRC)
+$(BUILDDIR)/apteryx: apteryxc.c hashtree.c database.c string-cache.c callbacks.c $(BUILDDIR)/libapteryx.so $(EXTRA_CSRC)
 	@echo "Building $@"
 	$(Q)$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(apteryx_CFLAGS) -o $@ $^ -lapteryx $(EXTRA_LDFLAGS) $(apteryx_LDFLAGS)
 
