@@ -32,6 +32,7 @@
 #endif
 
 #include "hashtree.h"
+#include "string-cache.h"
 
 struct database_node
 {
@@ -189,10 +190,7 @@ _db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
     {
         const char *value = APTERYX_VALUE(new_node);
 
-        if (db_node->value)
-        {
-            g_free(db_node->value);
-        }
+        string_cache_release ((char *)db_node->value);
 
         /* We interpret an empty string as removal, so anything else
          * is a value to set. NULL values can be in the tree when
@@ -200,7 +198,7 @@ _db_update (struct database_node *parent_node, GNode *new_node, uint64_t ts)
          */
         if (value && value[0])
         {
-            db_node->value = (unsigned char*)g_strdup(value);
+            db_node->value = (unsigned char *) string_cache_get (value);
             db_node->length = strlen(value) + 1;
         }
         else
@@ -324,12 +322,11 @@ db_add_no_lock (const char *path, const unsigned char *value, size_t length, uin
         new_value =
             (struct database_node *) hashtree_node_add (root, sizeof (*new_value), path);
     }
-    g_free (new_value->value);
+    string_cache_release ((char *)new_value->value);
     new_value->value = NULL;
     if (length > 0)
     {
-        new_value->value = g_malloc (length);
-        memcpy (new_value->value, value, length);
+        new_value->value = (unsigned char *)string_cache_get ((char *)value);
     }
     new_value->length = length;
 
@@ -375,7 +372,7 @@ db_delete_no_lock (const char *path, uint64_t ts)
 
             if (((struct database_node *) node)->value != NULL)
             {
-                g_free (((struct database_node *) node)->value);
+                string_cache_release ((char *)((struct database_node *) node)->value);
                 ((struct database_node *) node)->value = NULL;
                 ((struct database_node *) node)->length = 0;
             }
@@ -624,6 +621,7 @@ void
 db_init ()
 {
     pthread_rwlock_wrlock (&db_lock);
+    string_cache_init ();
     if (!root)
     {
         root = hashtree_init (sizeof (struct database_node));
@@ -643,7 +641,7 @@ db_purge (struct database_node *node)
 
     if (node->value)
     {
-        g_free (node->value);
+        string_cache_release ((char *)node->value);
     }
     node->value = NULL;
     node->length = 0;
