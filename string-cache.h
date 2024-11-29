@@ -30,5 +30,7 @@ void string_cache_init();
 /* Retrieve a string from the cache or add it if it doesn't exist */
 const char *string_cache_get (const char *str) ;
 void string_cache_release (const char *str);
+/* Retrieve the memory used to store this string */
+uint64_t string_cache_memuse (const char *str, bool pss);
 
 #endif
