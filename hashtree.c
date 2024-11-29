@@ -122,15 +122,17 @@ hashtree_children_get (struct hashtree_node *node)
 uint64_t
 hashtree_node_memuse (struct hashtree_node *node)
 {
-    uint64_t memuse = sizeof (struct hashtree_node);
-    memuse += node->key ? strlen (node->key) + 1 : 0;
+    /* Exclude the sizeof hashtree_node as that is already accounted for */
+    uint64_t memuse = node->key ? string_cache_memuse (node->key, true) : 0;
     if (node->children)
     {
-        /* GLib's hash_table memory usage varies with
-           the number of keys stored. These values are
-           approximations from statistical analysis */
-        memuse += 300;
-        memuse += (32 * g_hash_table_size (node->children));
+        /* We can't use malloc_usable_size as the hash table is
+           alloced in GLIB by who knows what and we can't use
+           sizeof as GLIB is hiding the structure. So we guess. */
+        memuse += (16 * sizeof (uint64_t));
+        /* Each entry uses pointers to a key and value plus a hash */
+        guint num_entries = MAX (8, g_hash_table_size (node->children));
+        memuse += ((sizeof (gpointer) + sizeof (gpointer) + sizeof (guint)) * num_entries);
     }
     return memuse;
 }

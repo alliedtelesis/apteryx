@@ -24,6 +24,7 @@
 #include <string.h>
 #include <glib.h>
 #include <inttypes.h>
+#include <malloc.h>
 #include "internal.h"
 #include <apteryx.h>
 #ifdef TEST
@@ -75,9 +76,13 @@ db_memuse_no_lock (struct database_node *node)
     uint64_t memuse = 0;
     if (node)
     {
-        memuse = sizeof (struct database_node) - sizeof (struct hashtree_node);
-        memuse += node->length;
+        /* Malloc header + actual size of the database_node */
+        memuse = (8 + malloc_usable_size (node));
+        /* Size of the value (our share if used by others) */
+        memuse += (node->length ? string_cache_memuse ((const char *) node->value, true) : 0);
+        /* Size of the key and hash-tree */
         memuse += hashtree_node_memuse (&node->hashtree_node);
+        /* Add in the children if any */
         GList *children = hashtree_children_get (&node->hashtree_node);
         for (GList *iter = children; iter; iter = g_list_next (iter))
         {

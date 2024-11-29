@@ -17,11 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
-
-#include "string-cache.h"
-#include "hashtree.h"
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <malloc.h>
 #include <assert.h>
+#include "hashtree.h"
+#include "string-cache.h"
 
 /* Structure with a flexible array member for the string.
  * When we allocate this it will be done with space for the string. */
@@ -99,6 +101,28 @@ string_cache_release (const char *str)
             g_hash_table_remove (string_cache, str);
         }
     }
+}
+
+/* Amount of actual memory used to store this string */
+uint64_t
+string_cache_memuse (const char *str, bool pss)
+{
+    StringCacheEntry *entry;
+    uint64_t size = 0;
+
+    if (str && (entry = g_hash_table_lookup (string_cache, str)))
+    {
+        /* Ignore the string-cache hashtable structure but
+           include the pointers to key and value and the hash */
+        size = (sizeof (gpointer) + sizeof (gpointer) + sizeof (guint));
+        /* 8 bytes malloc header + actual malloced size */
+        size += 8 + malloc_usable_size (entry);
+        /* Proportional size is one references share of the total */
+        if (pss)
+            size /= entry->refcount;
+    }
+
+    return size;
 }
 
 void
