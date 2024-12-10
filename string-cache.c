@@ -34,6 +34,7 @@ typedef struct
 } StringCacheEntry;
 
 static GHashTable *string_cache = NULL;
+static pthread_mutex_t string_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Function to create a new cache entry. */
 static StringCacheEntry *
@@ -68,19 +69,20 @@ string_cache_get (const char *str)
         return NULL;
     }
 
+    pthread_mutex_lock (&string_cache_lock);
     StringCacheEntry *entry = g_hash_table_lookup (string_cache, str);
     if (entry)
     {
         entry->refcount++;
-        return entry->str;
     }
     else
     {
         entry = string_cache_entry_new (str);
         /* Use entry->str as the key to ensure hash/equal functions operate on the string */
         g_hash_table_insert (string_cache, entry->str, entry);
-        return entry->str;
     }
+    pthread_mutex_unlock (&string_cache_lock);
+    return entry->str;
 }
 
 /* Decrease the reference count of a string and remove it if refcount reaches 0 */
@@ -92,6 +94,7 @@ string_cache_release (const char *str)
         return;
     }
 
+    pthread_mutex_lock (&string_cache_lock);
     StringCacheEntry *entry = g_hash_table_lookup (string_cache, str);
     if (entry)
     {
@@ -101,6 +104,7 @@ string_cache_release (const char *str)
             g_hash_table_remove (string_cache, str);
         }
     }
+    pthread_mutex_unlock (&string_cache_lock);
 }
 
 /* Amount of actual memory used to store this string */
@@ -128,18 +132,22 @@ string_cache_memuse (const char *str, bool pss)
 void
 string_cache_init ()
 {
+    pthread_mutex_lock (&string_cache_lock);
     if (!string_cache)
     {
         string_cache =
             g_hash_table_new_full (g_str_hash, g_str_equal, NULL,
                                    (GDestroyNotify) string_cache_entry_free);
     }
+    pthread_mutex_unlock (&string_cache_lock);
 }
 
 /* This function should only be called when *all* strings have been released. */
 void
 string_cache_deinit ()
 {
+    pthread_mutex_lock (&string_cache_lock);
     g_hash_table_destroy (string_cache);
     string_cache = NULL;
+    pthread_mutex_unlock (&string_cache_lock);
 }
