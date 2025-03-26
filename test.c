@@ -9053,6 +9053,43 @@ test_timestamp_refreshed ()
     _cb_count = 0;
 }
 
+void
+test_timestamp_refreshed_wildcard ()
+{
+    const char *refresher_path = TEST_PATH"/this/is/a/prefix/timestamp/refreshed";
+    const char *path = TEST_PATH"/this";
+    uint64_t ts, ts1;
+
+    _cb_timeout = 5000;
+    apteryx_refresh (refresher_path, test_refresh_callback);
+
+    /* Getting the timestamp should call the refresher */
+    usleep (_cb_timeout);
+    ts = apteryx_timestamp (path);
+    ts1 = apteryx_timestamp (refresher_path);
+    CU_ASSERT (ts1 != 0);
+    CU_ASSERT (ts != ts1);
+
+    char *wild_card_paths[] = {
+        TEST_PATH"/this/*",
+        TEST_PATH"/this/is/*",
+        TEST_PATH"/this/is/a/*",
+        TEST_PATH"/this/is/a/prefix/*",
+        TEST_PATH"/this/is/a/prefix/timestamp/*",
+    };
+    for (size_t i = 0; i < 5; i++)
+    {
+        usleep (_cb_timeout);
+        ts = apteryx_timestamp (wild_card_paths[i]);
+        ts1 = apteryx_timestamp (refresher_path);
+        CU_ASSERT (ts == ts1);
+    }
+
+    apteryx_unrefresh (refresher_path, test_refresh_callback);
+    apteryx_prune (path);
+    _cb_count = 0;
+}
+
 static char*
 test_provide_timestamp (const char *path)
 {
@@ -10797,6 +10834,7 @@ static CU_TestInfo tests_api[] = {
     { "double fork", test_double_fork },
     { "timestamp", test_timestamp },
     { "timestamp refreshed", test_timestamp_refreshed },
+    { "timestamp refreshed wildcard", test_timestamp_refreshed_wildcard },
     { "timestamp provider", test_timestamp_provider },
     { "memuse", test_memuse },
     { "path to node", test_path_to_node },
