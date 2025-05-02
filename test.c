@@ -7068,6 +7068,11 @@ test_query_refreshed_timeout()
     usleep (0.1 * RPC_TIMEOUT_US);
     apteryx_free_tree (root);
 
+    /* This is a bit magic, but give apteryxd time to take
+     * this process out of the sinbin.
+     */
+    usleep (2 * RPC_CLIENT_TIMEOUT_US);
+
     apteryx_unrefresh (path, refresh_timeout_callback);
 }
 
@@ -10664,6 +10669,90 @@ test_lua_perf_watch (void)
 }
 #endif
 
+static uint64_t
+test_stability_refresh_cb(const char *path)
+{
+    apteryx_set (TEST_PATH"/stability/eth1/counters/rx", "1000");
+    return 1000000;
+}
+
+#define read_thread_count 16
+static int
+read_thread (void *data)
+{
+    GNode *result = apteryx_get_tree(TEST_PATH"/stability");
+    if (result)
+    {
+        apteryx_free_tree(result);
+    }
+    return 0;
+}
+
+/* This test is looking to show that a process not responding
+ * to refresh requests will not stall the whole system.
+ */
+void
+test_stability_refresh_stalled()
+{
+    const char *path = TEST_PATH"/stability/*/counters/*";
+    int pid;
+    int status;
+
+    apteryx_shutdown ();
+    if ((pid = fork ()) == 0)
+    {
+        apteryx_init (apteryx_debug);
+        CU_ASSERT (apteryx_refresh (path, test_stability_refresh_cb));
+        usleep (TEST_SLEEP_TIMEOUT * 3);
+        CU_ASSERT (apteryx_unrefresh (path, test_stability_refresh_cb));
+        exit(0);
+    }
+    else if (pid > 0)
+    {
+        apteryx_init (apteryx_debug);
+        usleep (TEST_SLEEP_TIMEOUT);
+
+        for (int i = 0; i < 100; i++)
+        {
+            char *path = g_strdup_printf(TEST_PATH"/stability/eth%d/name", i);
+            apteryx_set(path, "eth1");
+            g_free(path);
+        }
+
+        /* Stop the child process without closing sockets. */
+        kill (pid, SIGSTOP);
+
+        /* Make a bunch of requests from different threads that
+         * will not get a response from the refresher.
+         */
+        pthread_t readers[read_thread_count];
+        for (int i = 0; i < read_thread_count; i++)
+        {
+            pthread_create (&readers[i], NULL, (void*)read_thread, NULL);
+            usleep((RPC_CLIENT_TIMEOUT_US * 2) / read_thread_count);
+        }
+
+        CU_ASSERT (apteryx_set (TEST_PATH"/stability/eth1/counters/tx", "2000"));
+
+        for (int i = 0; i < read_thread_count; i++)
+            pthread_join (readers[i], NULL);
+
+        /* This should time out and not have a value set. */
+        CU_ASSERT (apteryx_get (path) == NULL);
+
+        kill (pid, SIGCONT);
+        waitpid (pid, &status, 0);
+        CU_ASSERT (WEXITSTATUS (status) == 0);
+    }
+    else if (pid < 0)
+    {
+        CU_ASSERT (0);  //fork failed
+    }
+
+    apteryx_set (path, NULL);
+    apteryx_set (TEST_PATH"/stability/different-value", NULL);
+}
+
 static int
 suite_init (void)
 {
@@ -11098,6 +11187,11 @@ CU_TestInfo tests_lua[] = {
 };
 #endif
 
+CU_TestInfo tests_stability[] = {
+    { "stability process stalled - refresh", test_stability_refresh_stalled },
+    CU_TEST_INFO_NULL,
+};
+
 extern CU_TestInfo tests_database[];
 extern CU_TestInfo tests_callbacks[];
 
@@ -11193,6 +11287,12 @@ static CU_SuiteInfo suites[] = {
         .pInitFunc = suite_init,
         .pCleanupFunc = suite_clean,
         .pTests = tests_performance
+    },
+    {
+        .pName = "Apteryx Stability",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_stability
     },
     CU_SUITE_INFO_NULL,
 };
