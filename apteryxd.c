@@ -43,6 +43,14 @@ counters_t counters = {};
 /* Synchronise validation */
 static pthread_mutex_t validating;
 
+/* Sin bin for processes that have not responded in time. */
+struct sin_bin_entry {
+    char *uri;
+    uint64_t timeout;
+};
+static GList *sin_bin = NULL;
+static pthread_mutex_t sin_bin_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static bool
 check_indexed_path (const char *indexed, const char *path, int path_length)
 {
@@ -417,6 +425,81 @@ get_refresher_path (const char *path, cb_info_t *refresher)
     return cpath;
 }
 
+
+static const char*
+get_process_name (const uint64_t ns, const uint64_t pid)
+{
+    static char name[1024];
+    name[0] = '\0';
+    if (ns != getns ())
+    {
+        sprintf (name, APTERYX_CLIENT_ID, ns, pid);
+        return name;
+    }
+    sprintf (name, "/proc/%"PRIu64"/cmdline", pid);
+    FILE* f = fopen (name,"r");
+    if (f)
+    {
+        size_t size;
+        size = fread (name, sizeof(char), 1024, f);
+        if (size > 0)
+        {
+            if ('\n' == name[size-1])
+                name[size-1]='\0';
+        }
+        fclose(f);
+    }
+    if (strrchr (name, '/'))
+        return strrchr (name, '/') + 1;
+    return name;
+}
+
+/* Returns true if this uri can currently be used, false otherwise. */
+static bool
+sin_bin_check (const char *uri)
+{
+    GList *iter, *next;
+    uint64_t now = get_time_us ();
+
+    pthread_mutex_lock (&sin_bin_lock);
+    /* First remove any expired entries. */
+    for (iter = sin_bin; iter; iter = next)
+    {
+        struct sin_bin_entry *entry = (struct sin_bin_entry *)iter->data;
+        next = iter->next;
+        if (entry->timeout < now)
+        {
+            g_free (entry->uri);
+            g_free (entry);
+            sin_bin = g_list_delete_link (sin_bin, iter);
+        }
+    }
+
+    /* If the entry is in the sinbin, return false. */
+    for (iter = sin_bin; iter; iter = iter->next)
+    {
+        struct sin_bin_entry *entry = (struct sin_bin_entry *)iter->data;
+        if (strcmp (entry->uri, uri) == 0)
+        {
+            pthread_mutex_unlock (&sin_bin_lock);
+            return false;
+        }
+    }
+    pthread_mutex_unlock (&sin_bin_lock);
+    return true;
+}
+
+static void
+sin_bin_add (const char *uri)
+{
+    struct sin_bin_entry *entry = g_malloc0 (sizeof (struct sin_bin_entry));
+    entry->uri = g_strdup (uri);
+    entry->timeout = get_time_us () + (2 * RPC_CLIENT_TIMEOUT_US);
+    pthread_mutex_lock (&sin_bin_lock);
+    sin_bin = g_list_prepend (sin_bin, entry);
+    pthread_mutex_unlock (&sin_bin_lock);
+}
+
 static bool
 call_refreshers (const char *path, bool dry_run)
 {
@@ -456,7 +539,9 @@ call_refreshers (const char *path, bool dry_run)
         DEBUG ("PATH:%s RPATH:%s CPATH:%s\n", path, refresher->path, cpath);
 
         /* We can skip this refresher if the refresher has been called recently AND
-         * the last call was for a path equal to or less specific than this one */
+         * the last call was for a path equal to or less specific than this one,
+         * but don't nag a process that has been timing out until the expiry time
+         * is actually hit. */
         if (now < (refresher->timestamp + refresher->timeout) &&
             (strncmp (refresher->last_path, cpath, strlen (refresher->last_path)) == 0 &&
              (*(refresher->last_path + strlen (refresher->last_path) - 1) == '/' ||
@@ -467,6 +552,14 @@ call_refreshers (const char *path, bool dry_run)
                    cpath, now, refresher->timestamp, refresher->timeout);
             goto unlock;
         }
+
+        /* Check to see if this process is in the sinbin */
+        if (sin_bin_check (refresher->uri) == false)
+        {
+            DEBUG ("REFRESH: Not Refreshing %s - %s in sinbin\n", cpath, get_process_name (refresher->ns, refresher->id));
+            goto unlock;
+        }
+
         if (now >= (refresher->timestamp + refresher->timeout))
         {
             DEBUG ("Refreshing %s (now:%"PRIu64" >= (ts:%"PRIu64" + to:%"PRIu64"))\n",
@@ -520,8 +613,11 @@ call_refreshers (const char *path, bool dry_run)
             if (!res)
             {
                 INC_COUNTER (counters.refreshed_timeout);
-                ERROR ("Failed to notify refresher for path \"%s\"\n", (char *) path);
+                ERROR ("REFRESH: No response from %s for path \"%s\"\n", get_process_name (refresher->ns, refresher->id), (char *) path);
                 rpc_client_release (rpc, rpc_client, false);
+
+                /* Put this process in the sin bin for a while. */
+                sin_bin_add (refresher->uri);
             }
             else
             {
@@ -2514,7 +2610,6 @@ main (int argc, char **argv)
             fclose (fp);
         }
     }
-
 
     /* Initialise the database */
     db_init ();
