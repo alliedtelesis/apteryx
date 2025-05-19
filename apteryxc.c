@@ -301,8 +301,8 @@ main (int argc, char **argv)
     /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
     if (mode != MODE_TEST)
     {
-        signal (SIGTERM, (__sighandler_t) termination_handler);
-        signal (SIGINT, (__sighandler_t) termination_handler);
+        signal (SIGTERM, (sighandler_t) termination_handler);
+        signal (SIGINT, (sighandler_t) termination_handler);
     }
 
     switch (mode)

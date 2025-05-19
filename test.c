@@ -26,7 +26,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/un.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <assert.h>
 #ifdef HAVE_LUA
 #include <lua.h>
@@ -49,6 +49,10 @@
 #define TEST_MESSAGE_SIZE   100
 #define TEST_SCHEMA_PATH    "/etc/apteryx/schema:."
 #define TEST_SCHEMA_FILE    "./test.xml"
+
+#ifndef PTHREAD_NULL
+#define PTHREAD_NULL ((pthread_t)-1)
+#endif
 
 static int _cb_count = 0;
 
@@ -2174,7 +2178,7 @@ test_watch_myself_blocked ()
 }
 
 
-static pthread_t watch_thread_id = -1;
+static pthread_t watch_thread_id = PTHREAD_NULL;
 static bool
 test_watch_callback_thread_info (const char *path, const char *value)
 {
@@ -2185,7 +2189,7 @@ test_watch_callback_thread_info (const char *path, const char *value)
 
     usleep(TEST_SLEEP_TIMEOUT / 100);
 
-    if (watch_thread_id == -1)
+    if (watch_thread_id == PTHREAD_NULL)
         watch_thread_id = pthread_self ();
     else
         CU_ASSERT (pthread_self() == watch_thread_id);
@@ -2205,7 +2209,7 @@ test_watch_ack_thread ()
 {
     const char *path = TEST_PATH"/entity/zones/private/state";
     _cb_count = 0;
-    watch_thread_id = -1;
+    watch_thread_id = PTHREAD_NULL;
     CU_ASSERT (apteryx_watch (path, test_watch_callback_thread_info));
     apteryx_set (path, "1");
     apteryx_set_wait (path, "2");
@@ -9689,7 +9693,7 @@ exit:
     rpc_shutdown (rpc);
 }
 
-static pthread_t single_thread = -1;
+static pthread_t single_thread = PTHREAD_NULL;
 static int
 _single_thread (void *data)
 {

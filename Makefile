@@ -52,6 +52,9 @@ EXTRA_CSRC += test.c
 apteryx_CFLAGS += -DTEST
 apteryx_LDFLAGS += -lcunit
 endif
+ifneq ($(HAVE_MALLINFO2),no)
+apteryx_CFLAGS += -DHAVE_MALLINFO2
+endif
 
 all: $(BUILDDIR)/libapteryx.so $(BUILDDIR)/apteryx $(BUILDDIR)/apteryxd
 
