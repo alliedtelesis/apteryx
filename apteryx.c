@@ -1682,7 +1682,7 @@ apteryx_get_tree (const char *path)
         while (chunk)
         {
             /* Got something left after this chunk - add an intermediate node */
-            if (strlen(ptr))
+            if (ptr && strlen(ptr))
             {
                 new_root = APTERYX_NODE (new_root, g_strdup(chunk));
             }
