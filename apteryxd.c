@@ -23,7 +23,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <errno.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
 #include <malloc.h>
@@ -2440,14 +2440,24 @@ handle_memuse (rpc_message msg)
     if (path[0] == '.' && path[1] == '\0')
     {
         /* Total memory in use */
+#ifdef HAVE_MALLINFO2
         struct mallinfo2 mi = mallinfo2 ();
         value = (unsigned int) (mi.uordblks) + (unsigned int) (mi.hblkhd);
+#else
+        /* FIXME: Implement */
+        value = 0;
+#endif
     }
     else if (path[0] == '.' && path[1] == '.' && path[2] == '\0')
     {
         /* Total memory allocated */
+#ifdef HAVE_MALLINFO2
         struct mallinfo2 mi = mallinfo2 ();
         value = (unsigned int) (mi.arena) + (unsigned int) (mi.hblkhd);
+#else
+        /* FIXME: Implement */
+        value = 0;
+#endif
     }
     else
         value = db_memuse (path);
@@ -2555,8 +2565,8 @@ main (int argc, char **argv)
     }
 
     /* Handle SIGTERM/SIGINT/SIGPIPE gracefully */
-    signal (SIGTERM, (__sighandler_t) termination_handler);
-    signal (SIGINT, (__sighandler_t) termination_handler);
+    signal (SIGTERM, (sighandler_t) termination_handler);
+    signal (SIGINT, (sighandler_t) termination_handler);
     signal (SIGPIPE, SIG_IGN);
 
     int child_ready[2] = { 0 };

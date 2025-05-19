@@ -38,7 +38,7 @@
  * along with this library. If not, see <http://www.gnu.org/licenses/>
  */
 #ifdef HAVE_LUA
-#include <sys/poll.h>
+#include <poll.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include "apteryx.h"
@@ -1099,8 +1099,8 @@ lua_apteryx_mainloop (lua_State *L)
     }
     if (lua_gettop (L) == 1 && lua_toboolean (L, 1))
     {
-        signal (SIGTERM, (__sighandler_t) termination_handler);
-        signal (SIGINT, (__sighandler_t) termination_handler);
+        signal (SIGTERM, (sighandler_t) termination_handler);
+        signal (SIGINT, (sighandler_t) termination_handler);
     }
 
     running = true;
