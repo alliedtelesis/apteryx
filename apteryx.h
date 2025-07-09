@@ -223,7 +223,7 @@ bool apteryx_has_value (const char *path);
  * Get the last change timestamp in monotonic time of a given path.
  *
  * If the function is given an intermediate (branch) node the timestamp is that of the
- * most recently updated child. Passing a trailing asterisk (e.g. "/test/values/*") will
+ * most recently updated child. Passing a trailing asterisk will
  * cause any refreshers below this part of the tree to be called.
  *
  * NOTE: This function may cause refreshers to be called.
