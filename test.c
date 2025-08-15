@@ -1076,6 +1076,18 @@ test_index_get_tree_cb(const char *path)
     return paths;
 }
 
+static char*
+test_provide_callback_100 (const char *path)
+{
+    return strdup ("100");
+}
+
+static char*
+test_provide_callback_1000 (const char *path)
+{
+    return strdup ("1000");
+}
+
 static char *
 test_provide_get_tree_cb(const char *path)
 {
@@ -5736,6 +5748,119 @@ test_query_provided_wildcards ()
 }
 
 void
+test_query_node_indexed_static_provided ()
+{
+    GNode *query, *root, *node;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/counters/rx/pkts", NULL);
+    root = apteryx_query (query);
+    apteryx_free_tree (query);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/counters/rx/pkts")) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "100") == 0);
+    CU_ASSERT (node && g_node_n_children (g_node_first_child (node)) == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/rx/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_query_node_indexed_wildcard_provided ()
+{
+    GNode *query, *root, *node;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/*/pkts", test_provide_callback_100));
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/counters/rx/pkts", NULL);
+    root = apteryx_query (query);
+    apteryx_free_tree (query);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/counters/rx/pkts")) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "100") == 0);
+    CU_ASSERT (node && g_node_n_children (g_node_first_child (node)) == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/*/pkts", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_query_node_indexed_key_wildcard_provided ()
+{
+    GNode *query, *root, *node;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/*", test_provide_callback_100));
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/counters/rx", NULL);
+    root = apteryx_query (query);
+    apteryx_free_tree (query);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/counters/rx")) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "100") == 0);
+    CU_ASSERT (node && g_node_n_children (g_node_first_child (node)) == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/*", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_query_node_indexed_key_one_level_provided ()
+{
+    GNode *query, *root, *node;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/", test_provide_callback_100));
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/counters/rx", NULL);
+    root = apteryx_query (query);
+    apteryx_free_tree (query);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/counters/rx")) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "100") == 0);
+    CU_ASSERT (node && g_node_n_children (g_node_first_child (node)) == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_query_tree_indexed_key_wildcard_provided ()
+{
+    GNode *query, *root, *node;
+
+    CU_ASSERT (apteryx_index (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (apteryx_provide (TEST_PATH"/counters/*", test_provide_callback_100));
+
+    query = g_node_new (strdup ("/"));
+    apteryx_path_to_node (query, TEST_PATH"/counters/*", NULL);
+    root = apteryx_query (query);
+    apteryx_free_tree (query);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/counters/rx")) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "100") == 0);
+    CU_ASSERT (node && g_node_n_children (g_node_first_child (node)) == 0);
+    CU_ASSERT ((node = apteryx_path_node (root, TEST_PATH"/counters/tx")) != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), "100") == 0);
+    CU_ASSERT (node && g_node_n_children (g_node_first_child (node)) == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_unprovide (TEST_PATH"/counters/*", test_provide_callback_100));
+    CU_ASSERT (apteryx_unindex (TEST_PATH"/counters/", test_index_cb));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_query_long_root()
 {
     const char *path = TEST_PATH"/devices/dut/interfaces/eth1/state";
@@ -7958,18 +8083,6 @@ test_find_tree_null_values()
     g_node_destroy (root);
 
     apteryx_prune (TEST_PATH);
-}
-
-static char*
-test_provide_callback_100 (const char *path)
-{
-    return strdup ("100");
-}
-
-static char*
-test_provide_callback_1000 (const char *path)
-{
-    return strdup ("1000");
 }
 
 void
@@ -11044,6 +11157,11 @@ static CU_TestInfo tests_api_tree[] = {
     { "query provided trunk request", test_query_trunk_provided},
     { "query provided wildcard",  test_query_provided_wildcard},
     { "query provided wildcards", test_query_provided_wildcards},
+    { "query node indexed and static provided", test_query_node_indexed_static_provided},
+    { "query node indexed and wildcard provided", test_query_node_indexed_wildcard_provided},
+    { "query node indexed and key wildcard provided", test_query_node_indexed_key_wildcard_provided},
+    { "query node indexed and key one level provided", test_query_node_indexed_key_one_level_provided},
+    { "query tree indexed and key wildcard provided", test_query_tree_indexed_key_wildcard_provided},
     { "query refresh exact query exact", test_query_refresh_exact_query_exact},
     { "query refresh exact query trunk", test_query_refresh_exact_query_trunk},
     { "query refresh exact query root", test_query_refresh_exact_query_root},

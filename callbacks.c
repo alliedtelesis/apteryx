@@ -232,7 +232,7 @@ cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const cha
      */
     if (strlen (path) == 0)
     {
-        if (node->exact)
+        if (node->exact || node->following)
         {
             callbacks_so_far = g_list_prepend (callbacks_so_far, g_strdup (""));
         }
@@ -281,6 +281,11 @@ cb_gather_search (struct callback_node *node, GList *callbacks_so_far, const cha
         callbacks_so_far =
             cb_gather_search ((struct callback_node *) next_stage, callbacks_so_far,
                               path + strlen (tmp) + 1);
+    }
+    /* Directory match and we are matching to this node */
+    if (node->directory && strlen(path + strlen (tmp) + 1) == 0)
+    {
+        callbacks_so_far = g_list_prepend (callbacks_so_far, g_strdup (""));
     }
 
     char *with_leading_slash = NULL;
