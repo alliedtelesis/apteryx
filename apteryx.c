@@ -38,13 +38,25 @@
 bool apteryx_halt (void) __attribute__((destructor));
 
 /* Configuration */
-bool apteryx_debug = false;                      /* Debug enabled */
-static const char *default_url = APTERYX_SERVER; /* Default path to Apteryx database */
+bool apteryx_debug = false;             /* Debug enabled */
+static char *default_url = NULL;            /* Default path to Apteryx database */
 static int ref_count = 0;               /* Library reference count */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; /* Protect globals */
 static rpc_instance rpc = NULL;         /* RPC Service */
 static bool bound = false;              /* Do we have a listen socket open */
 static bool have_callbacks = false;     /* Have we ever registered any callbacks */
+
+const char *
+apteryx_server_url(void)
+{
+    if (!default_url)
+    {
+        const char *path = getenv ("APTERYX_PATH");
+        path = path ?: "/tmp";
+        default_url = g_strdup_printf ("unix://%s/apteryx", path);
+    }
+    return default_url;
+}
 
 /* Callback */
 typedef struct _cb_t
@@ -134,7 +146,7 @@ validate_path (const char *path, char **url)
     {
         /* Use the default URL */
         if (url)
-            *url = strdup(default_url);
+            *url = strdup(apteryx_server_url());
         return path;
     }
     /* Check for a full URL */
@@ -504,8 +516,8 @@ apteryx_init (bool debug_enabled)
         if (have_callbacks)
         {
             /* Bind to the default uri for this client */
-            if (asprintf ((char **) &uri, APTERYX_CLIENT, getns (), (uint64_t) getpid ()) <= 0
-                    || !rpc_server_bind (rpc, uri, uri))
+            uri = apteryx_client_url(getns (), (uint64_t) getpid ());
+            if (!rpc_server_bind (rpc, uri, uri))
             {
                 ERROR ("Failed to bind uri %s\n", uri);
                 ref_count--;
@@ -552,6 +564,8 @@ apteryx_shutdown (void)
     rpc_shutdown (rpc);
     rpc = NULL;
     bound = false;
+    free (default_url);
+    default_url = NULL;
     DEBUG ("SHUTDOWN: Shutdown\n");
     return true;
 }
@@ -2155,8 +2169,8 @@ add_callback (const char *type, const char *path, void *fn, bool value, void *da
         char * uri = NULL;
 
         /* Bind to the default uri for this client */
-        if (asprintf ((char **) &uri, APTERYX_CLIENT, getns (), (uint64_t) getpid ()) <= 0
-                || !rpc_server_bind (rpc, uri, uri))
+        uri = apteryx_client_url(getns (), (uint64_t) getpid ());
+        if (!rpc_server_bind (rpc, uri, uri))
         {
             ERROR ("Failed to bind uri %s\n", uri);
             pthread_mutex_unlock (&lock);
@@ -2386,7 +2400,7 @@ apteryx_memuse (const char *path)
     /* Check path */
     if (path[0] == '.')
     {
-        url = strdup(default_url);
+        url = strdup(apteryx_server_url());
     }
     else
     {

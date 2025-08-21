@@ -42,6 +42,7 @@
 #define TEST2_PATH          "/test2"
 #define TEST_ITERATIONS     1000
 #define TEST_SLEEP_TIMEOUT  100000
+#define TEST_UNIX_URL       "unix:///tmp/apteryx.test"
 #define TEST_TCP_URL        "tcp://127.0.0.1:9999"
 #define TEST_TCP6_URL       "tcp://[::1]:9999"
 #define TEST_RPC_PATH       "/tmp/apteryx.test"
@@ -9691,7 +9692,7 @@ test_rpc_init ()
 void
 test_rpc_bind ()
 {
-    char *url = APTERYX_SERVER".test";
+    char *url = TEST_UNIX_URL;
     rpc_instance rpc;
     CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
@@ -9702,7 +9703,7 @@ test_rpc_bind ()
 void
 test_rpc_connect ()
 {
-    char *url = APTERYX_SERVER".test";
+    char *url = TEST_UNIX_URL;
     rpc_client rpc_client;
     rpc_instance rpc;
 
@@ -9719,7 +9720,7 @@ test_rpc_ping ()
 {
     rpc_message_t msg = {};
     char *test_string = "testing123...";
-    char *url = APTERYX_SERVER".test";
+    char *url = TEST_UNIX_URL;
     rpc_client rpc_client;
     rpc_instance rpc;
     char *value;
@@ -9741,7 +9742,7 @@ test_rpc_ping ()
 void
 test_rpc_double_bind ()
 {
-    char *url = APTERYX_SERVER".test";
+    char *url = TEST_UNIX_URL;
     rpc_instance rpc;
     CU_ASSERT ((rpc = rpc_init (RPC_TIMEOUT_US, false, test_handler)) != NULL);
     CU_ASSERT (rpc_server_bind (rpc,  url, url));
@@ -9777,7 +9778,7 @@ test_rpc_perf ()
 {
     rpc_message_t msg = {};
     char *test_string = "testing123...";
-    char *url = APTERYX_SERVER".test";
+    char *url = TEST_UNIX_URL;
     rpc_client rpc_client;
     rpc_instance rpc;
     uint64_t start;

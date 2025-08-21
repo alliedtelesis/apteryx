@@ -2518,7 +2518,7 @@ help (void)
             "  -s   reuse client sockets for callbacks\n"
             "  -p   use <pidfile> (background mode only)\n"
             "  -r   use <runfile>\n"
-            "  -l   listen on URL <url> (defaults to "APTERYX_SERVER")\n");
+            "  -l   listen on URL <url> (defaults to unix://tmp/apteryx)\n");
 }
 
 int
@@ -2526,7 +2526,7 @@ main (int argc, char **argv)
 {
     const char *pid_file = NULL;
     const char *run_file = NULL;
-    const char *url = APTERYX_SERVER;
+    const char *url = apteryx_server_url ();
     bool background = false;
     bool reuse_sock = false;
     pthread_mutexattr_t callback_recursive;
