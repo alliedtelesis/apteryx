@@ -45,7 +45,7 @@ cb_create (struct callback_node *tree_root, const char *guid, const char *path,
     cb->path = g_strdup (path);
     cb->ns = ns ?: getns ();
     cb->id = id;
-    cb->uri = g_strdup_printf (APTERYX_CLIENT, cb->ns, cb->id);
+    cb->uri = apteryx_client_url(cb->ns, cb->id);
     cb->ref = callback;
     cb->flags = flags;
     g_atomic_int_set (&cb->refcnt, 1);

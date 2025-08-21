@@ -38,10 +38,12 @@
 #include <glib.h>
 #include "rpc_transport.h"
 
-/* Default UNIX socket path */
-#define APTERYX_SERVER      "unix:///tmp/apteryx"
-#define APTERYX_CLIENT_ID   "%"PRIX64".%"PRIu64
-#define APTERYX_CLIENT      APTERYX_SERVER"."APTERYX_CLIENT_ID
+#define APTERYX_CLIENT_ID       "%"PRIX64".%"PRIu64
+const char* apteryx_server_url (void);
+static inline char *apteryx_client_url(uint64_t ns, uint64_t pid)
+{
+    return g_strdup_printf ("%s."APTERYX_CLIENT_ID, apteryx_server_url(), ns, pid);
+}
 
 /* Callback GUID format <namespace>-<nspid>-<client-reference>-<flags>-<path-hash> */
 #define APTERYX_GUID_FORMAT     "%"PRIX64"-%"PRIu64"-%"PRIX64"-%"PRIX64"-%"PRIX64""
