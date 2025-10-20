@@ -9134,9 +9134,159 @@ test_timestamp ()
     CU_ASSERT (apteryx_set_int (path, "value2", 11));
     ts = apteryx_timestamp (path);
     CU_ASSERT (ts != 0);
+    /* Calling again should give the same result */
+    CU_ASSERT (ts == apteryx_timestamp(TEST_PATH));
     CU_ASSERT (apteryx_prune (TEST_PATH"/timestamp/value"));
     CU_ASSERT (ts != apteryx_timestamp (path));
     CU_ASSERT (apteryx_prune (TEST_PATH));
+}
+
+void
+test_timestamp_query ()
+{
+    const char *path = TEST_PATH"/timestamp";
+    uint64_t ts;
+    GNode *root = APTERYX_NODE(NULL, g_strdup(path));
+
+    CU_ASSERT (apteryx_set_int (path, "value", 10));
+    CU_ASSERT (apteryx_set_int (path, "value2", 11));
+    /* This one should be zero - there is no value that matches the query */
+    ts = apteryx_timestamp_query (root);
+    CU_ASSERT (ts == 0);
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+    apteryx_free_tree (root);
+}
+
+void
+test_timestamp_query_single ()
+{
+    const char *path = TEST_PATH"/timestamp";
+    GNode *root = APTERYX_NODE(NULL, g_strdup(TEST_PATH));
+    GNode *node = APTERYX_NODE(root, g_strdup("timestamp"));
+    node = APTERYX_NODE(node, g_strdup("value2"));
+    uint64_t ts, ts_q;
+
+    CU_ASSERT (apteryx_set_int (path, "value2", 11));
+    CU_ASSERT (apteryx_set_int (path, "value", 10));
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value2");
+    ts_q = apteryx_timestamp_query (root);
+    CU_ASSERT (ts != 0);
+    CU_ASSERT (ts == ts_q);
+    /* Removing a value not in the query should have no impact */
+    CU_ASSERT (apteryx_prune (TEST_PATH"/timestamp/value"));
+    CU_ASSERT (ts == apteryx_timestamp_query (root));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+    CU_ASSERT (0 == apteryx_timestamp_query (root));
+    apteryx_free_tree (root);
+}
+
+
+void
+test_timestamp_query_wildcard ()
+{
+    uint64_t ts, ts_q, ts2;
+    const char *path = TEST_PATH"/timestamp";
+    GNode *root = APTERYX_NODE(NULL, g_strdup(TEST_PATH));
+    GNode *node = APTERYX_NODE(root, g_strdup("*"));
+
+    CU_ASSERT (apteryx_set_int (path, "value2", 11));
+    CU_ASSERT (apteryx_set_int (path, "value", 10));
+
+    ts_q = apteryx_timestamp_query (root);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value");
+    CU_ASSERT (ts_q != 0);
+    CU_ASSERT (ts_q == ts);
+    /* Add a node that needs to reached below an asterisk */
+    APTERYX_NODE(node, g_strdup("value2"));
+    ts2 = apteryx_timestamp_query (root);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value");
+    CU_ASSERT (ts != ts2);
+    ts = apteryx_timestamp (TEST_PATH"/timestamp/value2");
+    CU_ASSERT (ts == ts2);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/timestamp/value"));
+    CU_ASSERT (ts2 == apteryx_timestamp_query (root));
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+    CU_ASSERT (0 == apteryx_timestamp_query (root));
+    apteryx_free_tree (root);
+}
+
+static uint64_t
+ts_query_refresh(const char *path)
+{
+    ++_cb_count;
+    apteryx_set_int(path, NULL, 10);
+    return _cb_timeout;
+}
+
+void
+test_timestamp_query_detailed ()
+{
+    uint64_t ts, ts2;
+    _cb_timeout = 5000;
+
+    GNode *root = APTERYX_NODE(NULL, g_strdup(TEST_PATH"/firewall"));
+    GNode *node = APTERYX_NODE(root, g_strdup("rules"));
+    node = APTERYX_NODE(node, g_strdup("*"));
+    APTERYX_NODE(APTERYX_NODE(node, g_strdup("in")), NULL);
+    APTERYX_NODE(APTERYX_NODE(node, g_strdup("out")), NULL);
+
+    apteryx_set(TEST_PATH"/firewall/rules/10/in","eth0");
+    apteryx_set(TEST_PATH"/firewall/rules/10/out","eth1");
+
+    ts = apteryx_timestamp_query (root);
+    CU_ASSERT (ts != 0);
+
+    apteryx_refresh(TEST_PATH"/firewall/rules/*/counters", ts_query_refresh);
+    /* This should NOT trigger the refresher */
+    _cb_count = 0;
+    ts2 = apteryx_timestamp_query (root);
+    CU_ASSERT (_cb_count == 0);
+    CU_ASSERT (ts == ts2);
+
+    /* This should trigger the refresher, but the timestamp should stay unchanged. */
+    CU_ASSERT (apteryx_get_int(TEST_PATH"/firewall/rules/10", "counters") == 10);
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (ts2 == apteryx_timestamp_query (root));
+    ts = apteryx_timestamp (TEST_PATH);
+    ts2 = apteryx_timestamp_query (root);
+    CU_ASSERT (ts != ts2);
+    
+    ts = apteryx_timestamp (TEST_PATH);
+    ts2 = apteryx_timestamp_query (root);
+    CU_ASSERT (ts != ts2);
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+    CU_ASSERT (0 == apteryx_timestamp_query (root));
+    apteryx_free_tree (root);
+    apteryx_unrefresh(TEST_PATH"/firewall/rules/*/counters", ts_query_refresh);
+}
+
+
+void
+test_timestamp_query_directory ()
+{
+    uint64_t ts, ts2;
+    _cb_timeout = 5000;
+
+    GNode *root = APTERYX_NODE(NULL, g_strdup(TEST_PATH"/firewall"));
+    GNode *node = APTERYX_NODE(root, g_strdup("rules"));
+    node = APTERYX_NODE(node, g_strdup("10"));
+    APTERYX_NODE(APTERYX_NODE(node, g_strdup("")),NULL);
+
+    apteryx_set(TEST_PATH"/firewall/rules/10/in","eth0");
+    apteryx_set(TEST_PATH"/firewall/rules/10/out","eth1");
+
+    ts = apteryx_timestamp_query (root);
+    CU_ASSERT (ts != 0);
+
+    apteryx_set(TEST_PATH"/firewall/rules/10/counters/hit", "10");
+
+    /* Updating a node below the directory match shouldn't update the timestamp */
+    ts2 = apteryx_timestamp_query (root);
+    CU_ASSERT (ts == ts2);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+    CU_ASSERT (0 == apteryx_timestamp_query (root));
+    apteryx_free_tree (root);
 }
 
 void
@@ -9185,7 +9335,7 @@ test_timestamp_refreshed_wildcard ()
     usleep (_cb_timeout);
     ts = apteryx_timestamp (path);
     ts1 = apteryx_timestamp (refresher_path);
-    CU_ASSERT (ts1 != 0);
+     CU_ASSERT (ts == 0);
     CU_ASSERT (ts != ts1);
 
     char *wild_card_paths[] = {
@@ -9197,7 +9347,7 @@ test_timestamp_refreshed_wildcard ()
     };
     for (size_t i = 0; i < 5; i++)
     {
-        usleep (_cb_timeout);
+        usleep (_cb_timeout*10);
         ts = apteryx_timestamp (wild_card_paths[i]);
         ts1 = apteryx_timestamp (refresher_path);
         CU_ASSERT (ts == ts1);
@@ -10206,7 +10356,7 @@ test_lua_basic_timestamp (void)
         "assert(t2 > t1)                                              \n"
         "t1, t2 = nil, nil                                            \n"
         "assert(apteryx.prune('"TEST_PATH"/list'))                    \n"
-        "assert(apteryx.timestamp ('/list') == 0)                     \n"
+        "assert(apteryx.timestamp ('"TEST_PATH"/list') == 0)                     \n"
     ));
     CU_ASSERT (assert_apteryx_empty ());
 }
@@ -10950,10 +11100,6 @@ static CU_TestInfo tests_api[] = {
     { "shutdown deadlock 2", test_deadlock2 },
     { "remote path contains colon", test_remote_path_colon },
     { "double fork", test_double_fork },
-    { "timestamp", test_timestamp },
-    { "timestamp refreshed", test_timestamp_refreshed },
-    { "timestamp refreshed wildcard", test_timestamp_refreshed_wildcard },
-    { "timestamp provider", test_timestamp_provider },
     { "memuse", test_memuse },
     { "path to node", test_path_to_node },
     CU_TEST_INFO_NULL,
@@ -11236,6 +11382,19 @@ static CU_TestInfo tests_api_tree[] = {
     CU_TEST_INFO_NULL,
 };
 
+static CU_TestInfo tests_api_timestamp[] = {
+    { "timestamp", test_timestamp },
+    { "timestamp query", test_timestamp_query },
+    { "timestamp query single", test_timestamp_query_single },
+    { "timestamp query wildcard", test_timestamp_query_wildcard },
+    { "timestamp query detailed", test_timestamp_query_detailed },
+    { "timestamp query directory", test_timestamp_query_directory },
+    { "timestamp refreshed", test_timestamp_refreshed },
+    { "timestamp refreshed wildcard", test_timestamp_refreshed_wildcard },
+    { "timestamp provider", test_timestamp_provider },
+    CU_TEST_INFO_NULL,
+};
+
 static CU_TestInfo tests_find[] = {
     { "find simple", test_find_one_star },
     { "find multi *", test_find_two_star },
@@ -11430,6 +11589,12 @@ static CU_SuiteInfo suites[] = {
         .pInitFunc = suite_init,
         .pCleanupFunc = suite_clean,
         .pTests = tests_api_proxy
+    },
+    {
+        .pName = "Apteryx API Timestamp",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_api_timestamp
     },
     {
         .pName = "Apteryx API Find",

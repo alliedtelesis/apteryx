@@ -143,6 +143,7 @@ typedef enum
     MODE_PROXY,
     MODE_PRUNE,
     MODE_TIMESTAMP,
+    MODE_TIMESTAMP_QUERY,
     MODE_TEST,
     MODE_MEMUSE,
     MODE_COUNTERS,
@@ -248,6 +249,7 @@ GNode *db_get_all (const char *path);
 GNode *db_query (GNode *query);
 GList *db_search (const char *path);
 uint64_t db_timestamp (const char *path);
+uint64_t db_timestamp_query (GNode *query);
 uint64_t db_memuse (const char *path);
 
 /* RPC API */
