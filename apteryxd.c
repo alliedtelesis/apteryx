@@ -1135,6 +1135,68 @@ proxy_timestamp (const char *path)
     return value;
 }
 
+static uint64_t
+proxy_timestamp_query (GNode *ts_head, const char *path)
+{
+    rpc_client rpc_client;
+    rpc_message_t msg = {};
+    cb_info_t *proxy = NULL;
+    GNode *node = NULL;
+    GNode *pnode = NULL;
+    GNode *pquery = NULL;
+    uint64_t ts = 0;
+
+    /* Find and connect to a proxied instance */
+    rpc_client = find_proxy (&path, &proxy);
+    if (!rpc_client) {
+        return ts;
+    }
+
+    /* Need to trim off root of the query tree, up until the proxied node */
+    int len = strlen (proxy->path);
+    if (proxy->path[len-1] == '*')
+        len -= 1;
+    if (proxy->path[len-1] == '/')
+        len -= 1;
+    char *local_path = g_malloc0 (len + 1);
+    strncpy (local_path, proxy->path, len);
+
+    /* Create a temp query without the proxy path */
+    node = apteryx_path_node (ts_head->children, local_path);
+    pnode = g_node_first_child (node);
+    g_node_unlink (pnode);
+    pquery = APTERYX_NODE (NULL, "");
+    g_node_prepend (pquery, pnode);
+
+    /* Do remote query */
+    rpc_msg_encode_uint8 (&msg, MODE_TIMESTAMP_QUERY);
+    rpc_msg_encode_tree (&msg, pquery);
+
+    /* Restore the original query */
+    g_node_unlink (pnode);
+    g_node_destroy (pquery);
+    g_node_prepend (node, pnode);
+
+    if (!rpc_msg_send (rpc_client, &msg))
+    {
+        INC_COUNTER (counters.proxied_timeout);
+        ERROR ("No response from proxy for path \"%s\"\n", (char *)path);
+        rpc_client_release (rpc, rpc_client, false);
+        g_free (local_path);
+        return ts;
+    }
+
+    /* Get the response. */
+    ts = rpc_msg_decode_uint64 (&msg);
+
+    g_free (local_path);
+
+    rpc_msg_reset (&msg);
+    rpc_client_release (rpc, rpc_client, true);
+
+    return ts;
+}
+
 /* Removes a node and any hanging parents from a GNode tree */
 static GNode *
 remove_node (GNode *_root, const char *_path)
@@ -2365,6 +2427,78 @@ handle_prune (rpc_message msg)
 }
 
 static bool
+handle_timestamp_query (rpc_message msg)
+{
+    GNode *root = NULL;
+    uint64_t timestamp = 0;
+    char *root_path = NULL;
+
+    DEBUG ("TIMESTAMP\n");
+    INC_COUNTER (counters.timestamp);
+
+    GNode *ts_head = rpc_msg_decode_tree (msg);
+    if (!ts_head)
+    {
+        goto done;
+    }
+    DEBUG_TREE (ts_head);
+
+    /* Get root path */
+    root_path = apteryx_node_path (ts_head);
+    char *wildcard = strstr(root_path, "/*");
+    if (wildcard)
+        *wildcard = '\0';
+
+    /* Sometimes the branch has stars in it. Break it up for processing */
+    ts_head = break_up_trunk (ts_head);
+
+    /* Proxy first */
+    timestamp = proxy_timestamp_query (ts_head, root_path);
+    if (timestamp)
+    {
+        /* Return result */
+        goto done;
+    }
+
+    /* Attempt to call refreshers for all paths in the query */
+    g_node_children_foreach (ts_head, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
+
+    /* Grab all providers that match this tree */
+    GList *providers = collect_provided_paths_query (ts_head);
+    if (providers)
+    {
+        timestamp = get_time_us ();
+    }
+
+    /* Query the database */
+    timestamp = db_timestamp_query (ts_head);
+
+    g_list_free_full(providers, g_free);
+
+    DEBUG ("TIMESTAMP RESULT: %"PRIu64"\n", timestamp);
+
+    /* Send result */
+done:
+    if (root_path)
+    {
+        g_free (root_path);
+    }
+    rpc_msg_reset (msg);
+    rpc_msg_encode_uint64(msg, timestamp);
+
+    if (ts_head)
+    {
+        apteryx_free_tree(ts_head);
+    }
+    if (root)
+    {
+        apteryx_free_tree(root);
+    }
+
+    return timestamp;
+}
+
+static bool
 handle_timestamp (rpc_message msg)
 {
     uint64_t value;
@@ -2493,6 +2627,8 @@ msg_handler (rpc_message msg)
         return handle_prune (msg);
     case MODE_TIMESTAMP:
         return handle_timestamp (msg);
+    case MODE_TIMESTAMP_QUERY:
+        return handle_timestamp_query (msg);
     case MODE_MEMUSE:
         return handle_memuse (msg);
     default:

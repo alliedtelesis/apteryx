@@ -486,6 +486,109 @@ db_get_all (const char *path)
     return new_node;
 }
 
+
+static uint64_t
+_db_timestamp_query_children (GNode *n, struct database_node *parent, GNode *query)
+{
+    uint64_t timestamp = 0;
+
+    /* We only need to look for timestamps on the leaves of a query */
+    if (!g_node_first_child (query))
+    {
+        return parent->timestamp;
+    }
+
+    if (!g_node_first_child (query)->data)
+    {
+        return parent->value ? parent->timestamp : 0;
+    }
+
+    for (GNode *query_element = g_node_first_child(query); query_element;
+         query_element = g_node_next_sibling(query_element))
+    {
+        if (query_element->data == NULL)
+            continue;
+        if (strcmp(query_element->data, "*") == 0)
+        {
+            if (g_node_first_child(query_element) && g_node_first_child(query_element)->data)
+            {
+                /* This needs to continue matching down all children. */
+                GList *children = hashtree_children_get(&parent->hashtree_node);
+                for (GList *iter = children; iter; iter = g_list_next (iter))
+                {
+                    struct database_node *child = iter->data;
+                    uint64_t child_timestamp = _db_timestamp_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+                    timestamp = child_timestamp > timestamp ? child_timestamp : timestamp;
+                }
+                g_list_free (children);
+            }
+            else
+            {
+                /* This is a terminating * and needs to catch everything (db_get_all) */
+                if (parent->timestamp > timestamp)
+                {
+                    timestamp = parent->timestamp;
+                }
+            }
+        }
+        else if (strcmp(query_element->data, "") == 0)
+        {
+            /* Got to a directory match - don't need to go any further down. */
+            GList *children = hashtree_children_get(&parent->hashtree_node);
+            for (GList *iter = children; iter; iter = g_list_next (iter))
+            {
+                struct database_node *child = iter->data;
+                if (child->value)
+                {
+                    uint64_t child_timestamp = child->timestamp;
+                     timestamp = child_timestamp > timestamp ? child_timestamp : timestamp;
+                }
+            }
+            g_list_free (children);
+        }
+        /* The incoming query is a string - parent length includes the null terminator */
+        else if ((strlen(query_element->data)+1) == parent->length &&
+                 (memcmp(query_element->data, parent->value, parent->length) == 0))
+        {
+            /* Got a direct value match */
+            return parent->timestamp;
+        }
+        else
+        {
+            struct database_node *child = parent->hashtree_node.children ?
+                                          g_hash_table_lookup(parent->hashtree_node.children, query_element->data) :
+                                          NULL;
+            if (child)
+            {
+                uint64_t child_timestamp = _db_timestamp_query_children (APTERYX_NODE(n, g_strdup(child->hashtree_node.key)), child, query_element);
+                timestamp = child_timestamp > timestamp ? child_timestamp : timestamp;
+            }
+        }
+    }
+
+    return timestamp;
+}
+
+uint64_t
+db_timestamp_query (GNode *query)
+{
+    /* Move db_node along as far as we can to match this new_node */
+    GNode *new_node = g_node_new(g_strdup(APTERYX_NAME(query)));
+    uint64_t timestamp = 0;
+
+    pthread_rwlock_rdlock (&db_lock);
+    struct database_node *db_node = _db_align_nodes((struct database_node*)root, new_node, false);
+    if (!db_node)
+    {
+        pthread_rwlock_unlock (&db_lock);
+        return timestamp;
+    }
+    timestamp = _db_timestamp_query_children(new_node, db_node, query);
+    pthread_rwlock_unlock (&db_lock);
+    apteryx_free_tree (new_node);
+    return timestamp;
+}
+
 static GNode *
 _db_query_children (GNode *n, struct database_node *parent, GNode *query)
 {

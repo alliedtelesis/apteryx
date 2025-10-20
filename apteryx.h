@@ -234,6 +234,19 @@ bool apteryx_has_value (const char *path);
 uint64_t apteryx_timestamp (const char *path);
 
 /**
+ * Get the last change timestamp for a query tree.
+ *
+ * This will return the most recent value changed in a GNode tree. "*" nodes will
+ * be match all values in the database.
+ *
+ * NOTE: This function may cause refreshers to be called.
+ *
+ * @param query query to get the timestamp for
+ * @return 0 if the path doesn't exist, last change timestamp in monotonic time otherwise
+ */
+uint64_t apteryx_timestamp_query (GNode *query);
+
+/**
  * Get the memory usage in bytes of a given path
  * @param path path to get the memory usage for
  *             '.'  = total memory in use (mi.uordblks + mi.hblkhd)

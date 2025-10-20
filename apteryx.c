@@ -2333,6 +2333,76 @@ apteryx_unproxy (const char *path, const char *url)
 }
 
 uint64_t
+apteryx_timestamp_query (GNode *root)
+{
+    char *url = NULL;
+    rpc_client rpc_client;
+    rpc_message_t msg = { };
+    const char *path = NULL;
+    char *old_root_name = NULL;
+    uint64_t value = 0;
+
+    ASSERT ((ref_count > 0), return 0, "TIMESTAMP: Not initialised\n");
+    ASSERT (root, return 0, "TIMESTAMP: Invalid parameters\n");
+
+    DEBUG ("TIMESTAMP\n");
+    DEBUG_TREE (root);
+
+    /* Check path */
+    path = validate_path (APTERYX_NAME (root), &url);
+    if (path && strcmp (path, "/") == 0)
+    {
+        path = "";
+    }
+    else if (!path ||
+             ((strlen (path) > 0) &&
+              (path[0] != '/' || strstr (path, "//") != NULL)))
+    {
+        free (url);
+        ERROR ("TIMESTAMP: invalid root (%s)!\n", path);
+        assert (!apteryx_debug || path[0] == '/');
+        assert (!apteryx_debug || strstr (path, "//") == NULL);
+        return 0;
+    }
+
+    /* IPC */
+    rpc_client = rpc_client_connect (rpc, url);
+    if (!rpc_client)
+    {
+        ERROR ("TIMESTAMP: Path(%s) Failed to connect to server: %s\n", path, strerror (errno));
+        free (url);
+        return 0;
+    }
+
+    /* Save sanitized root path (less URL) to query node */
+    old_root_name = APTERYX_NAME (root);
+    root->data = (char *) path;
+
+    rpc_msg_encode_uint8 (&msg, MODE_TIMESTAMP_QUERY);
+    rpc_msg_encode_tree (&msg, root);
+
+    /* Put the original root (query tree) name back */
+    root->data = old_root_name;
+
+    if (!rpc_msg_send (rpc_client, &msg))
+    {
+        ERROR ("TIMESTAMP_QUERY: No response Path(%s)\n", path);
+        rpc_msg_reset (&msg);
+        rpc_client_release (rpc, rpc_client, false);
+        free (url);
+        return 0;
+    }
+    value = rpc_msg_decode_uint64 (&msg);
+    rpc_msg_reset (&msg);
+    rpc_client_release (rpc, rpc_client, true);
+    free (url);
+
+    DEBUG ("    = %"PRIu64"\n", value);
+    return value;
+}
+
+
+uint64_t
 apteryx_timestamp (const char *path)
 {
     char *url = NULL;
