@@ -101,7 +101,7 @@ index_get (const char *path, GList **result)
         rpc_message_t msg = {};
 
         /* Check for local provider */
-        if (indexer->id == getpid ())
+        if (indexer->ns == getns () && indexer->id == getpid ())
         {
             apteryx_index_callback cb = (apteryx_index_callback) (long) indexer->ref;
             DEBUG ("INDEX LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
@@ -193,7 +193,7 @@ validate_set (const char *path, const char *value)
         rpc_message_t msg = {};
 
         /* Check for local validator */
-        if (validator->id == getpid ())
+        if (validator->ns == getns () && validator->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) validator->ref;
             DEBUG ("VALIDATE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
@@ -335,7 +335,7 @@ notify_watchers (GNode *root, bool ack, uint64_t ns, uint64_t pid)
         struct cb_tree_info *watcher = iter->data;
         cb_info_t *watcher_info = watcher->cb;
 
-        if (watcher_info->id == getpid ())
+        if (watcher_info->ns == getns () && watcher_info->id == getpid ())
         {
             apteryx_watch_callback cb = (apteryx_watch_callback) (long) watcher_info->ref;
             DEBUG ("WATCH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
@@ -571,7 +571,7 @@ call_refreshers (const char *path, bool dry_run)
         }
 
         /* Check for local refresher */
-        if (refresher->id == getpid ())
+        if (refresher->ns == getns () && refresher->id == getpid ())
         {
             apteryx_refresh_callback cb = (apteryx_refresh_callback) (long) refresher->ref;
             DEBUG ("REFRESH LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
@@ -677,7 +677,7 @@ provide_get (const char *path)
         bool res;
 
         /* Check for local provider */
-        if (provider->id == getpid ())
+        if (provider->ns == getns () && provider->id == getpid ())
         {
             apteryx_provide_callback cb = (apteryx_provide_callback) (long) provider->ref;
             DEBUG ("PROVIDE LOCAL \"%s\" (0x%"PRIx64",0x%"PRIx64")\n",
