@@ -1196,6 +1196,174 @@ test_db_query ()
     db_shutdown ();
 }
 
+void
+test_db_add_timestamp_reject ()
+{
+    const char *path = "/database/test";
+    char *value = NULL;
+    size_t length;
+
+    db_init ();
+
+    /* Add with UINT64_MAX (always accepted) */
+    CU_ASSERT (db_add (path, (const unsigned char *) "first", strlen ("first") + 1, UINT64_MAX));
+
+    /* Retrieve the timestamp of the entry */
+    uint64_t ts = db_timestamp (path);
+    CU_ASSERT (ts > 0);
+
+    /* Adding with a timestamp older than the current one must be rejected */
+    CU_ASSERT (!db_add (path, (const unsigned char *) "second", strlen ("second") + 1, ts - 1));
+
+    /* Value should remain "first" */
+    CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
+    CU_ASSERT (value && strcmp (value, "first") == 0);
+    g_free ((void *) value);
+
+    /* Adding with a timestamp equal to the current one must be accepted */
+    CU_ASSERT (db_add (path, (const unsigned char *) "equal", strlen ("equal") + 1, ts));
+
+    CU_ASSERT (db_delete (path, UINT64_MAX));
+    db_shutdown ();
+}
+
+void
+test_db_delete_timestamp_reject ()
+{
+    const char *path = "/database/test";
+    char *value = NULL;
+    size_t length;
+
+    db_init ();
+
+    CU_ASSERT (db_add (path, (const unsigned char *) "value", strlen ("value") + 1, UINT64_MAX));
+    uint64_t ts = db_timestamp (path);
+    CU_ASSERT (ts > 0);
+
+    /* Delete with a timestamp older than the current one must be rejected */
+    CU_ASSERT (!db_delete (path, ts - 1));
+
+    /* Value should still exist */
+    CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == true);
+    CU_ASSERT (value && strcmp (value, "value") == 0);
+    g_free ((void *) value);
+
+    /* Delete with UINT64_MAX must succeed */
+    CU_ASSERT (db_delete (path, UINT64_MAX));
+    CU_ASSERT (db_get (path, (unsigned char **) &value, &length) == false);
+    CU_ASSERT (value == NULL);
+
+    db_shutdown ();
+}
+
+void
+test_db_delete_parent_cleanup ()
+{
+    db_init ();
+
+    /* Add a deep path */
+    CU_ASSERT (db_add ("/database/a/b/c", (const unsigned char *) "val", strlen ("val") + 1, UINT64_MAX));
+
+    /* Intermediate nodes must be searchable */
+    GList *paths = db_search ("/database/a/b/");
+    CU_ASSERT (paths != NULL && g_list_length (paths) == 1);
+    g_list_free_full (paths, g_free);
+
+    /* Delete the leaf - parents with no value and no children must be cleaned up */
+    CU_ASSERT (db_delete ("/database/a/b/c", UINT64_MAX));
+
+    /* /database/a/b should be gone */
+    paths = db_search ("/database/a/b/");
+    CU_ASSERT (paths == NULL);
+
+    /* /database/a should be gone */
+    paths = db_search ("/database/a/");
+    CU_ASSERT (paths == NULL);
+
+    /* /database should be gone */
+    paths = db_search ("/database/");
+    CU_ASSERT (paths == NULL);
+
+    db_shutdown ();
+}
+
+void
+test_db_get_all_nonexistent ()
+{
+    db_init ();
+
+    /* get_all on a path that doesn't exist returns an empty root node */
+    GNode *result = db_get_all ("/does/not/exist");
+    CU_ASSERT (result != NULL);
+    if (result)
+    {
+        /* Node must have no children since the path doesn't exist */
+        CU_ASSERT (g_node_n_children (result) == 0);
+        apteryx_free_tree (result);
+    }
+
+    db_shutdown ();
+}
+
+void
+test_db_memuse ()
+{
+    const char *path = "/database/memuse/test";
+
+    db_init ();
+
+    /* memuse on non-existent path returns 0 */
+    CU_ASSERT (db_memuse (path) == 0);
+
+    CU_ASSERT (db_add (path, (const unsigned char *) "hello", strlen ("hello") + 1, UINT64_MAX));
+
+    /* memuse on existing path must be > 0 */
+    uint64_t memuse = db_memuse (path);
+    CU_ASSERT (memuse > 0);
+
+    /* memuse after delete must be 0 */
+    CU_ASSERT (db_delete (path, UINT64_MAX));
+    CU_ASSERT (db_memuse (path) == 0);
+
+    db_shutdown ();
+}
+
+void
+test_db_search_nonexistent ()
+{
+    db_init ();
+
+    /* Search on a path that doesn't exist must return NULL */
+    GList *paths = db_search ("/does/not/exist");
+    CU_ASSERT (paths == NULL);
+
+    db_shutdown ();
+}
+
+void
+test_db_search_trailing_slash ()
+{
+    db_init ();
+
+    CU_ASSERT (db_add ("/database/slash/child", (const unsigned char *) "v", 2, UINT64_MAX));
+
+    /* With trailing slash */
+    GList *paths = db_search ("/database/slash/");
+    CU_ASSERT (paths != NULL && g_list_length (paths) == 1);
+    /* Result must not have a double slash */
+    CU_ASSERT (g_list_find_custom (paths, "/database/slash/child", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, g_free);
+
+    /* Without trailing slash - must return same result */
+    paths = db_search ("/database/slash");
+    CU_ASSERT (paths != NULL && g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, "/database/slash/child", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, g_free);
+
+    CU_ASSERT (db_delete ("/database/slash/child", UINT64_MAX));
+    db_shutdown ();
+}
+
 CU_TestInfo tests_database[] = {
     { "database: add/delete", test_db_add_delete },
     { "database: add/delete performance", test_db_add_delete_perf },
@@ -1212,6 +1380,13 @@ CU_TestInfo tests_database[] = {
     { "database: update simple", test_db_update },
     { "database: get_all", test_db_get_all },
     { "database: db_query", test_db_query },
+    { "database: add timestamp reject", test_db_add_timestamp_reject },
+    { "database: delete timestamp reject", test_db_delete_timestamp_reject },
+    { "database: delete cleans up empty parents", test_db_delete_parent_cleanup },
+    { "database: get_all nonexistent", test_db_get_all_nonexistent },
+    { "database: memuse", test_db_memuse },
+    { "database: search nonexistent", test_db_search_nonexistent },
+    { "database: search trailing slash", test_db_search_trailing_slash },
     CU_TEST_INFO_NULL,
 };
 #endif

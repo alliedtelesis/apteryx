@@ -1289,6 +1289,163 @@ test_cb_match_tree_locking ()
     apteryx_free_tree (root);
 }
 
+void
+test_cb_search ()
+{
+    struct callback_node *list = cb_init ();
+    GList *paths = NULL;
+
+    /* No callbacks registered - search must return nothing */
+    paths = cb_search (list, "/firewall/");
+    CU_ASSERT (paths == NULL);
+
+    /* Register an exact callback at a leaf */
+    cb_info_t *cb = cb_create (list, "guid1", "/firewall/rules/10/app", 1, 0, 0, 0);
+    cb_release (cb);
+
+    /* Searching from the leaf's immediate parent returns the leaf */
+    paths = cb_search (list, "/firewall/rules/10/");
+    CU_ASSERT (paths != NULL && g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, "/firewall/rules/10/app", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, g_free);
+
+    /* Searching from higher up returns the intermediate path component */
+    paths = cb_search (list, "/firewall/rules/");
+    CU_ASSERT (paths != NULL && g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, "/firewall/rules/10", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, g_free);
+
+    /* Searching from a path that has no callbacks below it must return NULL */
+    paths = cb_search (list, "/other/");
+    CU_ASSERT (paths == NULL);
+
+    cb_shutdown (list);
+}
+
+void
+test_cb_search_wildcard ()
+{
+    struct callback_node *list = cb_init ();
+    GList *paths = NULL;
+
+    /* Register a wildcard callback */
+    cb_info_t *cb = cb_create (list, "guid1", "/firewall/rules/*", 1, 0, 0, 0);
+    cb_release (cb);
+
+    /* Searching with a trailing slash from the wildcard's grandparent returns the
+     * parent of the wildcard ("rules"), since it has further nodes registered below it */
+    paths = cb_search (list, "/firewall/");
+    CU_ASSERT (paths != NULL && g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, "/firewall/rules", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, g_free);
+
+    /* Searching from the wildcard's direct parent with trailing slash returns nothing
+     * because bare wildcard nodes are filtered out */
+    paths = cb_search (list, "/firewall/rules/");
+    CU_ASSERT (paths == NULL);
+
+    /* Searching from an unrelated path must return nothing */
+    paths = cb_search (list, "/other/");
+    CU_ASSERT (paths == NULL);
+
+    cb_shutdown (list);
+}
+
+void
+test_cb_search_directory ()
+{
+    struct callback_node *list = cb_init ();
+    GList *paths = NULL;
+
+    /* Register a directory-style callback (path ending in '/') */
+    cb_info_t *cb = cb_create (list, "guid1", "/network/interfaces/eth0/", 1, 0, 0, 0);
+    cb_release (cb);
+
+    /* Searching from the parent directory with trailing slash returns "eth0"
+     * because eth0 has a directory callback */
+    paths = cb_search (list, "/network/interfaces/");
+    CU_ASSERT (paths != NULL && g_list_length (paths) == 1);
+    CU_ASSERT (g_list_find_custom (paths, "/network/interfaces/eth0", (GCompareFunc) strcmp) != NULL);
+    g_list_free_full (paths, g_free);
+
+    /* Searching from an unrelated path must return nothing */
+    paths = cb_search (list, "/other/");
+    CU_ASSERT (paths == NULL);
+
+    cb_shutdown (list);
+}
+
+static int test_cb_foreach_count = 0;
+static void
+test_cb_foreach_fn (gpointer data, gpointer user_data)
+{
+    test_cb_foreach_count++;
+}
+
+void
+test_cb_foreach ()
+{
+    struct callback_node *list = cb_init ();
+
+    test_cb_foreach_count = 0;
+
+    /* Empty list - foreach must call function zero times */
+    cb_foreach (list, test_cb_foreach_fn, NULL);
+    CU_ASSERT (test_cb_foreach_count == 0);
+
+    /* Add callbacks and verify they are all visited */
+    cb_info_t *cb1 = cb_create (list, "guid1", "/path/one", 1, 0, 0, 0);
+    cb_release (cb1);
+    cb_info_t *cb2 = cb_create (list, "guid2", "/path/two", 2, 0, 0, 0);
+    cb_release (cb2);
+    cb_info_t *cb3 = cb_create (list, "guid3", "/other/path", 3, 0, 0, 0);
+    cb_release (cb3);
+
+    cb_foreach (list, test_cb_foreach_fn, NULL);
+    CU_ASSERT (test_cb_foreach_count == 3);
+
+    cb_shutdown (list);
+}
+
+void
+test_cb_match_inactive ()
+{
+    struct callback_node *list = cb_init ();
+
+    /* Create a callback, then disable it */
+    cb_info_t *cb = cb_create (list, "guid1", "/test/path", 1, 0, 0, 0);
+    cb_disable (cb);
+    cb_release (cb);
+    cb_release (cb);
+
+    /* Match must not return the inactive callback */
+    GList *matches = cb_match (list, "/test/path");
+    CU_ASSERT (matches == NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    cb_shutdown (list);
+}
+
+void
+test_cb_match_multiple ()
+{
+    struct callback_node *list = cb_init ();
+
+    /* Register two separate callbacks for overlapping paths */
+    cb_info_t *cb1 = cb_create (list, "guid1", "/test/path", 1, 0, 0, 0);
+    cb_release (cb1);
+    cb_info_t *cb2 = cb_create (list, "guid2", "/test/*", 2, 0, 0, 0);
+    cb_release (cb2);
+
+    /* Both must match */
+    GList *matches = cb_match (list, "/test/path");
+    CU_ASSERT (g_list_length (matches) == 2);
+    g_list_foreach (matches, (GFunc) cb_disable, NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_release);
+
+    cb_shutdown (list);
+}
+
 CU_TestInfo tests_callbacks[] = {
     { "init", test_cb_init },
     { "match", test_cb_match },
@@ -1301,6 +1458,12 @@ CU_TestInfo tests_callbacks[] = {
     { "match tree", test_cb_match_tree },
     { "match tree compound root", test_cb_match_tree_compound_root },
     { "match tree locking", test_cb_match_tree_locking },
+    { "search", test_cb_search },
+    { "search wildcard", test_cb_search_wildcard },
+    { "search directory", test_cb_search_directory },
+    { "foreach", test_cb_foreach },
+    { "match inactive filtered", test_cb_match_inactive },
+    { "match multiple callbacks", test_cb_match_multiple },
     CU_TEST_INFO_NULL,
 };
 #endif
