@@ -10908,6 +10908,279 @@ test_stability_refresh_stalled()
     apteryx_set (TEST_PATH"/stability/different-value", NULL);
 }
 
+/* UTF-8 / Unicode handling tests
+ *
+ * These tests verify that apteryx_set, apteryx_get, apteryx_set_tree and
+ * apteryx_get_tree correctly store and retrieve UTF-8 encoded strings as
+ * opaque byte sequences without corruption, truncation, or misinterpretation
+ * of multi-byte code points.
+ *
+ * UTF-8 byte ranges under test:
+ *   2-byte (U+0080 – U+07FF):  Latin Extended (é, ö), Arabic, Cyrillic
+ *   3-byte (U+0800 – U+FFFF):  CJK Unified Ideographs (日, 本, 語)
+ *   4-byte (U+10000 – U+10FFFF): Emoji (U+1F600 😀)
+ */
+
+/* U+00E9 "é" = 0xC3 0xA9 ; U+00F6 "ö" = 0xC3 0xB6 */
+void
+test_utf8_set_get_latin_value (void)
+{
+    const char *path = TEST_PATH"/utf8/latin";
+    const char *value = "h\xC3\xA9llo w\xC3\xB6rld";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    /* "héllo wörld": h(1) + é(2) + llo(3) + space(1) + w(1) + ö(2) + rld(3) = 13 bytes */
+    CU_ASSERT (result && strlen (result) == 13);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* U+65E5 "日" = 0xE6 0x97 0xA5 ; U+672C "本" = 0xE6 0x9C 0xAC ; U+8A9E "語" = 0xE8 0xAA 0x9E */
+void
+test_utf8_set_get_cjk_value (void)
+{
+    const char *path = TEST_PATH"/utf8/cjk";
+    const char *value = "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    /* 3 CJK characters × 3 bytes each = 9 bytes */
+    CU_ASSERT (result && strlen (result) == 9);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* U+1F600 "😀" = 0xF0 0x9F 0x98 0x80 */
+void
+test_utf8_set_get_emoji_value (void)
+{
+    const char *path = TEST_PATH"/utf8/emoji";
+    const char *value = "\xF0\x9F\x98\x80";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    /* 1 emoji × 4 bytes = 4 bytes */
+    CU_ASSERT (result && strlen (result) == 4);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* Arabic "مرحبا" (U+0645 U+0631 U+062D U+0628 U+0627), Cyrillic "привет" */
+void
+test_utf8_set_get_multilang_values (void)
+{
+    const char *path_ar = TEST_PATH"/utf8/arabic";
+    /* م=0xD9 0x85  ر=0xD8 0xB1  ح=0xD8 0xAD  ب=0xD8 0xA8  ا=0xD8 0xA7 */
+    const char *value_ar = "\xD9\x85\xD8\xB1\xD8\xAD\xD8\xA8\xD8\xA7";
+
+    const char *path_ru = TEST_PATH"/utf8/russian";
+    /* п=0xD0 0xBF  р=0xD1 0x80  и=0xD0 0xB8  в=0xD0 0xB2  е=0xD0 0xB5  т=0xD1 0x82 */
+    const char *value_ru = "\xD0\xBF\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path_ar, value_ar));
+    CU_ASSERT (apteryx_set (path_ru, value_ru));
+
+    result = apteryx_get (path_ar);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value_ar) == 0);
+    /* 5 Arabic characters × 2 bytes each = 10 bytes */
+    CU_ASSERT (result && strlen (result) == 10);
+    free (result);
+
+    result = apteryx_get (path_ru);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value_ru) == 0);
+    /* 6 Cyrillic characters × 2 bytes each = 12 bytes */
+    CU_ASSERT (result && strlen (result) == 12);
+    free (result);
+
+    CU_ASSERT (apteryx_set (path_ar, NULL));
+    CU_ASSERT (apteryx_set (path_ru, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* Mixed ASCII + 2-byte + 3-byte + 4-byte UTF-8 in a single value */
+void
+test_utf8_set_get_mixed_value (void)
+{
+    const char *path = TEST_PATH"/utf8/mixed";
+    /* "caf" + é(2) + " " + 日(3) + 本(3) + " " + 😀(4) = 17 bytes */
+    const char *value = "caf\xC3\xA9 \xE6\x97\xA5\xE6\x9C\xAC \xF0\x9F\x98\x80";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    /* 3 + 2 + 1 + 3 + 3 + 1 + 4 = 17 bytes */
+    CU_ASSERT (result && strlen (result) == 17);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* UTF-8 multi-byte character in the path component (U+00E9 "é" = 0xC3 0xA9) */
+void
+test_utf8_set_get_path_component (void)
+{
+    /* "répertoire" – 'é' follows 'r', no adjacent hex digit after \xA9 */
+    const char *path = TEST_PATH"/r\xC3\xA9pertoire/val";
+    const char *value = "utf8-path-test";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* apteryx_set_tree with UTF-8 values in leaf nodes; verified via apteryx_get */
+void
+test_utf8_set_tree_values (void)
+{
+    GNode *root;
+    char *result = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/utf8/tree");
+    APTERYX_LEAF (root, "latin",  "h\xC3\xA9llo");
+    APTERYX_LEAF (root, "cjk",    "\xE6\x97\xA5\xE6\x9C\xAC");
+    APTERYX_LEAF (root, "emoji",  "\xF0\x9F\x98\x80");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    result = apteryx_get (TEST_PATH"/utf8/tree/latin");
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, "h\xC3\xA9llo") == 0);
+    free (result);
+
+    result = apteryx_get (TEST_PATH"/utf8/tree/cjk");
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, "\xE6\x97\xA5\xE6\x9C\xAC") == 0);
+    /* 2 CJK characters × 3 bytes each = 6 bytes */
+    CU_ASSERT (result && strlen (result) == 6);
+    free (result);
+
+    result = apteryx_get (TEST_PATH"/utf8/tree/emoji");
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, "\xF0\x9F\x98\x80") == 0);
+    /* 1 emoji × 4 bytes = 4 bytes */
+    CU_ASSERT (result && strlen (result) == 4);
+    free (result);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/utf8/tree"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* apteryx_get_tree returns UTF-8 values stored with apteryx_set_string */
+void
+test_utf8_get_tree_values (void)
+{
+    const char *path = TEST_PATH"/utf8/gettree";
+    GNode *root = NULL;
+    GNode *node = NULL;
+
+    CU_ASSERT (apteryx_set_string (path, "greeting", "h\xC3\xA9llo"));
+    CU_ASSERT (apteryx_set_string (path, "cjk",      "\xE6\x97\xA5\xE6\x9C\xAC"));
+
+    root = apteryx_get_tree (path);
+    CU_ASSERT (root != NULL);
+    CU_ASSERT (root && strcmp (APTERYX_NAME (root), path) == 0);
+
+    for (node = root ? g_node_first_child (root) : NULL; node; node = node->next)
+    {
+        if (strcmp (APTERYX_NAME (node), "greeting") == 0)
+        {
+            CU_ASSERT (APTERYX_HAS_VALUE (node));
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "h\xC3\xA9llo") == 0);
+        }
+        else if (strcmp (APTERYX_NAME (node), "cjk") == 0)
+        {
+            CU_ASSERT (APTERYX_HAS_VALUE (node));
+            CU_ASSERT (strcmp (APTERYX_VALUE (node), "\xE6\x97\xA5\xE6\x9C\xAC") == 0);
+            /* 2 CJK characters × 3 bytes each = 6 bytes */
+            CU_ASSERT (strlen (APTERYX_VALUE (node)) == 6);
+        }
+        else
+        {
+            CU_ASSERT_STRING_EQUAL (APTERYX_NAME (node), "greeting or cjk");
+        }
+    }
+
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_set_string (path, "greeting", NULL));
+    CU_ASSERT (apteryx_set_string (path, "cjk", NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* apteryx_set_tree with a UTF-8 node key; verified via apteryx_get on the full path */
+void
+test_utf8_set_tree_keys (void)
+{
+    /* "héllo" as the child node name; 'l' after \xA9 is not a hex digit */
+    GNode *root;
+    char *full_path = NULL;
+    char *result = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/utf8/treekeys");
+    APTERYX_LEAF (root, "h\xC3\xA9llo", "value1");
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    CU_ASSERT (asprintf (&full_path, "%s/%s", TEST_PATH"/utf8/treekeys", "h\xC3\xA9llo") > 0);
+    result = apteryx_get (full_path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, "value1") == 0);
+    free (result);
+
+    CU_ASSERT (apteryx_set (full_path, NULL));
+    free (full_path);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* apteryx_get_tree returns a node whose name contains UTF-8 multi-byte characters */
+void
+test_utf8_get_tree_keys (void)
+{
+    const char *root_path = TEST_PATH"/utf8/gettreekeys";
+    /* "données": donn + é(0xC3 0xA9) + es; string concatenation avoids
+     * treating 'e' as a continuation of the \xA9 hex escape. */
+    const char *key = "donn\xC3\xA9" "es";
+    GNode *root = NULL;
+    GNode *node = NULL;
+    char *full_path = NULL;
+
+    CU_ASSERT (asprintf (&full_path, "%s/%s", root_path, key) > 0);
+    CU_ASSERT (apteryx_set (full_path, "test-value"));
+
+    root = apteryx_get_tree (root_path);
+    CU_ASSERT (root != NULL);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node != NULL);
+    CU_ASSERT (node && strcmp (APTERYX_NAME (node), key) == 0);
+
+    apteryx_free_tree (root);
+    CU_ASSERT (apteryx_set (full_path, NULL));
+    free (full_path);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int
 suite_init (void)
 {
@@ -10956,6 +11229,20 @@ static CU_TestInfo tests_api[] = {
     { "timestamp provider", test_timestamp_provider },
     { "memuse", test_memuse },
     { "path to node", test_path_to_node },
+    CU_TEST_INFO_NULL,
+};
+
+static CU_TestInfo tests_utf8[] = {
+    { "utf8: latin extended value (set/get)",       test_utf8_set_get_latin_value },
+    { "utf8: CJK 3-byte value (set/get)",           test_utf8_set_get_cjk_value },
+    { "utf8: emoji 4-byte value (set/get)",         test_utf8_set_get_emoji_value },
+    { "utf8: Arabic and Cyrillic values (set/get)", test_utf8_set_get_multilang_values },
+    { "utf8: mixed multibyte value (set/get)",      test_utf8_set_get_mixed_value },
+    { "utf8: UTF-8 path component (set/get)",       test_utf8_set_get_path_component },
+    { "utf8: UTF-8 values in set_tree",             test_utf8_set_tree_values },
+    { "utf8: UTF-8 values in get_tree",             test_utf8_get_tree_values },
+    { "utf8: UTF-8 keys in set_tree",               test_utf8_set_tree_keys },
+    { "utf8: UTF-8 keys in get_tree",               test_utf8_get_tree_keys },
     CU_TEST_INFO_NULL,
 };
 
@@ -11388,6 +11675,12 @@ static CU_SuiteInfo suites[] = {
         .pInitFunc = suite_init,
         .pCleanupFunc = suite_clean,
         .pTests = tests_api
+    },
+    {
+        .pName = "UTF-8",
+        .pInitFunc = suite_init,
+        .pCleanupFunc = suite_clean,
+        .pTests = tests_utf8
     },
     {
         .pName = "Apteryx API Index",
