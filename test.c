@@ -11181,6 +11181,231 @@ test_utf8_get_tree_keys (void)
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+/* Invalid-input / edge-case UTF-8 tests
+ *
+ * These tests document how apteryx behaves when given inputs that a strict
+ * UTF-8 implementation would reject.  They verify the CURRENT behaviour so
+ * that any future change (e.g. adding UTF-8 validation) is caught by CI.
+ *
+ * Two distinct classes of known limitation are covered:
+ *
+ *  A. Silent NUL-byte truncation
+ *     rpc_msg_encode_string() calls strlen(), so any byte with value 0x00
+ *     (the NUL terminator) inside a path or value string terminates the data
+ *     at that point.  Bytes after the first 0x00 are silently dropped.
+ *
+ *  B. No UTF-8 validation
+ *     Paths and values are treated as opaque NUL-terminated byte strings.
+ *     Invalid UTF-8 byte sequences (lone continuation bytes, overlong
+ *     encodings, truncated sequences, forbidden bytes, surrogate code-point
+ *     encodings) are accepted, stored, and returned unchanged.
+ */
+
+/* A1: NUL byte embedded in a value – bytes after the NUL are silently dropped */
+void
+test_utf8_invalid_nul_truncates_value (void)
+{
+    const char *path = TEST_PATH"/utf8/invalid/nul-value";
+    /* "café" (5 bytes: c a f 0xC3 0xA9) + embedded NUL + "monde".
+     * The trailing 0x00 at the end is the normal C-string terminator; the 0x00
+     * at position 5 is the embedded NUL under test.  apteryx_set() will stop
+     * at position 5, so "monde" is never stored. */
+    char value[] = { 'c', 'a', 'f', 0xC3, 0xA9, 0x00, 'm', 'o', 'n', 'd', 'e', 0x00 };
+    char *result = NULL;
+
+    /* apteryx_set succeeds; the embedded NUL is the C-string terminator */
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    /* Only the 5 bytes before the embedded NUL survive the round-trip */
+    CU_ASSERT (result && strlen (result) == 5);
+    CU_ASSERT (result && memcmp (result, "caf\xC3\xA9", 5) == 0);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* A2: NUL byte embedded in a path silently changes the target key */
+void
+test_utf8_invalid_nul_truncates_path (void)
+{
+    /*
+     * In C, the string literal TEST_PATH"/utf8/nul\x00" "hidden" is stored in
+     * memory as the bytes of TEST_PATH"/utf8/nul" followed by 0x00 then "hidden".
+     * Every C string function (strlen, strcmp, …) sees only TEST_PATH"/utf8/nul"
+     * because they stop at the first 0x00.  The bytes beyond the 0x00 are
+     * invisible.  Apteryx therefore stores the value at the truncated path.
+     */
+    const char *intended    = TEST_PATH"/utf8/nul\x00" "hidden"; /* C sees TEST_PATH"/utf8/nul" */
+    const char *truncated   = TEST_PATH"/utf8/nul";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (intended, "stored"));
+    /* Value was stored at the truncated path, not the intended one */
+    result = apteryx_get (truncated);
+    CU_ASSERT (result != NULL && strcmp (result, "stored") == 0);
+    free (result);
+    CU_ASSERT (apteryx_set (truncated, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* A3: NUL byte in a set_tree leaf value – bytes after the NUL are silently dropped */
+void
+test_utf8_invalid_nul_truncates_tree_value (void)
+{
+    /* CJK "日" (3 bytes: 0xE6 0x97 0xA5) + embedded NUL + "rest".
+     * The trailing 0x00 is the normal C-string terminator; the 0x00 at
+     * position 3 is the embedded NUL under test.  apteryx_set_tree() will
+     * stop at position 3, so "rest" is never stored. */
+    char nul_value[] = { 0xE6, 0x97, 0xA5, 0x00, 'r', 'e', 's', 't', 0x00 };
+    GNode *root;
+    char *result = NULL;
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/utf8/invalid/tree-nul");
+    APTERYX_LEAF (root, "leaf", nul_value);
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    result = apteryx_get (TEST_PATH"/utf8/invalid/tree-nul/leaf");
+    CU_ASSERT (result != NULL);
+    /* Only the 3 bytes before the embedded NUL survive */
+    CU_ASSERT (result && strlen (result) == 3);
+    CU_ASSERT (result && memcmp (result, "\xE6\x97\xA5", 3) == 0);
+    free (result);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/utf8/invalid/tree-nul"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* B1: Lone UTF-8 continuation byte (0x80) is invalid UTF-8 but accepted as-is */
+void
+test_utf8_invalid_lone_continuation_accepted (void)
+{
+    const char *path  = TEST_PATH"/utf8/invalid/lone-continuation";
+    const char *value = "\x80";   /* 0x80 must only appear as a continuation byte */
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    CU_ASSERT (result && strlen (result) == 1);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* B2: Overlong UTF-8 encoding of U+0041 'A' (\xC1\x81) is invalid but accepted */
+void
+test_utf8_invalid_overlong_encoding_accepted (void)
+{
+    const char *path  = TEST_PATH"/utf8/invalid/overlong";
+    /* \xC1\x81 encodes U+0041 in 2 bytes; valid UTF-8 uses the 1-byte form 0x41 */
+    const char *value = "\xC1\x81";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    CU_ASSERT (result && strlen (result) == 2);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* B3: Truncated 3-byte UTF-8 sequence (missing 3rd byte) is invalid but accepted */
+void
+test_utf8_invalid_truncated_sequence_accepted (void)
+{
+    const char *path  = TEST_PATH"/utf8/invalid/truncated-seq";
+    /* \xE2\x80 are the first 2 bytes of U+2014 EM DASH (\xE2\x80\x94); 3rd missing */
+    const char *value = "\xE2\x80";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    CU_ASSERT (result && strlen (result) == 2);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* B4: Byte 0xFF is never valid in UTF-8 but is accepted as-is */
+void
+test_utf8_invalid_0xff_accepted (void)
+{
+    const char *path  = TEST_PATH"/utf8/invalid/0xff";
+    const char *value = "\xFF";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    CU_ASSERT (result && strlen (result) == 1);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* B5: Surrogate code-point bytes (\xED\xA0\x80 = UTF-8 of U+D800) are invalid
+ * in standard UTF-8 (RFC 3629) but are accepted as-is */
+void
+test_utf8_invalid_surrogate_accepted (void)
+{
+    const char *path  = TEST_PATH"/utf8/invalid/surrogate";
+    /* \xED\xA0\x80 is the 3-byte (invalid) UTF-8 representation of U+D800 */
+    const char *value = "\xED\xA0\x80";
+    char *result = NULL;
+
+    CU_ASSERT (apteryx_set (path, value));
+    result = apteryx_get (path);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, value) == 0);
+    CU_ASSERT (result && strlen (result) == 3);
+    free (result);
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+/* B6: Invalid UTF-8 bytes in a set_tree leaf value are accepted and round-trip
+ * unchanged through apteryx_get_tree */
+void
+test_utf8_invalid_bytes_in_tree_accepted (void)
+{
+    GNode *root = NULL;
+    GNode *node = NULL;
+    char *result = NULL;
+    /* "é" (valid 2-byte) + lone continuation byte (invalid) = 3 bytes total */
+    const char *mixed = "\xC3\xA9\x80";
+
+    root = APTERYX_NODE (NULL, TEST_PATH"/utf8/invalid/tree-bytes");
+    APTERYX_LEAF (root, "leaf", mixed);
+    CU_ASSERT (apteryx_set_tree (root));
+    g_node_destroy (root);
+
+    /* Verify via apteryx_get */
+    result = apteryx_get (TEST_PATH"/utf8/invalid/tree-bytes/leaf");
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (result && strcmp (result, mixed) == 0);
+    CU_ASSERT (result && strlen (result) == 3);
+    free (result);
+
+    /* Verify via apteryx_get_tree */
+    root = apteryx_get_tree (TEST_PATH"/utf8/invalid/tree-bytes");
+    CU_ASSERT (root != NULL);
+    node = root ? g_node_first_child (root) : NULL;
+    CU_ASSERT (node != NULL);
+    CU_ASSERT (node && APTERYX_HAS_VALUE (node));
+    CU_ASSERT (node && strcmp (APTERYX_VALUE (node), mixed) == 0);
+    apteryx_free_tree (root);
+
+    CU_ASSERT (apteryx_prune (TEST_PATH"/utf8/invalid/tree-bytes"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 static int
 suite_init (void)
 {
@@ -11243,6 +11468,16 @@ static CU_TestInfo tests_utf8[] = {
     { "utf8: UTF-8 values in get_tree",             test_utf8_get_tree_values },
     { "utf8: UTF-8 keys in set_tree",               test_utf8_set_tree_keys },
     { "utf8: UTF-8 keys in get_tree",               test_utf8_get_tree_keys },
+    /* Invalid-input / edge-case tests (document current behaviour) */
+    { "utf8: NUL byte silently truncates value",       test_utf8_invalid_nul_truncates_value },
+    { "utf8: NUL byte silently truncates path",        test_utf8_invalid_nul_truncates_path },
+    { "utf8: NUL byte silently truncates tree value",  test_utf8_invalid_nul_truncates_tree_value },
+    { "utf8: lone continuation byte accepted",         test_utf8_invalid_lone_continuation_accepted },
+    { "utf8: overlong encoding accepted",              test_utf8_invalid_overlong_encoding_accepted },
+    { "utf8: truncated sequence accepted",             test_utf8_invalid_truncated_sequence_accepted },
+    { "utf8: byte 0xFF accepted",                      test_utf8_invalid_0xff_accepted },
+    { "utf8: surrogate code-point bytes accepted",     test_utf8_invalid_surrogate_accepted },
+    { "utf8: invalid bytes in tree accepted",          test_utf8_invalid_bytes_in_tree_accepted },
     CU_TEST_INFO_NULL,
 };
 
