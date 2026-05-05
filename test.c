@@ -9099,6 +9099,64 @@ test_proxy_timestamp ()
 }
 
 void
+test_proxy_timestamp_query ()
+{
+    uint64_t ts = 0;
+    GNode *root = APTERYX_NODE (NULL, g_strdup (TEST_PATH"/remote"TEST_PATH));
+    APTERYX_NODE (root, g_strdup ("local"));
+
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", "test"));
+    CU_ASSERT ((ts = apteryx_timestamp (TEST_PATH"/local")) != 0);
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_timestamp_query (root) == ts);
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local", NULL));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_timestamp_query_wildcard ()
+{
+    uint64_t ts_cat, ts_dog, ts_q;
+    GNode *root = APTERYX_NODE (NULL, g_strdup (TEST_PATH"/remote"TEST_PATH"/local"));
+    APTERYX_NODE (root, g_strdup ("*"));
+
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/cat", "felix"));
+    CU_ASSERT (apteryx_set (TEST_PATH"/local/dog", "fido"));
+    ts_cat = apteryx_timestamp (TEST_PATH"/local/cat");
+    ts_dog = apteryx_timestamp (TEST_PATH"/local/dog");
+    CU_ASSERT (ts_cat != 0);
+    CU_ASSERT (ts_dog != 0);
+    CU_ASSERT (apteryx_bind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    ts_q = apteryx_timestamp_query (root);
+    CU_ASSERT (ts_q != 0);
+    CU_ASSERT (ts_q == ts_dog);
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_unbind (TEST_TCP_URL));
+    CU_ASSERT (apteryx_prune (TEST_PATH"/local"));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_proxy_timestamp_query_not_found ()
+{
+    GNode *root = APTERYX_NODE (NULL, g_strdup (TEST_PATH"/remote"TEST_PATH));
+    APTERYX_NODE (root, g_strdup ("local"));
+
+    /* Proxy is registered but the server is not bound - connection will fail */
+    CU_ASSERT (apteryx_proxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    CU_ASSERT (apteryx_timestamp_query (root) == 0);
+    CU_ASSERT (apteryx_unproxy (TEST_PATH"/remote/*", TEST_TCP_URL));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
 test_proxy_cas ()
 {
     const char *path = TEST_PATH"/remote/test/local";
@@ -9286,6 +9344,37 @@ test_timestamp_query_directory ()
 
     CU_ASSERT (apteryx_prune (TEST_PATH));
     CU_ASSERT (0 == apteryx_timestamp_query (root));
+    apteryx_free_tree (root);
+}
+
+void
+test_timestamp_query_no_match ()
+{
+    /* Query a specific child path that does not exist - should return 0 */
+    GNode *root = APTERYX_NODE (NULL, g_strdup (TEST_PATH"/ts"));
+    APTERYX_NODE (root, g_strdup ("nonexistent"));
+
+    CU_ASSERT (apteryx_set (TEST_PATH"/ts/a/b", "val"));
+    CU_ASSERT (apteryx_timestamp_query (root) == 0);
+    CU_ASSERT (apteryx_prune (TEST_PATH));
+    CU_ASSERT (0 == apteryx_timestamp_query (root));
+    apteryx_free_tree (root);
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
+void
+test_timestamp_query_invalid_path ()
+{
+    /* A root path that does not start with '/' is invalid - should return 0 */
+    GNode *root = APTERYX_NODE (NULL, g_strdup ("no-leading-slash"));
+    APTERYX_NODE (root, g_strdup ("child"));
+    CU_ASSERT (apteryx_timestamp_query (root) == 0);
+    apteryx_free_tree (root);
+
+    /* A root path containing '//' is also invalid */
+    root = APTERYX_NODE (NULL, g_strdup (TEST_PATH"//bad"));
+    APTERYX_NODE (root, g_strdup ("child"));
+    CU_ASSERT (apteryx_timestamp_query (root) == 0);
     apteryx_free_tree (root);
 }
 
@@ -11760,6 +11849,9 @@ static CU_TestInfo tests_api_proxy[] = {
     { "proxy search", test_proxy_search },
     { "proxy prune", test_proxy_prune },
     { "proxy timestamp", test_proxy_timestamp },
+    { "proxy timestamp query", test_proxy_timestamp_query },
+    { "proxy timestamp query wildcard", test_proxy_timestamp_query_wildcard },
+    { "proxy timestamp query not found", test_proxy_timestamp_query_not_found },
     { "proxy cas", test_proxy_cas },
     CU_TEST_INFO_NULL,
 };
@@ -11911,6 +12003,8 @@ static CU_TestInfo tests_api_timestamp[] = {
     { "timestamp query wildcard", test_timestamp_query_wildcard },
     { "timestamp query detailed", test_timestamp_query_detailed },
     { "timestamp query directory", test_timestamp_query_directory },
+    { "timestamp query no match", test_timestamp_query_no_match },
+    { "timestamp query invalid path", test_timestamp_query_invalid_path },
     { "timestamp refreshed", test_timestamp_refreshed },
     { "timestamp refreshed wildcard", test_timestamp_refreshed_wildcard },
     { "timestamp provider", test_timestamp_provider },
