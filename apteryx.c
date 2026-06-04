@@ -156,16 +156,16 @@ validate_path (const char *path, char **url)
     {
         if (url)
             *url = strdup (path);
-        char *tmp = strstr (path + 6, ":/");
-        if (!tmp)
+        const char *sep = strstr (path + 6, ":/");
+        if (!sep)
         {
             ERROR ("Invalid path (%s)!\n", path);
             return NULL;
         }
-        path = tmp + 1;
+        path = sep + 1;
         if (url)
         {
-            tmp = strstr (*url + 6, ":/");
+            char *tmp = strstr (*url + 6, ":/");
             if (tmp != NULL)
             {
                 tmp[0] = '\0';
@@ -187,7 +187,6 @@ handle_index (rpc_message msg)
     uint64_t ref;
     const char *path;
     GList *iter = NULL;
-    int i;
 
     /* Parse the parameters */
     ref = rpc_msg_decode_uint64 (msg);
@@ -201,7 +200,7 @@ handle_index (rpc_message msg)
 
     /* Return result */
     rpc_msg_reset (msg);
-    for (i = 0, iter = results; iter; iter = g_list_next (iter), i++)
+    for (iter = results; iter; iter = g_list_next (iter))
     {
         DEBUG ("         = %s\n", (char *) iter->data);
         rpc_msg_encode_string (msg, (char *)iter->data);

@@ -260,7 +260,7 @@ X_FIELDS
 static char*
 handle_counters_get (const char *path)
 {
-    char *counter = strrchr (path, '/');
+    const char *counter = strrchr (path, '/');
     char *value = NULL;
 #define X(type, name) \
     if (strcmp ("/"#name, counter) == 0 && \
