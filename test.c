@@ -2800,6 +2800,96 @@ test_refresh_concurrent ()
     CU_ASSERT (assert_apteryx_empty ());
 }
 
+static uint64_t
+test_refresh_query_callback (const char *path)
+{
+    _cb_count++;
+    apteryx_set_int (TEST_PATH"/dpi/detailed-statistics", "packets", _cb_count);
+    GNode *dataset = APTERYX_NODE (NULL, TEST_PATH"/dpi/detailed-statistics");
+    for (int i = 0; i < 128; i++)
+    {
+        char name[64];
+        snprintf (name, sizeof (name), "dataset%d", i);
+        GNode *n = APTERYX_NODE (dataset, name);
+        APTERYX_LEAF_INT (n, "packets", i);
+        APTERYX_LEAF_INT (n, "packets_in", i);
+        APTERYX_LEAF_INT (n, "packets_out", i);
+        APTERYX_LEAF_INT (n, "bytes", i);
+    }
+    return _cb_timeout;
+}
+
+void
+test_refresh_query_different_process ()
+{
+    const char *path = TEST_PATH"/dpi/detailed-statistics/*";
+    int sync_pipe[2];
+    int pid;
+    int status;
+
+    apteryx_shutdown ();
+
+    CU_ASSERT (pipe (sync_pipe) == 0);
+
+    if ((pid = fork ()) == 0)
+    {
+        char start = 0;
+        GNode *query = NULL;
+        GNode *result = NULL;
+
+        close (sync_pipe[1]);
+        apteryx_init (apteryx_debug);
+        CU_ASSERT (read (sync_pipe[0], &start, 1) == 1);
+
+        query = g_node_new (strdup (path));
+        result = apteryx_query (query);
+        if (result)
+            apteryx_free_tree (result);
+        usleep (TEST_SLEEP_TIMEOUT);
+        /* Run it twice... */
+        result = apteryx_query (query);
+        if (result)
+            apteryx_free_tree (result);
+        apteryx_free_tree (query);
+
+        apteryx_shutdown ();
+        close (sync_pipe[0]);
+        exit (0);
+    }
+    else if (pid < 0)
+    {
+        CU_ASSERT (0);
+        close (sync_pipe[0]);
+        close (sync_pipe[1]);
+        return;
+    }
+
+    close (sync_pipe[0]);
+    apteryx_init (apteryx_debug);
+
+    _cb_count = 0;
+    /* Set a moderate timeout (10 microseconds) to accommodate the refresher
+     * dedup logic during a single query traversal with multiple node visits.
+     * Without this fix, the refresher would be called once per visited node. */
+    _cb_timeout = 10;  // 10 microseconds
+    _cb_delay = 0;
+    CU_ASSERT (apteryx_refresh (path, test_refresh_query_callback));
+
+    CU_ASSERT (write (sync_pipe[1], "x", 1) == 1);
+    close (sync_pipe[1]);
+
+    waitpid (pid, &status, 0);
+    CU_ASSERT (WIFEXITED (status));
+    CU_ASSERT (WEXITSTATUS (status) == 0);
+
+    /* Should be called twice. */
+    CU_ASSERT (_cb_count == 2);
+
+    apteryx_unrefresh (path, test_refresh_query_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/dpi"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 
 static uint64_t
 test_refresh_tree_callback (const char *path)
@@ -11621,6 +11711,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh", test_refresh },
     { "refresh unneeded", test_refresh_unneeded },
     { "refresh timeout", test_refresh_timeout },
+    { "refresh query from different process", test_refresh_query_different_process },
     { "refresh trunk", test_refresh_trunk },
     { "refresh tree simple", test_refresh_tree },
     { "refresh directory", test_refresh_directory },
