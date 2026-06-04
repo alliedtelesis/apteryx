@@ -1,7 +1,7 @@
 
 
 #ifndef _HASHTREE_H_
-#define _HASHTREE_H_H
+#define _HASHTREE_H_
 
 #include <glib.h>
 #include <stdbool.h>
