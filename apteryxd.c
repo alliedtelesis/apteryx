@@ -501,11 +501,10 @@ sin_bin_add (const char *uri)
 }
 
 static bool
-call_refreshers (const char *path, bool dry_run)
+call_refreshers_at_time (const char *path, bool dry_run, uint64_t now)
 {
     GList *refreshers = NULL;
     GList *iter = NULL;
-    uint64_t now;
     uint64_t timeout = 0;
     bool refresh_due = false;
     char *cpath = NULL;
@@ -514,9 +513,6 @@ call_refreshers (const char *path, bool dry_run)
     refreshers = config_get_refreshers (path);
     if (!refreshers)
         return false;
-
-    /* Get the time of the request */
-    now = get_time_us ();
 
     /* Call each refresher */
     for (iter = refreshers; iter; iter = g_list_next (iter))
@@ -542,11 +538,16 @@ call_refreshers (const char *path, bool dry_run)
          * the last call was for a path equal to or less specific than this one,
          * but don't nag a process that has been timing out until the expiry time
          * is actually hit. */
-        if (now < (refresher->timestamp + refresher->timeout) &&
-            (strncmp (refresher->last_path, cpath, strlen (refresher->last_path)) == 0 &&
-             (*(refresher->last_path + strlen (refresher->last_path) - 1) == '/' ||
-              *(cpath + strlen (refresher->last_path)) == '/' ||
-              *(cpath + strlen (refresher->last_path)) == '\0')))
+        size_t last_len = refresher->last_path ? strlen (refresher->last_path) : 0;
+        bool path_matches = false;
+
+        if (last_len > 0 && strncmp (refresher->last_path, cpath, last_len) == 0)
+        {
+            path_matches = (refresher->last_path[last_len - 1] == '/' ||
+                               cpath[last_len] == '/' ||
+                               cpath[last_len] == '\0');
+        }
+        if (now < (refresher->timestamp + refresher->timeout) && path_matches)
         {
             DEBUG ("Not refreshing %s (now:%"PRIu64" < (ts:%"PRIu64" + to:%"PRIu64"))\n",
                    cpath, now, refresher->timestamp, refresher->timeout);
@@ -653,6 +654,12 @@ call_refreshers (const char *path, bool dry_run)
     }
     g_list_free_full (refreshers, (GDestroyNotify) cb_release);
     return refresh_due;
+}
+
+static bool
+call_refreshers (const char *path, bool dry_run)
+{
+    return call_refreshers_at_time (path, dry_run, get_time_us ());
 }
 
 static char *
@@ -1948,12 +1955,14 @@ collect_provided_paths_query(GNode *query)
 
 static void _refresh_paths (GNode *node, gpointer data)
 {
+    uint64_t refresh_now = data ? *(uint64_t *) data : get_time_us ();
+
     /* Handle end of path matches (including wildcards) */
     if (g_node_n_children (node) == 1 && (!node->children->data || g_node_n_children (node->children) == 0))
     {
         char *path = NULL;
         _node_to_path (node, &path);
-        call_refreshers (path, false);
+        call_refreshers_at_time (path, false, refresh_now);
         free (path);
     }
 
@@ -1965,7 +1974,7 @@ static void _refresh_paths (GNode *node, gpointer data)
 
         /* Match any wildcard refreshers at this level */
         char *lpath = g_strdup_printf ("%s/", path);
-        call_refreshers (lpath, false);
+        call_refreshers_at_time (lpath, false, refresh_now);
         free (lpath);
 
         /* Find matches for values in the DB */
@@ -1985,7 +1994,7 @@ static void _refresh_paths (GNode *node, gpointer data)
                 fake = g_node_copy (node);
                 fake->data = (gpointer)iter->data;
             }
-            _refresh_paths (fake, NULL);
+            _refresh_paths (fake, data);
             g_node_destroy (fake);
         }
         g_list_free_full(paths, g_free);
@@ -1993,7 +2002,7 @@ static void _refresh_paths (GNode *node, gpointer data)
     }
 
     /* Traverse children */
-    g_node_children_foreach (node, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
+    g_node_children_foreach (node, G_TRAVERSE_NON_LEAFS, _refresh_paths, data);
     return;
 }
 
@@ -2156,7 +2165,8 @@ handle_query (rpc_message msg)
     free (root_path);
 
     /* Attempt to call refreshers for all paths in the query */
-    g_node_children_foreach (query_head, G_TRAVERSE_NON_LEAFS, _refresh_paths, NULL);
+    uint64_t refresh_now = get_time_us ();
+    g_node_children_foreach (query_head, G_TRAVERSE_NON_LEAFS, _refresh_paths, &refresh_now);
 
     /* If we have a filter adjust the query to only have matching subtrees */
     bool has_filter = false;

@@ -2804,6 +2804,7 @@ static uint64_t
 test_refresh_query_callback (const char *path)
 {
     _cb_count++;
+
     apteryx_set_int (TEST_PATH"/dpi/detailed-statistics", "packets", _cb_count);
     GNode *dataset = APTERYX_NODE (NULL, TEST_PATH"/dpi/detailed-statistics");
     for (int i = 0; i < 128; i++)
