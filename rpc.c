@@ -1038,8 +1038,14 @@ rpc_msg_encode_tree (rpc_message msg, GNode *root)
     rpc_msg_encode_tree_full (msg, root, false);
 }
 
+/* Maximum tree nesting accepted when decoding a message. Each level of
+ * nesting recurses, so an attacker-supplied message with deeply nested
+ * rpc_start_children markers could otherwise exhaust the stack. Real
+ * configuration trees are nowhere near this deep. */
+#define RPC_MSG_MAX_TREE_DEPTH 1024
+
 static GNode *
-_rpc_msg_decode_tree (rpc_message msg, GNode *root)
+_rpc_msg_decode_tree (rpc_message msg, GNode *root, int depth)
 {
     rpc_type_t type;
     char *key = NULL;
@@ -1116,8 +1122,16 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
 
                 break;
             case rpc_start_children:
-                /* This node has children (which are also a tree). */
-                _rpc_msg_decode_tree (msg, node ?: root);
+                /* This node has children (which are also a tree). Limit how
+                 * deep we are willing to recurse to avoid stack exhaustion on
+                 * a malicious message. */
+                if (depth >= RPC_MSG_MAX_TREE_DEPTH)
+                {
+                    ERROR ("RPC: tree decode exceeded max depth (%d)\n",
+                           RPC_MSG_MAX_TREE_DEPTH);
+                    return root;
+                }
+                _rpc_msg_decode_tree (msg, node ?: root, depth + 1);
                 break;
             case rpc_end_children:
             default:
@@ -1132,7 +1146,7 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
 GNode *
 rpc_msg_decode_tree (rpc_message msg)
 {
-    GNode *root = _rpc_msg_decode_tree (msg, NULL);
+    GNode *root = _rpc_msg_decode_tree (msg, NULL, 0);
 
     /* We might have a tree with an exploded root - collapse it
      * as much as we can.
