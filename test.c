@@ -9860,6 +9860,25 @@ test_rpc_decode_truncated_tree ()
     rpc_msg_reset (&msg);
 }
 
+/* A message made entirely of "start children" markers nests as deeply as its
+ * length allows. Decoding must bound recursion and not overflow the stack. */
+void
+test_rpc_decode_deep_tree ()
+{
+    rpc_message_t msg = {};
+    size_t n = 200000;
+    uint8_t *payload = g_malloc (n);
+
+    memset (payload, rpc_start_children, n);
+    test_rpc_msg_from_payload (&msg, payload, n);
+    GNode *root = rpc_msg_decode_tree (&msg);
+    if (root)
+        apteryx_free_tree (root);
+    rpc_msg_reset (&msg);
+    g_free (payload);
+    CU_PASS ("decoded deeply nested tree without stack overflow");
+}
+
 static pthread_t single_thread = PTHREAD_NULL;
 static int
 _single_thread (void *data)
@@ -11888,6 +11907,7 @@ CU_TestInfo tests_rpc[] = {
     { "rpc perf", test_rpc_perf },
     { "rpc decode unterminated string", test_rpc_decode_unterminated_string },
     { "rpc decode truncated tree", test_rpc_decode_truncated_tree },
+    { "rpc decode deep tree", test_rpc_decode_deep_tree },
     CU_TEST_INFO_NULL,
 };
 
