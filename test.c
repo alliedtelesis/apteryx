@@ -9844,6 +9844,22 @@ test_rpc_decode_unterminated_string ()
     rpc_msg_reset (&msg);
 }
 
+/* An rpc_value marker with no key following it (a truncated message) used to
+ * dereference a NULL key. It must now decode to nothing without crashing. */
+void
+test_rpc_decode_truncated_tree ()
+{
+    rpc_message_t msg = {};
+    uint8_t payload[] = { rpc_value };
+
+    test_rpc_msg_from_payload (&msg, payload, sizeof (payload));
+    GNode *root = rpc_msg_decode_tree (&msg);
+    CU_ASSERT (root == NULL);
+    if (root)
+        apteryx_free_tree (root);
+    rpc_msg_reset (&msg);
+}
+
 static pthread_t single_thread = PTHREAD_NULL;
 static int
 _single_thread (void *data)
@@ -11871,6 +11887,7 @@ CU_TestInfo tests_rpc[] = {
     { "rpc fork", test_rpc_fork },
     { "rpc perf", test_rpc_perf },
     { "rpc decode unterminated string", test_rpc_decode_unterminated_string },
+    { "rpc decode truncated tree", test_rpc_decode_truncated_tree },
     CU_TEST_INFO_NULL,
 };
 

@@ -1055,6 +1055,13 @@ _rpc_msg_decode_tree (rpc_message msg, GNode *root)
                 key = rpc_msg_decode_string (msg);
                 value = rpc_msg_decode_string (msg);
 
+                /* A truncated/malformed message can fail to provide the key.
+                 * Bail out rather than dereferencing a NULL key below. */
+                if (key == NULL)
+                {
+                    return root;
+                }
+
                 if (!root)
                 {
                     /* Find the leading part of this path. Sometimes these nodes
