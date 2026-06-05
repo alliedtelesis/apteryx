@@ -9807,6 +9807,43 @@ exit:
     rpc_shutdown (rpc);
 }
 
+/* Build a message holding the given raw payload exactly as it would appear
+ * after being received off the wire, positioned ready to be decoded. */
+static void
+test_rpc_msg_from_payload (rpc_message msg, const uint8_t *data, size_t len)
+{
+    rpc_msg_reset (msg);
+    rpc_msg_push (msg, len);
+    if (len)
+        memcpy (msg->buffer + msg->offset, data, len);
+    msg->length = len;
+    /* Decoding starts at the beginning of the payload */
+    msg->offset = RPC_SOCKET_HDR_SIZE;
+}
+
+/* A string that is not NUL terminated within the message bounds must be
+ * refused rather than running strlen() off the end of the buffer. The payload
+ * is sized past the minimum allocation so the buffer has no NUL padding - this
+ * reliably trips ASAN if the bound is missing. */
+void
+test_rpc_decode_unterminated_string ()
+{
+    rpc_message_t msg = {};
+    uint8_t payload[4096];
+
+    memset (payload, 0xAA, sizeof (payload));
+    test_rpc_msg_from_payload (&msg, payload, sizeof (payload));
+    CU_ASSERT (rpc_msg_decode_string (&msg) == NULL);
+    rpc_msg_reset (&msg);
+
+    /* A properly terminated string still decodes correctly */
+    const char *good = "hello";
+    test_rpc_msg_from_payload (&msg, (const uint8_t *) good, strlen (good) + 1);
+    char *out = rpc_msg_decode_string (&msg);
+    CU_ASSERT (out != NULL && strcmp (out, good) == 0);
+    rpc_msg_reset (&msg);
+}
+
 static pthread_t single_thread = PTHREAD_NULL;
 static int
 _single_thread (void *data)
@@ -11833,6 +11870,7 @@ CU_TestInfo tests_rpc[] = {
     { "rpc double bind", test_rpc_double_bind },
     { "rpc fork", test_rpc_fork },
     { "rpc perf", test_rpc_perf },
+    { "rpc decode unterminated string", test_rpc_decode_unterminated_string },
     CU_TEST_INFO_NULL,
 };
 

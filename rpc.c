@@ -928,9 +928,18 @@ rpc_msg_encode_string (rpc_message msg, const char *value)
 char*
 rpc_msg_decode_string (rpc_message msg)
 {
-    if (msg->offset >= (msg->length + RPC_SOCKET_HDR_SIZE))
+    size_t end = msg->length + RPC_SOCKET_HDR_SIZE;
+    if (msg->offset >= end)
         return NULL;
     char *value = (char *) (msg->buffer + msg->offset);
+    /* The string must be NUL terminated within the bounds of the message.
+     * Without this check a message whose final string is not terminated
+     * would cause strlen() to read past the end of the buffer (heap
+     * out-of-bounds read) - the buffer is sized to the received length and
+     * is not guaranteed to be NUL padded. */
+    size_t remaining = end - msg->offset;
+    if (memchr (value, '\0', remaining) == NULL)
+        return NULL;
     msg->offset += strlen (value) + 1;
     return value;
 }
