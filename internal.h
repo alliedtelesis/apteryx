@@ -361,6 +361,6 @@ bool add_callback (const char *type, const char *path, void *fn, bool value, voi
 bool delete_callback (const char *type, const char *path, void *fn, void *data);
 
 /* Tests */
-void run_unit_tests (const char *filter);
+int run_unit_tests (const char *filter);
 
 #endif /* _INTERNAL_H_ */

@@ -91,10 +91,14 @@ apteryxd = \
 	export LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):$(BUILDDIR)/; \
 	export LUA_CPATH=$(BUILDDIR)/?.so; \
 	$(BUILDDIR)/apteryxd -b -p /tmp/apteryxd.pid -r /tmp/apteryxd.run && sleep 0.1; \
-	$(TEST_WRAPPER) $(BUILDDIR)/$(1); \
-	APID=`cat /tmp/apteryxd.pid`; \
-	kill -TERM $$APID; \
-	while kill -0 $$APID 2> /dev/null; do sleep 1; done;
+	TEST_STATUS=0; \
+	$(TEST_WRAPPER) $(BUILDDIR)/$(1) || TEST_STATUS=$$?; \
+	if test -e /tmp/apteryxd.pid; then \
+		APID=`cat /tmp/apteryxd.pid`; \
+		kill -TERM $$APID; \
+		while kill -0 $$APID 2> /dev/null; do sleep 1; done; \
+	fi; \
+	exit $$TEST_STATUS;
 
 unit: $(BUILDDIR)/apteryxd $(BUILDDIR)/apteryx
 	@echo "Running apteryx unit test: $<"

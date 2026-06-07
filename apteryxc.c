@@ -510,11 +510,11 @@ main (int argc, char **argv)
         }
         apteryx_init (apteryx_debug);
 
-        run_unit_tests (filter);
+        int result = run_unit_tests (filter);
         usleep (100000);
 
         apteryx_shutdown ();
-        break;
+        return result;
 #endif
     default:
         usage ();
