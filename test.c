@@ -12153,12 +12153,12 @@ static CU_SuiteInfo suites[] = {
     CU_SUITE_INFO_NULL,
 };
 
-void
+int
 run_unit_tests (const char *filter)
 {
     /* Initialize the CUnit test registry */
     if (CUE_SUCCESS != CU_initialize_registry ())
-        return;
+        return EXIT_FAILURE;
     assert (NULL != CU_get_registry ());
     assert (!CU_is_test_running ());
 
@@ -12210,6 +12210,7 @@ run_unit_tests (const char *filter)
     CU_basic_set_mode (CU_BRM_VERBOSE);
     CU_set_error_action (CUEA_IGNORE);
     CU_basic_run_tests ();
+    unsigned int failures = CU_get_number_of_failures ();
     CU_cleanup_registry ();
-    return;
+    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
