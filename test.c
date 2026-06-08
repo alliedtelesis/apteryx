@@ -2820,6 +2820,61 @@ test_refresh_query_callback (const char *path)
     return _cb_timeout;
 }
 
+static bool test_refresh_query_twice_eth0_seen;
+static bool test_refresh_query_twice_eth1_seen;
+
+static uint64_t
+test_refresh_query_twice_callback (const char *path)
+{
+    _cb_count++;
+
+    if (strcmp (path, TEST_PATH"/interfaces/eth0/state") == 0)
+        test_refresh_query_twice_eth0_seen = true;
+    else if (strcmp (path, TEST_PATH"/interfaces/eth1/state") == 0)
+        test_refresh_query_twice_eth1_seen = true;
+
+    apteryx_set (path, "up");
+    return _cb_timeout;
+}
+
+void
+test_refresh_query_same_refresher_twice_different_paths ()
+{
+    const char *refresh_path = TEST_PATH"/interfaces/*/state";
+    GNode *query = NULL;
+    GNode *qnode = NULL;
+    GNode *result = NULL;
+
+    _cb_count = 0;
+    _cb_timeout = 5 * 1000 * 1000;
+    _cb_delay = 0;
+    test_refresh_query_twice_eth0_seen = false;
+    test_refresh_query_twice_eth1_seen = false;
+
+    CU_ASSERT (apteryx_refresh (refresh_path, test_refresh_query_twice_callback));
+
+    query = g_node_new (strdup ("/"));
+    qnode = apteryx_path_to_node (query, TEST_PATH"/interfaces/eth0/state", NULL);
+    APTERYX_NODE (qnode, NULL);
+    qnode = apteryx_path_to_node (query, TEST_PATH"/interfaces/eth1/state", NULL);
+    APTERYX_NODE (qnode, NULL);
+
+    result = apteryx_query_full (query);
+    CU_ASSERT (result != NULL);
+    CU_ASSERT (_cb_count == 2);
+    CU_ASSERT (test_refresh_query_twice_eth0_seen);
+    CU_ASSERT (test_refresh_query_twice_eth1_seen);
+
+    if (result)
+        apteryx_free_tree (result);
+    if (query)
+        apteryx_free_tree (query);
+
+    apteryx_unrefresh (refresh_path, test_refresh_query_twice_callback);
+    CU_ASSERT (apteryx_prune (TEST_PATH"/interfaces"));
+    CU_ASSERT (assert_apteryx_empty ());
+}
+
 void
 test_refresh_query_different_process ()
 {
@@ -11712,6 +11767,7 @@ static CU_TestInfo tests_api_refresh[] = {
     { "refresh", test_refresh },
     { "refresh unneeded", test_refresh_unneeded },
     { "refresh timeout", test_refresh_timeout },
+    { "refresh query same refresher twice different paths", test_refresh_query_same_refresher_twice_different_paths },
     { "refresh query from different process", test_refresh_query_different_process },
     { "refresh trunk", test_refresh_trunk },
     { "refresh tree simple", test_refresh_tree },
