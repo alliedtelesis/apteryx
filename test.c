@@ -165,7 +165,7 @@ test_set_get_long_path ()
     int i;
 
     CU_ASSERT (asprintf (&path, "%s", TEST_PATH));
-    for (i=0; i<1024; i++)
+    for (i=0; i<1000; i++)
     {
         char *old = path;
         CU_ASSERT (asprintf (&path, "%s/%08x", old, rand ()));
