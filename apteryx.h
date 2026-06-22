@@ -625,17 +625,19 @@ bool apteryx_unwatch (const char *path, apteryx_watch_callback cb);
 
 /**
  * Callback function to be called when a watched tree changes.
+ * The callback function must call apteryx_free_tree on the passed in root tree.
  * @param root pointer to the N-ary tree of nodes representing the changed data
  * @return true on success
  */
 typedef bool (*apteryx_watch_tree_callback) (GNode *root);
 
 /**
- * Watch for changes in the path and pass teh callback a tree of changes
+ * Watch for changes in the path and pass the callback a tree of changes
  * Supports *(wildcard) at the end of path for all children under this path
  * Supports /(level) at the end of path for children only under this current path (one level down)
  * Whenever a change occurs in a monitor path, cb is called with the 
  * longest common path to all recent changes
+ * The callback function must call apteryx_free_tree on the passed in root tree.
  * @param path path to the value to be monitored
  * @param cb function to call when the value changes
  * @param flags to change the watch behaviour
