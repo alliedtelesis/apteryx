@@ -9709,6 +9709,8 @@ test_socket_latency (int family, bool cd, bool req, bool resp)
         return;
     }
     CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+    if (s < 0)
+        return;
     CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
     CU_ASSERT ((ret = bind (s, (struct sockaddr *)&server, address_len)) >= 0);
     CU_ASSERT ((ret = listen (s, 5)) >= 0);
@@ -9751,6 +9753,8 @@ test_socket_latency (int family, bool cd, bool req, bool resp)
         if (!cd)
         {
             CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+            if (s < 0)
+                goto exit;
             CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
             CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
             if (ret)
@@ -9762,6 +9766,8 @@ test_socket_latency (int family, bool cd, bool req, bool resp)
             if (cd)
             {
                 CU_ASSERT ((s = socket (family, SOCK_STREAM, 0)) >= 0);
+                if (s < 0)
+                    goto exit;
                 CU_ASSERT (setsockopt (s, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
                 CU_ASSERT ((ret = connect (s, (struct sockaddr *)&server, address_len)) == 0);
                 if (ret)
