@@ -10911,9 +10911,14 @@ test_lua_basic_validate (void)
 static inline unsigned long
 _memory_usage (void)
 {
-    unsigned long memory;
+    unsigned long memory = 0;
     FILE *f = fopen ("/proc/self/statm","r");
-    CU_ASSERT (1 == fscanf (f, "%*d %ld %*d %*d %*d %*d %*d", &memory))
+
+    CU_ASSERT (f != NULL);
+    if (!f)
+        return 0;
+
+    CU_ASSERT (1 == fscanf (f, "%*d %ld %*d %*d %*d %*d %*d", &memory));
     fclose (f);
     return memory * getpagesize () / 1024;
 }
