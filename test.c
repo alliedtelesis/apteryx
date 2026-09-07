@@ -3419,7 +3419,15 @@ static uint64_t
 test_refresh_counters_callback (const char *path)
 {
     char *iface = g_strdup (path + strlen (TEST_PATH"/interfaces/"));
-    *(strchr (iface, '/')) = '\0';
+    char *slash = strchr (iface, '/');
+
+    CU_ASSERT (slash != NULL);
+    if (!slash)
+    {
+        free (iface);
+        return _cb_timeout;
+    }
+    *slash = '\0';
     path = g_strdup_printf (TEST_PATH"/interfaces/%s/counters", iface);
     GNode* root = APTERYX_NODE (NULL, (gpointer) path);
     APTERYX_LEAF (root, "tx", "1");
