@@ -1271,9 +1271,8 @@ handle_set (rpc_message msg, bool ack)
     if (config_tree_has_proxies(root_path))
     {
         /* Proxy first */
-        ipath = g_list_first (lists.paths);
-        ivalue = g_list_first (lists.values);
-        for (ipath = g_list_first (lists.paths), ivalue = lists.values; ipath; ipath=ipath->next, ivalue = ivalue->next)
+        for (ipath = g_list_first (lists.paths), ivalue = g_list_first (lists.values);
+             ipath && ivalue; ipath = ipath->next, ivalue = ivalue->next)
         {
             path = (const char *) ipath->data;
             value = (const char *) ivalue->data;
