@@ -2885,7 +2885,11 @@ test_refresh_query_different_process ()
 
     apteryx_shutdown ();
 
-    CU_ASSERT (pipe (sync_pipe) == 0);
+    if (pipe (sync_pipe) != 0)
+    {
+        CU_FAIL ("pipe failed");
+        return;
+    }
 
     if ((pid = fork ()) == 0)
     {
