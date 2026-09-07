@@ -361,6 +361,10 @@ bool
 db_delete_no_lock (const char *path, uint64_t ts)
 {
     bool ret = false;
+
+    if (!path)
+        return false;
+
     if (ts == UINT64_MAX || ts >= db_timestamp_no_lock (path))
     {
 
