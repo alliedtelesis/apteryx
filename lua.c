@@ -108,6 +108,8 @@ callback_valid (lua_callback_info *cb_info)
 static void
 destroy_cb_info(lua_callback_info *cb_info)
 {
+    if (!cb_info)
+        return;
     g_free(cb_info->path);
     g_free(cb_info);
 }
