@@ -4510,19 +4510,21 @@ static void
 test_tree_check_sorted (GNode *node, gpointer data)
 {
     unsigned int *max = (unsigned int *) data;
+    GNode *entry = node->children;
+    GNode *entry_value = entry ? entry->children : NULL;
     unsigned int name, child, value;
 
     /* Every entry is expected to be a named node with a single valued child */
-    CU_ASSERT (node->children != NULL && node->children->children != NULL);
-    if (!node->children || !node->children->children)
+    CU_ASSERT (entry != NULL && entry_value != NULL);
+    if (!entry || !entry_value)
         return;
 
     name = atoi (APTERYX_NAME (node));
-    child = atoi (APTERYX_NAME (node->children));
-    value = atoi (APTERYX_VALUE (node->children));
+    child = atoi (APTERYX_NAME (entry));
+    value = atoi ((char *) entry_value->data);
     CU_ASSERT ((*max == 0 && node->prev == NULL) || node->prev->next == node);
-    CU_ASSERT (node->children->parent == node);
-    CU_ASSERT (node->children->children->parent == node->children);
+    CU_ASSERT (entry->parent == node);
+    CU_ASSERT (entry_value->parent == entry);
     CU_ASSERT (name == child);
     CU_ASSERT (child == value);
     CU_ASSERT (*max <= value);
