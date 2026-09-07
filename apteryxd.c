@@ -951,13 +951,15 @@ static gboolean
 _gather_values (GNode *node, gpointer data)
 {
     key_value_lists *lists = (key_value_lists *) data;
-    if (APTERYX_HAS_VALUE(node))
+    GNode *value = g_node_first_child (node);
+
+    if (value && G_NODE_IS_LEAF (value))
     {
         char *path = NULL;
         /* Create the apteryx path for this node. */
         _node_to_path (node, &path);
         lists->paths = g_list_prepend (lists->paths, path);
-        lists->values = g_list_prepend (lists->values, g_strdup (APTERYX_VALUE (node)));
+        lists->values = g_list_prepend (lists->values, g_strdup ((char *) value->data));
     }
     return FALSE;
 }
