@@ -2581,7 +2581,7 @@ main (int argc, char **argv)
     signal (SIGINT, (sighandler_t) termination_handler);
     signal (SIGPIPE, SIG_IGN);
 
-    int child_ready[2] = { 0 };
+    int child_ready[2] = { -1, -1 };
 
     if (background)
     {
@@ -2625,7 +2625,9 @@ main (int argc, char **argv)
         }
         else if (child_pid == 0)
         {
+            /* Child - we only ever write to the pipe */
             close (child_ready[0]);
+            child_ready[0] = -1;
         }
         else
         {
@@ -2713,8 +2715,10 @@ exit:
 
     if (background)
     {
-        close (child_ready[0]);
-        close (child_ready[1]);
+        if (child_ready[0] >= 0)
+            close (child_ready[0]);
+        if (child_ready[1] >= 0)
+            close (child_ready[1]);
     }
 
     /* Cleanup callbacks */
