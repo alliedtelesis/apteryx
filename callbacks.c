@@ -571,7 +571,12 @@ _cb_match_tree_no_lock (struct callback_node *callbacks, GNode *root)
     for (GList *iter = wildcard_match ? wildcard_match->following : NULL;
          iter; iter = iter->next)
     {
-        struct cb_tree_info *c = alloc_cb_tree (iter->data, root, true);
+        cb_info_t *cb = iter->data;
+        if (!cb || !cb->active)
+        {
+            continue;
+        }
+        struct cb_tree_info *c = alloc_cb_tree (cb, root, true);
         callbacks_to_call = g_list_prepend (callbacks_to_call, c);
     }
 
@@ -582,7 +587,12 @@ _cb_match_tree_no_lock (struct callback_node *callbacks, GNode *root)
         {
             for (GList *iter = callbacks->exact; iter; iter = iter->next)
             {
-                struct cb_tree_info *c = alloc_cb_tree (iter->data, root, true);
+                cb_info_t *cb = iter->data;
+                if (!cb || !cb->active)
+                {
+                    continue;
+                }
+                struct cb_tree_info *c = alloc_cb_tree (cb, root, true);
                 callbacks_to_call = g_list_prepend (callbacks_to_call, c);
             }
         }
@@ -622,7 +632,12 @@ _cb_match_tree_no_lock (struct callback_node *callbacks, GNode *root)
         {
             for (GList *iter = callbacks->directory; iter; iter = iter->next)
             {
-                struct cb_tree_info *c = alloc_cb_tree (iter->data, root, false);
+                cb_info_t *cb = iter->data;
+                if (!cb || !cb->active)
+                {
+                    continue;
+                }
+                struct cb_tree_info *c = alloc_cb_tree (cb, root, false);
                 callbacks_to_call = g_list_prepend (callbacks_to_call, c);
             }
         }
@@ -1056,7 +1071,6 @@ test_cb_match_tree ()
         struct cb_tree_info *c = iter->data;
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
     }
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
 
     /* Add another 2 nodes, should have three callbacks */
@@ -1070,7 +1084,6 @@ test_cb_match_tree ()
         struct cb_tree_info *c = iter->data;
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
     }
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
 
     /* Add another 2 nodes that should not match, should have three callbacks */
@@ -1080,7 +1093,6 @@ test_cb_match_tree ()
     matches = cb_match_tree (watches_list, root);
     CU_ASSERT (g_list_length (matches) == 3);
 
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
     cb_shutdown (watches_list);
     watches_list = NULL;
@@ -1092,7 +1104,6 @@ test_cb_match_tree ()
     /* Should miss */
     matches = cb_match_tree (watches_list, root);
     CU_ASSERT (matches == NULL);
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
 
     watches_list = cb_init ();
@@ -1100,7 +1111,6 @@ test_cb_match_tree ()
     cb_release (cb);
     matches = cb_match_tree (watches_list, root);
     CU_ASSERT (matches == NULL);
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
     cb_shutdown (watches_list);
 
@@ -1123,7 +1133,6 @@ test_cb_match_tree ()
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
     }
 
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
 
     apteryx_path_to_node (root, "/firewall/rules/10/zone", "united-states");
@@ -1136,7 +1145,6 @@ test_cb_match_tree ()
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
     }
 
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
 
     /* Data on other node should not be picked up */
@@ -1150,7 +1158,6 @@ test_cb_match_tree ()
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
     }
 
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
 
     /* Data lower in the tree should not be picked up */
@@ -1165,7 +1172,6 @@ test_cb_match_tree ()
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
     }
 
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
     cb_shutdown (watches_list);
     apteryx_free_tree (root);
@@ -1186,7 +1192,6 @@ test_cb_match_tree ()
         struct cb_tree_info *c = iter->data;
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
     }
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
     apteryx_free_tree (root);
 
@@ -1209,7 +1214,6 @@ test_cb_match_tree ()
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 4 ||
                   g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 2);
     }
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
     apteryx_free_tree (root);
 
@@ -1226,7 +1230,6 @@ test_cb_match_tree ()
         struct cb_tree_info *c = iter->data;
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 4);
     }
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
 
     apteryx_free_tree (root);
@@ -1257,7 +1260,6 @@ test_cb_match_tree_compound_root ()
         struct cb_tree_info *c = iter->data;
         CU_ASSERT(g_node_n_nodes (c->data, G_TRAVERSE_LEAFS) == 1);
     }
-    g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
     g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
     apteryx_free_tree (root);
     cb_shutdown (watches_list);
@@ -1280,7 +1282,6 @@ test_cb_match_tree_locking ()
     for (int i = 0; i < TEST_CB_MAX_ITERATIONS * 100; i++)
     {
         GList *matches = cb_match_tree (test_list, root);
-        g_list_foreach (matches, (GFunc) cb_tree_disable, NULL);
         g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
     }
     test_running = false;
@@ -1427,6 +1428,30 @@ test_cb_match_inactive ()
 }
 
 void
+test_cb_match_tree_inactive ()
+{
+    struct callback_node *list = cb_init ();
+    GList *matches;
+    GNode *root;
+
+    /* Create a callback, then disable it */
+    cb_info_t *cb = cb_create (list, "tester", "/test/*/value", 1, 0, 0, 0);
+    cb_disable (cb);
+    cb_release (cb);
+
+    /* Match must not return the inactive callback */
+    root = APTERYX_NODE(NULL, g_strdup (""));
+    apteryx_path_to_node (root, "/test/one/value", "1");
+
+    matches = cb_match_tree (list, root);
+    CU_ASSERT (matches == NULL);
+    g_list_free_full (matches, (GDestroyNotify) cb_tree_release);
+
+    apteryx_free_tree (root);
+    cb_shutdown (list);
+}
+
+void
 test_cb_match_multiple ()
 {
     struct callback_node *list = cb_init ();
@@ -1463,6 +1488,7 @@ CU_TestInfo tests_callbacks[] = {
     { "search directory", test_cb_search_directory },
     { "foreach", test_cb_foreach },
     { "match inactive filtered", test_cb_match_inactive },
+    { "match tree inactive filtered", test_cb_match_tree_inactive },
     { "match multiple callbacks", test_cb_match_multiple },
     CU_TEST_INFO_NULL,
 };
