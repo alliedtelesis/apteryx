@@ -146,10 +146,13 @@ Usage: apteryx [-h] [-s|-g|-f|-q|-t|-r|-w|-p|-x|-l|-m|-c|-u<filter>] [<path>] [<
     /apteryx/debug
     /apteryx/sockets
     /apteryx/watchers
+    /apteryx/refreshers
     /apteryx/providers
     /apteryx/validators
+    /apteryx/indexers
     /apteryx/proxies
     /apteryx/counters
+    /apteryx/statistics
 ```
 
 Examples:
