@@ -223,8 +223,17 @@ static gboolean
 dw_process (gpointer arg1)
 {
     struct delayed_watch *dw = (struct delayed_watch *) arg1;
+    cb_t cb;
 
     dw_list = g_list_remove (dw_list, dw);
+
+    /* The watch may have been removed while the call was delayed */
+    if (!find_callback (dw->ref, &cb))
+    {
+        apteryx_free_tree (dw->root);
+        g_free (dw);
+        return G_SOURCE_REMOVE;
+    }
 
     DEBUG ("WATCH-TREE(delayed) CB (0x%"PRIx64")\n", dw->ref);
     DEBUG_TREE (dw->root);
