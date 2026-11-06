@@ -4532,6 +4532,111 @@ test_tree_check_sorted (GNode *node, gpointer data)
 }
 
 void
+test_tree_merge_new_child ()
+{
+    GNode *dst = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    GNode *src = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    GNode *child;
+
+    APTERYX_LEAF (dst, strdup ("old"), strdup ("1"));
+    APTERYX_LEAF (src, strdup ("new"), strdup ("2"));
+    dst = apteryx_merge_tree (dst, src);
+    CU_ASSERT (g_node_n_children (dst) == 2);
+    CU_ASSERT ((child = apteryx_find_child (dst, "new")) != NULL);
+    CU_ASSERT (child && g_strcmp0 (APTERYX_VALUE (child), "2") == 0);
+    CU_ASSERT ((child = apteryx_find_child (dst, "old")) != NULL);
+    CU_ASSERT (child && g_strcmp0 (APTERYX_VALUE (child), "1") == 0);
+    apteryx_free_tree (dst);
+}
+
+/* The value of a leaf, or NULL when the path is not in the tree */
+static const char *
+_merge_value (GNode *root, const char *path)
+{
+    GNode *node = apteryx_path_node (root, path);
+
+    return node && node->children ? APTERYX_VALUE (node) : NULL;
+}
+
+void
+test_tree_merge_new_children ()
+{
+    GNode *dst = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    GNode *src = APTERYX_NODE (NULL, strdup (TEST_PATH));
+
+    APTERYX_LEAF (src, strdup ("a"), strdup ("1"));
+    APTERYX_LEAF (src, strdup ("b"), strdup ("2"));
+    APTERYX_LEAF (src, strdup ("c"), strdup ("3"));
+    dst = apteryx_merge_tree (dst, src);
+    CU_ASSERT (g_node_n_children (dst) == 3);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/a"), "1") == 0);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/b"), "2") == 0);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/c"), "3") == 0);
+    apteryx_free_tree (dst);
+}
+
+void
+test_tree_merge_matching_child ()
+{
+    GNode *dst = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    GNode *src = APTERYX_NODE (NULL, strdup (TEST_PATH));
+
+    APTERYX_LEAF (APTERYX_NODE (dst, strdup ("a")), strdup ("x"), strdup ("1"));
+    APTERYX_LEAF (APTERYX_NODE (src, strdup ("a")), strdup ("y"), strdup ("2"));
+    dst = apteryx_merge_tree (dst, src);
+    CU_ASSERT (g_node_n_children (dst) == 1);
+    CU_ASSERT (g_node_n_children (apteryx_find_child (dst, "a")) == 2);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/a/x"), "1") == 0);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/a/y"), "2") == 0);
+    apteryx_free_tree (dst);
+}
+
+void
+test_tree_merge_changed_value ()
+{
+    GNode *dst = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    GNode *src = APTERYX_NODE (NULL, strdup (TEST_PATH));
+
+    APTERYX_LEAF (dst, strdup ("a"), strdup ("1"));
+    APTERYX_LEAF (src, strdup ("a"), strdup ("2"));
+    dst = apteryx_merge_tree (dst, src);
+    CU_ASSERT (g_node_n_children (dst) == 1);
+    CU_ASSERT (g_node_n_children (apteryx_find_child (dst, "a")) == 1);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/a"), "2") == 0);
+    apteryx_free_tree (dst);
+}
+
+void
+test_tree_merge_deep ()
+{
+    GNode *dst = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    GNode *src = APTERYX_NODE (NULL, strdup (TEST_PATH));
+
+    APTERYX_LEAF (APTERYX_NODE (APTERYX_NODE (dst, strdup ("a")), strdup ("b")),
+                  strdup ("c"), strdup ("1"));
+    APTERYX_LEAF (APTERYX_NODE (APTERYX_NODE (src, strdup ("a")), strdup ("b")),
+                  strdup ("d"), strdup ("2"));
+    dst = apteryx_merge_tree (dst, src);
+    CU_ASSERT (g_node_n_children (apteryx_path_node (dst, TEST_PATH"/a/b")) == 2);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/a/b/c"), "1") == 0);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/a/b/d"), "2") == 0);
+    apteryx_free_tree (dst);
+}
+
+void
+test_tree_merge_empty ()
+{
+    GNode *dst = APTERYX_NODE (NULL, strdup (TEST_PATH));
+    GNode *src = APTERYX_NODE (NULL, strdup (TEST_PATH));
+
+    APTERYX_LEAF (dst, strdup ("a"), strdup ("1"));
+    dst = apteryx_merge_tree (dst, src);
+    CU_ASSERT (g_node_n_children (dst) == 1);
+    CU_ASSERT (g_strcmp0 (_merge_value (dst, TEST_PATH"/a"), "1") == 0);
+    apteryx_free_tree (dst);
+}
+
+void
 test_tree_sort_children ()
 {
     GNode *root;
@@ -11877,6 +11982,12 @@ static CU_TestInfo tests_api_tree[] = {
     { "tree nodes wide", test_tree_nodes_wide },
     { "tree find children", test_tree_find_children },
     { "tree find node", test_tree_path_node },
+    { "tree merge new child", test_tree_merge_new_child },
+    { "tree merge new children", test_tree_merge_new_children },
+    { "tree merge matching child", test_tree_merge_matching_child },
+    { "tree merge changed value", test_tree_merge_changed_value },
+    { "tree merge deep", test_tree_merge_deep },
+    { "tree merge empty", test_tree_merge_empty },
     { "tree sort children", test_tree_sort_children },
     { "test uniqify requires sorting", test_uniqify_nodes_requires_sorting },
     { "test uniqify with multi-level collision", test_uniqify_nodes_multiple_level_collision },
