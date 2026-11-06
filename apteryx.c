@@ -68,9 +68,16 @@ typedef struct _cb_t
     void *data;
     uint64_t flags;
     guint timeout_ms;
+    int running;        /* Calls of the callback that have not returned */
+    bool removing;      /* delete_callback() is waiting for the calls */
 } cb_t;
 static uint64_t next_ref = 0;
 static GList *cb_list = NULL;
+/* Signalled when a call of a callback returns */
+static pthread_cond_t cb_returned = PTHREAD_COND_INITIALIZER;
+/* The callback this thread is running, -1 when none, so that a callback
+ * can remove itself without waiting for its own call */
+static __thread int64_t running_ref = -1;
 
 static bool
 find_callback (uint64_t ref, cb_t *r_cb)
@@ -83,9 +90,11 @@ find_callback (uint64_t ref, cb_t *r_cb)
     for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
     {
         cb = (cb_t *) iter->data;
-        if (cb->ref == ref)
+        if (cb->ref == ref && cb->fn && !cb->removing)
         {
             *r_cb = *cb;
+            cb->running++;
+            running_ref = ref;
             rc = true;
         }
     }
@@ -93,10 +102,33 @@ find_callback (uint64_t ref, cb_t *r_cb)
     return rc;
 }
 
+/* A call of a callback that find_callback() found has returned */
+static void
+callback_done (uint64_t ref)
+{
+    GList *iter;
+    cb_t *cb;
+
+    pthread_mutex_lock (&lock);
+    running_ref = -1;
+    for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
+    {
+        cb = (cb_t *) iter->data;
+        if (cb->ref == ref)
+        {
+            cb->running--;
+            if (cb->removing)
+                pthread_cond_broadcast (&cb_returned);
+        }
+    }
+    pthread_mutex_unlock (&lock);
+}
+
 static void *
 call_callback (uint64_t ref, const char *path, const char *value)
 {
     cb_t cb;
+    void *rc;
 
     if (!find_callback (ref, &cb) || cb.fn == NULL)
     {
@@ -105,13 +137,15 @@ call_callback (uint64_t ref, const char *path, const char *value)
     }
 
     if (cb.value && cb.data)
-        return ((void*(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
+        rc = ((void*(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
     else if (cb.value)
-        return ((void*(*)(const char*, const char*)) cb.fn) (path, value);
+        rc = ((void*(*)(const char*, const char*)) cb.fn) (path, value);
     else if (cb.data)
-        return ((void*(*)(const char*, void*)) cb.fn) (path, cb.data);
+        rc = ((void*(*)(const char*, void*)) cb.fn) (path, cb.data);
     else
-        return ((void*(*)(const char*)) cb.fn) (path);
+        rc = ((void*(*)(const char*)) cb.fn) (path);
+    callback_done (ref);
+    return rc;
 }
 
 /**
@@ -121,6 +155,7 @@ static uint64_t
 call_uint64_callback (uint64_t ref, const char *path, const char *value)
 {
     cb_t cb;
+    uint64_t rc;
 
     if (!find_callback (ref, &cb) || cb.fn == NULL)
     {
@@ -129,13 +164,15 @@ call_uint64_callback (uint64_t ref, const char *path, const char *value)
     }
 
     if (cb.value && cb.data)
-        return ((uint64_t(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
+        rc = ((uint64_t(*)(const char*, const char*, void*)) cb.fn) (path, value, cb.data);
     else if (cb.value)
-        return ((uint64_t(*)(const char*, const char*)) cb.fn) (path, value);
+        rc = ((uint64_t(*)(const char*, const char*)) cb.fn) (path, value);
     else if (cb.data)
-        return ((uint64_t(*)(const char*, void*)) cb.fn) (path, cb.data);
+        rc = ((uint64_t(*)(const char*, void*)) cb.fn) (path, cb.data);
     else
-        return ((uint64_t(*)(const char*)) cb.fn) (path);
+        rc = ((uint64_t(*)(const char*)) cb.fn) (path);
+    callback_done (ref);
+    return rc;
 }
 
 static const char *
@@ -241,6 +278,7 @@ dw_process (gpointer arg1)
         ((void*(*)(const GNode*, void*)) dw->fn) (dw->root, dw->data);
     else
         ((void*(*)(const GNode*)) dw->fn) (dw->root);
+    callback_done (dw->ref);
     g_free (dw);
     return G_SOURCE_REMOVE;
 }
@@ -359,6 +397,7 @@ handle_watch (rpc_message msg)
     if (!root)
     {
         DEBUG ("WATCH[%"PRIu64"]: unable to parse tree\n", ref);
+        callback_done (ref);
         /* Not much we can do but pretend we completed the callback */
         rpc_msg_reset (msg);
         return true;
@@ -392,6 +431,7 @@ handle_watch (rpc_message msg)
                 ((void*(*)(const GNode*)) cb.fn) (root);
         }
     }
+    callback_done (ref);
     rpc_msg_reset (msg);
     return true;
 }
@@ -600,6 +640,7 @@ int
 apteryx_process (bool poll)
 {
     ASSERT ((ref_count > 0), return false, "PROCESS: Not initialised\n");
+    ASSERT ((running_ref < 0), return -1, "PROCESS: Called from a callback\n");
     return rpc_server_process (rpc, poll);
 }
 
@@ -2218,12 +2259,39 @@ delete_callback (const char *type, const char *path, void *fn, void *data)
     for (iter = g_list_first (cb_list); iter; iter = g_list_next (iter))
     {
         cb = (cb_t *) iter->data;
-        if (cb->fn == fn && strcmp (cb->path, path) == 0 && cb->data == data)
+        if (cb->fn == fn && strcmp (cb->path, path) == 0 && cb->data == data &&
+            !cb->removing)
         {
-            cb_list = g_list_remove (cb_list, cb);
             break;
         }
         cb = NULL;
+    }
+    if (cb)
+    {
+        /* Wait for the running calls, for up to RPC_TIMEOUT_US. A call on
+         * this thread is the callback removing itself. */
+        int own = running_ref == (int64_t) cb->ref ? 1 : 0;
+
+        cb->removing = true;
+        if (cb->running > own)
+        {
+            struct timespec deadline;
+            uint64_t ns;
+
+            clock_gettime (CLOCK_REALTIME, &deadline);
+            ns = deadline.tv_nsec + RPC_TIMEOUT_US * 1000;
+            deadline.tv_sec += ns / 1000000000;
+            deadline.tv_nsec = ns % 1000000000;
+            while (cb->running > own)
+            {
+                if (pthread_cond_timedwait (&cb_returned, &lock, &deadline) == ETIMEDOUT)
+                {
+                    ERROR ("DEL_CB: callback still running (%s)\n", path);
+                    break;
+                }
+            }
+        }
+        cb_list = g_list_remove (cb_list, cb);
     }
     pthread_mutex_unlock (&lock);
     ASSERT (cb, return false, "CB: not found (%s)\n", path);
