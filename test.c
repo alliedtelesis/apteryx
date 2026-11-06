@@ -7887,6 +7887,24 @@ test_watch_tree_after_quiet ()
 }
 
 void
+test_unwatch_tree_wait_cancels_delayed ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_watch_tree_wait (path, test_watch_tree_callback,
+                                        (TEST_SLEEP_TIMEOUT / 2 / 1000)));
+    CU_ASSERT (apteryx_set_string (path, NULL, "up"));
+    /* Let the watch arrive and be delayed */
+    usleep (TEST_SLEEP_TIMEOUT / 10);
+    CU_ASSERT (apteryx_unwatch_tree (path, test_watch_tree_callback));
+    usleep (TEST_SLEEP_TIMEOUT);
+    CU_ASSERT (_cb_count == 0);
+    apteryx_set_string (path, NULL, NULL);
+    _watch_tree_cleanup ();
+}
+
+void
 test_watch_tree_after_quiet_merged ()
 {
     const char *path = TEST_PATH"/entity/zones";
@@ -12004,6 +12022,7 @@ static CU_TestInfo tests_api_tree[] = {
     { "watch tree one level miss", test_watch_tree_one_level_miss },
     { "watch tree after quiet", test_watch_tree_after_quiet },
     { "watch tree after quiet merged", test_watch_tree_after_quiet_merged },
+    { "unwatch tree wait cancels delayed", test_unwatch_tree_wait_cancels_delayed },
     { "watch tree masked set local", test_watch_tree_masked_set_local },
     { "watch tree masked set other", test_watch_tree_masked_set_other },
     { "watch tree masked after quiet", test_watch_tree_masked_after_quiet },
