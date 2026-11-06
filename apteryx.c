@@ -1382,6 +1382,7 @@ apteryx_merge_tree (GNode *dst, GNode *src)
     while (pchild)
     {
         GNode *next = pchild->next;
+        g_node_unlink (pchild);
         merge_node_into_parent (dst, pchild);
         pchild = next;
     }
