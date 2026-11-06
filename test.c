@@ -7991,6 +7991,113 @@ test_watch_tree_after_quiet ()
     _watch_tree_cleanup ();
 }
 
+static gint _slow_cb_state = 0;
+static bool
+test_slow_watch_callback (const char *path, const char *value)
+{
+    g_atomic_int_set (&_slow_cb_state, 1);
+    usleep (TEST_SLEEP_TIMEOUT);
+    g_atomic_int_set (&_slow_cb_state, 2);
+    return true;
+}
+
+void
+test_unwatch_waits_for_callback ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/name";
+
+    g_atomic_int_set (&_slow_cb_state, 0);
+    CU_ASSERT (apteryx_watch (path, test_slow_watch_callback));
+    CU_ASSERT (apteryx_set (path, "private"));
+    for (int i = 0; i < 1000 && g_atomic_int_get (&_slow_cb_state) == 0; i++)
+        usleep (1000);
+    CU_ASSERT (g_atomic_int_get (&_slow_cb_state) == 1);
+    CU_ASSERT (apteryx_unwatch (path, test_slow_watch_callback));
+    /* The callback has returned before apteryx_unwatch() returns */
+    CU_ASSERT (g_atomic_int_get (&_slow_cb_state) == 2);
+    CU_ASSERT (apteryx_set (path, NULL));
+}
+
+static bool
+test_very_slow_watch_callback (const char *path, const char *value)
+{
+    g_atomic_int_set (&_slow_cb_state, 1);
+    usleep (2 * RPC_TIMEOUT_US);
+    g_atomic_int_set (&_slow_cb_state, 2);
+    return true;
+}
+
+void
+test_unwatch_waits_at_most_timeout ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/name";
+    uint64_t start;
+
+    g_atomic_int_set (&_slow_cb_state, 0);
+    CU_ASSERT (apteryx_watch (path, test_very_slow_watch_callback));
+    CU_ASSERT (apteryx_set (path, "private"));
+    for (int i = 0; i < 1000 && g_atomic_int_get (&_slow_cb_state) == 0; i++)
+        usleep (1000);
+    start = g_get_monotonic_time ();
+    CU_ASSERT (apteryx_unwatch (path, test_very_slow_watch_callback));
+    /* apteryx_unwatch() returns after the timeout, with the call running */
+    CU_ASSERT (g_get_monotonic_time () - start < 2 * RPC_TIMEOUT_US);
+    CU_ASSERT (g_atomic_int_get (&_slow_cb_state) == 1);
+    for (int i = 0; i < 3000 && g_atomic_int_get (&_slow_cb_state) != 2; i++)
+        usleep (1000);
+    CU_ASSERT (g_atomic_int_get (&_slow_cb_state) == 2);
+    CU_ASSERT (apteryx_set (path, NULL));
+}
+
+static void *
+_unwatch_slow_thread (void *unused)
+{
+    return GINT_TO_POINTER (apteryx_unwatch (TEST_PATH"/entity/zones/private/name",
+                                             test_slow_watch_callback));
+}
+
+void
+test_unwatch_twice_while_running ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/name";
+    pthread_t thread;
+    void *other = NULL;
+    bool removed;
+
+    g_atomic_int_set (&_slow_cb_state, 0);
+    CU_ASSERT (apteryx_watch (path, test_slow_watch_callback));
+    CU_ASSERT (apteryx_set (path, "private"));
+    for (int i = 0; i < 1000 && g_atomic_int_get (&_slow_cb_state) == 0; i++)
+        usleep (1000);
+    CU_ASSERT (pthread_create (&thread, NULL, _unwatch_slow_thread, NULL) == 0);
+    /* Let the thread start waiting for the callback */
+    usleep (TEST_SLEEP_TIMEOUT / 10);
+    removed = apteryx_unwatch (path, test_slow_watch_callback);
+    pthread_join (thread, &other);
+    /* One removal finds the callback, and the other does not */
+    CU_ASSERT (removed != (bool) GPOINTER_TO_INT (other));
+    CU_ASSERT (apteryx_set (path, NULL));
+}
+
+static bool
+test_unwatch_self_callback (const char *path, const char *value)
+{
+    _cb_count++;
+    return apteryx_unwatch (path, test_unwatch_self_callback);
+}
+
+void
+test_unwatch_from_callback ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/name";
+
+    _cb_count = 0;
+    CU_ASSERT (apteryx_watch (path, test_unwatch_self_callback));
+    CU_ASSERT (apteryx_set_wait (path, "private"));
+    CU_ASSERT (_cb_count == 1);
+    CU_ASSERT (apteryx_set (path, NULL));
+}
+
 void
 test_unwatch_tree_wait_cancels_delayed ()
 {
@@ -10317,6 +10424,37 @@ test_single_watch_myself_callback (const char *path, const char *value)
     return true;
 }
 
+static int _nested_process_fd = 0;
+
+static bool
+test_process_from_callback (const char *path, const char *value)
+{
+    _nested_process_fd = apteryx_process (true);
+    return true;
+}
+
+void
+test_single_process_from_callback ()
+{
+    const char *path = TEST_PATH"/entity/zones/private/state";
+
+    _nested_process_fd = 0;
+    apteryx_process (true);
+    CU_ASSERT (apteryx_watch (path, test_process_from_callback));
+    CU_ASSERT (apteryx_set (path, "up"));
+    for (int i = 0; i < 1000 && _nested_process_fd == 0; i++)
+    {
+        apteryx_process (true);
+        usleep (1000);
+    }
+    /* Callbacks can not run inside another callback */
+    CU_ASSERT (_nested_process_fd == -1);
+    CU_ASSERT (apteryx_unwatch (path, test_process_from_callback));
+    CU_ASSERT (apteryx_set (path, NULL));
+    CU_ASSERT (assert_apteryx_empty ());
+    apteryx_process (false);
+}
+
 void
 test_single_watch_myself ()
 {
@@ -12133,6 +12271,10 @@ static CU_TestInfo tests_api_tree[] = {
     { "watch tree one level miss", test_watch_tree_one_level_miss },
     { "watch tree after quiet", test_watch_tree_after_quiet },
     { "watch tree after quiet merged", test_watch_tree_after_quiet_merged },
+    { "unwatch waits for callback", test_unwatch_waits_for_callback },
+    { "unwatch waits at most the timeout", test_unwatch_waits_at_most_timeout },
+    { "unwatch from callback", test_unwatch_from_callback },
+    { "unwatch twice while running", test_unwatch_twice_while_running },
     { "unwatch tree wait cancels delayed", test_unwatch_tree_wait_cancels_delayed },
     { "watch tree masked set local", test_watch_tree_masked_set_local },
     { "watch tree masked set other", test_watch_tree_masked_set_other },
@@ -12161,6 +12303,7 @@ static CU_TestInfo tests_single_threaded[] = {
     { "single-threaded provide", test_single_provide },
     { "single-threaded provide no polling", test_single_provide_no_polling },
     { "single-threaded watch myself", test_single_watch_myself },
+    { "single-threaded process from callback", test_single_process_from_callback },
     { "single-threaded watch myself blocked", test_single_watch_myself_blocked },
     { "single-threaded watch tree after quiet", test_single_watch_tree_after_quiet },
     CU_TEST_INFO_NULL,
