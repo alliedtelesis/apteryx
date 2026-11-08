@@ -2280,7 +2280,7 @@ delete_callback (const char *type, const char *path, void *fn, void *data)
             uint64_t ns;
 
             clock_gettime (CLOCK_REALTIME, &deadline);
-            ns = deadline.tv_nsec + RPC_TIMEOUT_US * 1000;
+            ns = deadline.tv_nsec + (uint64_t) RPC_TIMEOUT_US * 1000;
             deadline.tv_sec += ns / 1000000000;
             deadline.tv_nsec = ns % 1000000000;
             while (cb->running > own)
